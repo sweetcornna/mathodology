@@ -109,6 +109,7 @@ async fn complete_path(
             &state.pg,
             &mut state.redis,
             &state.llm.prices,
+            state.runs_dir.as_ref(),
             run_id,
             agent.as_deref(),
             &model,
@@ -142,6 +143,7 @@ async fn complete_path(
         &state.pg,
         &mut state.redis,
         &state.llm.prices,
+        state.runs_dir.as_ref(),
         run_id,
         agent.as_deref(),
         &model_for_cost,
@@ -175,6 +177,7 @@ async fn stream_path(
         state.pg.clone(),
         state.redis.clone(),
         state.llm.clone(),
+        state.runs_dir.clone(),
         run_id,
         agent,
         served_model,
@@ -191,11 +194,13 @@ async fn stream_path(
 /// Translate a CanonicalChunk stream into SSE Events, fanning tokens and
 /// computing final cost. Produces `Event::default().data("[DONE]")` at the end.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::ptr_arg)]
 fn build_forward_stream(
     upstream: BoxStream<'static, Result<CanonicalChunk, ProviderError>>,
     pg: sqlx::PgPool,
     redis: ConnectionManager,
     llm: std::sync::Arc<crate::llm::LlmContext>,
+    runs_dir: std::sync::Arc<std::path::PathBuf>,
     run_id: Option<Uuid>,
     agent: Option<String>,
     served_model: String,
@@ -207,6 +212,7 @@ fn build_forward_stream(
         redis: ConnectionManager,
         pg: sqlx::PgPool,
         llm: std::sync::Arc<crate::llm::LlmContext>,
+        runs_dir: std::sync::Arc<std::path::PathBuf>,
         run_id: Option<Uuid>,
         agent: Option<String>,
         served_model: String,
@@ -220,6 +226,7 @@ fn build_forward_stream(
         redis,
         pg,
         llm,
+        runs_dir,
         run_id,
         agent,
         served_model,
@@ -286,6 +293,7 @@ fn build_forward_stream(
                         &s.pg,
                         &mut s.redis,
                         &s.llm.prices,
+                        s.runs_dir.as_ref(),
                         s.run_id,
                         s.agent.as_deref(),
                         &s.served_model,

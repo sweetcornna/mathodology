@@ -214,7 +214,11 @@ mod tests {
     }
 
     fn router_with(providers: Vec<Arc<dyn ProviderAdapter>>) -> Router {
-        Router::new(providers, "gpt-5.5".to_string(), vec!["gpt-5.4".to_string()])
+        Router::new(
+            providers,
+            "gpt-5.5".to_string(),
+            vec!["gpt-5.4".to_string()],
+        )
     }
 
     #[test]

@@ -62,10 +62,7 @@ impl OpenAICompatAdapter {
                     obj.insert("name".into(), json!(n));
                 }
                 if m.cache_breakpoint {
-                    obj.insert(
-                        "cache_control".into(),
-                        json!({ "type": "ephemeral" }),
-                    );
+                    obj.insert("cache_control".into(), json!({ "type": "ephemeral" }));
                 }
                 Value::Object(obj)
             })
@@ -131,7 +128,8 @@ impl ProviderAdapter for OpenAICompatAdapter {
         // empty-string convention used by the Ollama-local case AND by
         // dead-key providers loaded from a missing env var). The Ollama
         // base URL exception keeps it functional offline.
-        !self.api_key.is_empty() || self.base_url.contains("127.0.0.1")
+        !self.api_key.is_empty()
+            || self.base_url.contains("127.0.0.1")
             || self.base_url.contains("localhost")
     }
 

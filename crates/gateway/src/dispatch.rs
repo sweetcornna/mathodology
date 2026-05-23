@@ -60,10 +60,7 @@ pub fn cancel_key(run_id: &Uuid) -> String {
 /// SET mm:cancel:<run_id> = "1" with TTL, signalling the worker to halt
 /// the pipeline at its next stage boundary. Returns `true` if newly set,
 /// `false` if it was already set (idempotent).
-pub async fn signal_cancel(
-    redis: &mut ConnectionManager,
-    run_id: &Uuid,
-) -> Result<bool, AppError> {
+pub async fn signal_cancel(redis: &mut ConnectionManager, run_id: &Uuid) -> Result<bool, AppError> {
     let key = cancel_key(run_id);
     // SET key "1" EX <ttl> NX so a second click doesn't reset the TTL.
     let was_set: Option<String> = redis::cmd("SET")

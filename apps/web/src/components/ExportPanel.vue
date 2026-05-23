@@ -13,6 +13,7 @@ import T from "./T.vue";
 import { useI18n } from "@/composables/useI18n";
 import {
   exportPaper,
+  downloadSubmissionBundle,
   type ExportFormat,
   type ExportTemplate,
   type ExportError,
@@ -159,6 +160,28 @@ async function onExport(spec: FormatSpec) {
     busy.value = { ...busy.value, [spec.id]: false };
   }
 }
+
+// Submission-bundle button has its own loading flag separate from per-
+// format ones so a long bundle render doesn't grey-out the per-format
+// buttons (a CUMCM bundle does two tectonic compiles + a pandoc pass,
+// expect ~30-90s on a warm cache).
+const bundleBusy = ref(false);
+async function onDownloadBundle() {
+  if (bundleBusy.value || !props.paperReady) return;
+  lastError.value = null;
+  bundleBusy.value = true;
+  try {
+    await downloadSubmissionBundle({
+      runId: props.runId,
+      template: template.value,
+    });
+  } catch (err) {
+    console.error("[ExportPanel] submission bundle failed", err);
+    lastError.value = messageForError(err);
+  } finally {
+    bundleBusy.value = false;
+  }
+}
 </script>
 
 <template>
@@ -220,6 +243,44 @@ async function onExport(spec: FormatSpec) {
         </div>
       </div>
 
+      <div class="field bundle-field">
+        <label>
+          <T en="Competition Submission Bundle" zh="竞赛提交压缩包" />
+        </label>
+        <button
+          type="button"
+          class="btn hi bundle-btn"
+          :disabled="!paperReady || bundleBusy || anyBusy"
+          :title="
+            !paperReady
+              ? i18n.t('Paper not ready', '论文未就绪')
+              : i18n.t(
+                  'Download competition-ready ZIP (paper + cover letter + supporting materials + MD5)',
+                  '下载竞赛级提交压缩包（论文 + 承诺书 + 支撑材料 + MD5）',
+                )
+          "
+          @click="onDownloadBundle"
+        >
+          <template v-if="bundleBusy">
+            <span class="spinner" aria-hidden="true">○</span>
+            <T en="…packaging" zh="打包中…" />
+          </template>
+          <template v-else>
+            <span class="fmt-icon mono" aria-hidden="true">ZIP</span>
+            <T
+              en="Submission Bundle (.zip)"
+              zh="提交压缩包 (.zip)"
+            />
+          </template>
+        </button>
+        <p class="bundle-hint">
+          <T
+            en="One-click pack: paper PDF + (per template) cover letter / supporting materials / AI-use report / MD5 manifest. Layout matches the upload spec for the selected competition."
+            zh="一键打包：论文 PDF + 按所选竞赛附带承诺书 / 支撑材料 / AI 使用报告 / MD5 校验码,目录结构与官方上传要求一致。"
+          />
+        </p>
+      </div>
+
       <div
         v-if="lastError"
         class="export-error"
@@ -275,6 +336,23 @@ async function onExport(spec: FormatSpec) {
   line-height: 1.5;
   color: #6B1F0C;
   word-break: break-word;
+}
+
+.bundle-field {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+.bundle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.bundle-hint {
+  margin: 8px 0 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
 }
 
 @media (max-width: 560px) {

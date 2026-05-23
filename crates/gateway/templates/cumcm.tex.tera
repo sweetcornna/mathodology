@@ -7,21 +7,17 @@
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{graphicx}
 \graphicspath{ {{"{"}}{{ graphics_root }}{{"}"}} }
-% Pandoc-emitted macros that must exist in preamble
-{% raw %}\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
-\providecommand{\passthrough}[1]{#1}{% endraw %}
-
 \usepackage{booktabs}
 \usepackage{longtable}
 \usepackage{array}
 \usepackage{calc}
-{% raw %}
-% Pandoc longtable compatibility (its emitted TeX uses these):
+% Pandoc-emitted macros that must exist in preamble. Consolidated into
+% one block to drop the historical duplicate \providecommand{\tightlist}
+% that landed across two separate {% raw %} sections.
+{% raw %}\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\providecommand{\passthrough}[1]{#1}
 \providecommand{\real}[1]{#1}
-\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
-\newcounter{none}
-{% endraw %}
-\usepackage{array}
+\newcounter{none}{% endraw %}
 \usepackage{enumitem}
 \usepackage{float}
 \usepackage{hyperref}
@@ -34,7 +30,7 @@
   linkcolor=black,
   urlcolor=blue,
   citecolor=black,
-  pdftitle={ {{ title | latex_escape }} }
+  pdftitle={ {{ pdf_title | latex_escape }} }
 }
 
 \pagestyle{fancy}
@@ -50,6 +46,14 @@
 \captionsetup{font=small,labelfont=bf}
 
 \begin{document}
+
+% =============== 承诺书 + 编号专用页（仅打印版） ===============
+% Submission bundle (template=cumcm, variant="printed") injects the 承诺书
+% and 编号专用页 as the first two pages here. The anonymous variant leaves
+% `cover_letter_section` empty so the PDF starts directly at the 封面 —
+% mandatory because the electronic upload to cumcm.cnki.net must NOT
+% contain identifying or evaluation-numbering pages.
+{% if cover_letter_section %}{{ cover_letter_section | safe }}{% endif %}
 
 % =============== 封面 ===============
 \begin{titlepage}

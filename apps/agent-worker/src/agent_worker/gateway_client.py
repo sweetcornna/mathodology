@@ -65,6 +65,40 @@ class GatewayClient:
         resp.raise_for_status()
         return resp.content
 
+    async def export_submission(
+        self,
+        *,
+        run_id: UUID,
+        template: str | None = None,
+        compile_timeout_s: float = 600.0,
+    ) -> bytes:
+        """Fetch the competition-specific submission bundle as a ZIP.
+
+        Hits GET /runs/<id>/submission?template=<t>. The gateway:
+          * renders the main paper PDF (with appropriate cover letter /
+            AI-use report per the chosen competition),
+          * for CUMCM, also renders an anonymous-variant PDF + the
+            支撑材料.zip sub-archive,
+          * packs everything into a single ZIP whose layout matches the
+            target competition's upload spec.
+
+        Returns the raw ZIP bytes. Cumcm/Huashu rendering does two
+        tectonic compiles + a pandoc docx pass, so the timeout is
+        deliberately generous.
+        """
+        url = f"{self._base}/runs/{run_id}/submission"
+        params: dict[str, str] = {}
+        if template:
+            params["template"] = template
+        resp = await self._client.get(
+            url,
+            headers=self._headers,
+            params=params or None,
+            timeout=httpx.Timeout(compile_timeout_s, connect=5.0, read=compile_timeout_s),
+        )
+        resp.raise_for_status()
+        return resp.content
+
     def _build_headers(self, run_id: UUID, agent: str) -> dict[str, str]:
         return {
             **self._headers,

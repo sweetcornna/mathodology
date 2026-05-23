@@ -5,6 +5,9 @@
 //! Postgres NUMERIC (same trick as M2's GET /runs/:id) so we don't need the
 //! bigdecimal sqlx feature.
 
+use std::io::Write;
+use std::path::Path;
+
 use chrono::Utc;
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
@@ -46,6 +49,7 @@ pub async fn record_completion_cost(
     pg: &sqlx::PgPool,
     redis: &mut ConnectionManager,
     prices: &PriceTable,
+    runs_dir: &Path,
     run_id: Option<Uuid>,
     agent: Option<&str>,
     model: &str,
@@ -109,8 +113,7 @@ pub async fn record_completion_cost(
         // delta is fine (no-op net) and we still call it so the key
         // exists eagerly for the run.
         let cost_redis_key = cost_key(&rid);
-        let _: redis::RedisResult<f64> =
-            redis.incr(cost_redis_key, delta).await;
+        let _: redis::RedisResult<f64> = redis.incr(cost_redis_key, delta).await;
 
         // XADD kind=cost event to the run stream. Seq from shared counter.
         let seq = next_seq(redis, &rid).await?;
@@ -138,6 +141,56 @@ pub async fn record_completion_cost(
                 &[("payload", payload_str.as_str())],
             )
             .await?;
+
+        // Mirror to <runs_dir>/<run_id>/events.jsonl so the forensic log
+        // (and the submission-bundle AI Use Report aggregator) sees every
+        // cost event. The worker's EventEmitter only persists events it
+        // emits itself; cost events are produced *here*, server-side,
+        // and the worker never sees them. Without this, the on-disk
+        // jsonl is missing every LLM call — verified across 44 real runs
+        // pre-fix (all had 0 cost events on disk despite hundreds of
+        // calls in the Redis stream).
+        //
+        // Best-effort: failures (run dir not yet created, fs full, etc.)
+        // log + continue. The Redis stream remains the authoritative
+        // live source; this disk mirror is for forensics + submission
+        // bundle assembly only.
+        let mut jsonl_line = payload_str;
+        jsonl_line.push('\n');
+        let events_path = runs_dir.join(rid.to_string()).join("events.jsonl");
+        let _ = tokio::task::spawn_blocking(move || {
+            // O_APPEND + single write() under PIPE_BUF (4 KiB) is
+            // atomic against concurrent writers on POSIX — matches the
+            // worker's EventEmitter contract.
+            match std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&events_path)
+            {
+                Ok(mut f) => {
+                    if let Err(e) = f.write_all(jsonl_line.as_bytes()) {
+                        tracing::warn!(
+                            error = %e,
+                            path = %events_path.display(),
+                            "cost event events.jsonl append failed"
+                        );
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    // Run dir doesn't exist yet (orphan LLM call before
+                    // run row created) — silent skip, this branch is
+                    // already gated on run_id presence above.
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        path = %events_path.display(),
+                        "cost event events.jsonl open failed"
+                    );
+                }
+            }
+        })
+        .await;
     }
 
     Ok(delta)

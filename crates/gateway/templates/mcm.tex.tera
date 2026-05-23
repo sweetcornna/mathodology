@@ -14,21 +14,19 @@
 \usepackage[UTF8,fontset=fandol,heading=false]{ctex}
 \usepackage{graphicx}
 \graphicspath{ {{"{"}}{{ graphics_root }}{{"}"}} }
-% Pandoc-emitted macros that must exist in preamble
-{% raw %}\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
-\providecommand{\passthrough}[1]{#1}{% endraw %}
-
 \usepackage{booktabs}
 \usepackage{longtable}
 \usepackage{array}
 \usepackage{calc}
-{% raw %}
-% Pandoc longtable compatibility (its emitted TeX uses these):
+% Pandoc-emitted macros that must exist in preamble. \providecommand
+% is a no-op when the macro is already defined, so duplicating one of
+% these between sections is harmless — but the old layout split them
+% across two {% raw %} blocks and the second instance silently
+% re-declared \tightlist. Consolidated to a single block.
+{% raw %}\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\providecommand{\passthrough}[1]{#1}
 \providecommand{\real}[1]{#1}
-\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
-\newcounter{none}
-{% endraw %}
-\usepackage{array}
+\newcounter{none}{% endraw %}
 \usepackage{enumitem}
 \usepackage{float}
 \usepackage{hyperref}
@@ -42,7 +40,7 @@
   linkcolor=black,
   urlcolor=blue,
   citecolor=black,
-  pdftitle={ {{ title | latex_escape }} }
+  pdftitle={ {{ pdf_title | latex_escape }} }
 }
 
 \pagestyle{fancy}
@@ -104,5 +102,13 @@
 {% endfor %}
 \end{thebibliography}
 {% endif %}
+
+% =============== Report on Use of AI (submission bundle only) ===============
+% Per COMAP 2026 Contest_AI_Policy: required if AI tools were used. The
+% report sits AFTER the 25-page solution and is NOT counted toward the
+% page limit. Submission bundle pre-renders the section body from
+% events.jsonl; regular /export/pdf leaves it empty so the standalone
+% paper.pdf stays at the 25-page budget.
+{% if ai_use_report_section %}{{ ai_use_report_section | safe }}{% endif %}
 
 \end{document}
