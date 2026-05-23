@@ -7,21 +7,17 @@
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{graphicx}
 \graphicspath{ {{"{"}}{{ graphics_root }}{{"}"}} }
-% Pandoc-emitted macros that must exist in preamble
-{% raw %}\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
-\providecommand{\passthrough}[1]{#1}{% endraw %}
-
 \usepackage{booktabs}
 \usepackage{longtable}
 \usepackage{array}
 \usepackage{calc}
-{% raw %}
-% Pandoc longtable compatibility (its emitted TeX uses these):
+% Pandoc-emitted macros that must exist in preamble. Consolidated into
+% one block to drop the historical duplicate \providecommand{\tightlist}
+% that landed across two separate {% raw %} sections.
+{% raw %}\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\providecommand{\passthrough}[1]{#1}
 \providecommand{\real}[1]{#1}
-\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
-\newcounter{none}
-{% endraw %}
-\usepackage{array}
+\newcounter{none}{% endraw %}
 \usepackage{enumitem}
 \usepackage{float}
 \usepackage{hyperref}

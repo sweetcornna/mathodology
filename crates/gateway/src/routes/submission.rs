@@ -38,7 +38,7 @@
 //!   └── README.txt          # 赛氪 saikr.com upload instructions
 //!   ```
 //!
-//! All bundles are built fully in-memory (Vec<u8>) because each component
+//! All bundles are built fully in-memory (`Vec<u8>`) because each component
 //! has independent retry semantics and we want a single atomic body to
 //! hand back to axum. The 100 MB hard cap avoids buffering the response
 //! body twice (once here, once in axum), and is well below any of the

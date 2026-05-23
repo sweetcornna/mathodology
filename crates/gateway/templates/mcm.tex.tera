@@ -14,21 +14,19 @@
 \usepackage[UTF8,fontset=fandol,heading=false]{ctex}
 \usepackage{graphicx}
 \graphicspath{ {{"{"}}{{ graphics_root }}{{"}"}} }
-% Pandoc-emitted macros that must exist in preamble
-{% raw %}\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
-\providecommand{\passthrough}[1]{#1}{% endraw %}
-
 \usepackage{booktabs}
 \usepackage{longtable}
 \usepackage{array}
 \usepackage{calc}
-{% raw %}
-% Pandoc longtable compatibility (its emitted TeX uses these):
+% Pandoc-emitted macros that must exist in preamble. \providecommand
+% is a no-op when the macro is already defined, so duplicating one of
+% these between sections is harmless — but the old layout split them
+% across two {% raw %} blocks and the second instance silently
+% re-declared \tightlist. Consolidated to a single block.
+{% raw %}\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\providecommand{\passthrough}[1]{#1}
 \providecommand{\real}[1]{#1}
-\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
-\newcounter{none}
-{% endraw %}
-\usepackage{array}
+\newcounter{none}{% endraw %}
 \usepackage{enumitem}
 \usepackage{float}
 \usepackage{hyperref}
