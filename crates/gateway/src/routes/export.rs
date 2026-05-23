@@ -320,6 +320,12 @@ pub(crate) struct RenderExtras<'a> {
     /// submission-bundle MCM variant sets this; standalone exports leave it
     /// empty so they remain inside the 25-page COMAP budget.
     pub ai_use_report_section: &'a str,
+    /// Override the PDF metadata title (`\hypersetup{pdftitle=…}`). When
+    /// `Some`, the templates render this string instead of `meta.title`.
+    /// Used by the CUMCM submission bundle's anonymous variant to ensure
+    /// the file's PDF metadata can't leak a team-identifying title
+    /// (e.g. teams sometimes embed their control number in `meta.title`).
+    pub pdf_title_override: Option<&'a str>,
 }
 
 pub(crate) async fn render_tex(
@@ -390,6 +396,13 @@ pub(crate) async fn render_tex(
     // no-op value for the standalone export path.
     ctx.insert("cover_letter_section", extras.cover_letter_section);
     ctx.insert("ai_use_report_section", extras.ai_use_report_section);
+    // `pdf_title`: defaults to `meta.title`, overridden by the bundle's
+    // anonymous-variant path. Templates use `pdf_title` (not `title`)
+    // inside `\hypersetup{pdftitle=…}`.
+    ctx.insert(
+        "pdf_title",
+        extras.pdf_title_override.unwrap_or(&meta.title),
+    );
 
     let rendered = tera()
         .render(template.file(), &ctx)
@@ -987,6 +1000,7 @@ mod tests {
         // these (as empty strings) too.
         ctx.insert("cover_letter_section", "");
         ctx.insert("ai_use_report_section", "");
+        ctx.insert("pdf_title", &meta.title);
 
         tera().render(template.file(), &ctx).unwrap_or_else(|e| {
             // Walk the source chain so the panic shows the *underlying*

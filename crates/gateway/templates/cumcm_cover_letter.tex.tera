@@ -15,7 +15,7 @@
 \thispagestyle{empty}
 
 \begin{center}
-{\Large\bfseries 2025 高教社杯全国大学生数学建模竞赛}\\[0.4em]
+{\Large\bfseries {{ year | latex_escape }} 高教社杯全国大学生数学建模竞赛}\\[0.4em]
 {\Large\bfseries 承\quad 诺\quad 书}
 \end{center}
 
@@ -78,9 +78,13 @@
 \newpage
 
 \thispagestyle{empty}
+% Trailing \newpage at end-of-fragment is deliberately omitted — the
+% calling template enters \begin{titlepage} immediately, which forces a
+% page break of its own. A second explicit break here produced a blank
+% page between the 编号专用页 and the 封面.
 
 \begin{center}
-{\Large\bfseries 2025 高教社杯全国大学生数学建模竞赛}\\[0.4em]
+{\Large\bfseries {{ year | latex_escape }} 高教社杯全国大学生数学建模竞赛}\\[0.4em]
 {\Large\bfseries 编号专用页}
 \end{center}
 
@@ -115,5 +119,3 @@
 \hline
 \end{tabular}
 \end{center}
-
-\newpage

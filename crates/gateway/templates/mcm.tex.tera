@@ -42,7 +42,7 @@
   linkcolor=black,
   urlcolor=blue,
   citecolor=black,
-  pdftitle={ {{ title | latex_escape }} }
+  pdftitle={ {{ pdf_title | latex_escape }} }
 }
 
 \pagestyle{fancy}

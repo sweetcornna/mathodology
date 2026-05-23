@@ -51,7 +51,7 @@ use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::Response;
-use chrono::Utc;
+use chrono::{Datelike, Utc};
 use md5::{Digest, Md5};
 use serde::Deserialize;
 use uuid::Uuid;
@@ -145,6 +145,7 @@ async fn build_mcm_bundle(
     let extras = RenderExtras {
         cover_letter_section: "",
         ai_use_report_section: &ai_section,
+        pdf_title_override: None,
     };
     let tex = render_tex(meta, TemplateKind::Mcm, run_root, extras).await?;
     let pdf = compile_pdf(&tex).await?;
@@ -190,21 +191,23 @@ async fn build_cumcm_bundle(
     run_root: &StdPath,
     _run_id: Uuid,
 ) -> Result<Vec<u8>, AppError> {
-    let cover_letter = render_fragment("cumcm_cover_letter.tex.tera")?;
+    let year = Utc::now().year();
+    let cover_letter = render_fragment("cumcm_cover_letter.tex.tera", year)?;
 
     // Anonymous variant — what gets uploaded to cumcm.cnki.net. No cover
     // letter, no team_id (render_tex inserts empty strings by default),
-    // so the running header reads `参赛编号：` with a blank suffix and
-    // no identifying info leaks. Matches the rule:
+    // PDF metadata title overridden to a generic string so even
+    // `meta.title` (which teams sometimes set to "Team 12345 — Model X")
+    // doesn't leak into the PDF properties. Matches the rule:
     //   "在参赛论文电子版及支撑材料压缩包内任何位置（含文件夹名、
     //    文件名和文档属性等）均不能包含与参赛队有关的信息".
-    let anon_tex = render_tex(
-        meta,
-        TemplateKind::Cumcm,
-        run_root,
-        RenderExtras::default(),
-    )
-    .await?;
+    const ANON_PDF_TITLE: &str = "CUMCM Submission (anonymous)";
+    let anon_extras = RenderExtras {
+        cover_letter_section: "",
+        ai_use_report_section: "",
+        pdf_title_override: Some(ANON_PDF_TITLE),
+    };
+    let anon_tex = render_tex(meta, TemplateKind::Cumcm, run_root, anon_extras).await?;
     let anon_pdf = compile_pdf(&anon_tex).await?;
 
     // Printed variant — same body, but cover letter (承诺书 + 编号专用页)
@@ -213,6 +216,7 @@ async fn build_cumcm_bundle(
     let extras = RenderExtras {
         cover_letter_section: &cover_letter,
         ai_use_report_section: "",
+        pdf_title_override: None,
     };
     let print_tex = render_tex(meta, TemplateKind::Cumcm, run_root, extras).await?;
     let print_pdf = compile_pdf(&print_tex).await?;
@@ -235,10 +239,10 @@ async fn build_cumcm_bundle(
     let pdf_md5 = md5_hex(&anon_pdf);
     let support_md5 = md5_hex(&support_zip);
     let md5_txt = format!(
-        "# 2025/2026 高教社杯全国大学生数学建模竞赛 — 提交文件 MD5 校验码\n\
+        "# {year} 高教社杯全国大学生数学建模竞赛 — 提交文件 MD5 校验码\n\
          #\n\
          # 在客户端按提示分别上传以下两个文件的 MD5 校验码；上传文件后系统\n\
-         # 会重新计算并比对。\n\
+         # 会重新计算并比对。重命名为 <队号>.pdf / <队号>.zip 不会改变 MD5。\n\
          \n\
          论文-匿名版.pdf    {pdf_md5}\n\
          支撑材料.zip       {support_md5}\n",
@@ -290,10 +294,12 @@ async fn build_huashu_bundle(
     // 华数杯 expects 承诺书 on the FIRST page of the uploaded paper, with
     // student signatures. Unlike CUMCM there's no separate anonymous
     // variant — the commitment letter is part of the submitted paper.
-    let cover_letter = render_fragment("huashu_cover_letter.tex.tera")?;
+    let year = Utc::now().year();
+    let cover_letter = render_fragment("huashu_cover_letter.tex.tera", year)?;
     let extras = RenderExtras {
         cover_letter_section: &cover_letter,
         ai_use_report_section: "",
+        pdf_title_override: None,
     };
     let tex = render_tex(meta, TemplateKind::Huashu, run_root, extras).await?;
     let pdf = compile_pdf(&tex).await?;
@@ -336,18 +342,22 @@ async fn build_support_zip(run_root: &StdPath) -> Result<Vec<u8>, AppError> {
             .compression_method(CompressionMethod::Deflated)
             .unix_permissions(0o644);
 
-        // 1. notebook.ipynb — the Coder's executed Jupyter notebook
+        // 1. notebook.ipynb — the Coder's executed Jupyter notebook,
+        //    with author / kernel-display-name metadata scrubbed so a
+        //    hand-edited notebook with team info baked in doesn't leak
+        //    into the anonymous support archive.
         let notebook_path = run_root.join("notebook.ipynb");
         if let Ok(nb) = tokio::fs::read(&notebook_path).await {
+            let scrubbed = scrub_notebook_metadata(&nb);
             zw.start_file("notebook.ipynb", opts).map_err(zip_err)?;
-            zw.write_all(&nb).map_err(zip_err)?;
+            zw.write_all(&scrubbed).map_err(zip_err)?;
 
             // 2. code/source.py — extracted code cells concatenated, so a
             //    reviewer who doesn't have Jupyter installed can still
             //    read the program logic. CUMCM specifically requires
             //    "可运行的源程序代码" — keeping a flat .py beside the
             //    notebook makes that obvious without `jupyter nbconvert`.
-            if let Some(py) = extract_python_from_notebook(&nb) {
+            if let Some(py) = extract_python_from_notebook(&scrubbed) {
                 zw.start_file("code/source.py", opts).map_err(zip_err)?;
                 zw.write_all(py.as_bytes()).map_err(zip_err)?;
             }
@@ -563,12 +573,14 @@ fn infer_provider(model: &str) -> &'static str {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn render_fragment(name: &str) -> Result<String, AppError> {
-    // Cover-letter fragments have no Tera variables today, but rendering
-    // them through Tera (rather than `include_str!`) keeps the path open
-    // for later: if we ever decide to pre-fill team_id / school / etc.,
-    // we just pass them in the context and the call site stays the same.
-    let ctx = tera::Context::new();
+fn render_fragment(name: &str, year: i32) -> Result<String, AppError> {
+    // Cover letter fragments take only the current year — passing it via
+    // Tera (rather than hardcoding `2025`) keeps the rendered PDF
+    // year-accurate without a code change every September. CUMCM is held
+    // in Sept–Nov and 华数杯 in Aug, so wall-clock year is the
+    // correct default.
+    let mut ctx = tera::Context::new();
+    ctx.insert("year", &year);
     tera()
         .render(name, &ctx)
         .map_err(|e| AppError::Internal(format!("render {name}: {e}")))
@@ -589,17 +601,30 @@ fn md5_hex(bytes: &[u8]) -> String {
 /// Jupyter notebook JSON and concatenate them into a single .py blob. We
 /// don't fail the bundle on malformed notebooks — the .ipynb itself is
 /// always included alongside.
+///
+/// The first line is a shebang + utf-8 coding cookie so the file is
+/// directly executable on POSIX and signals encoding to Windows
+/// reviewers / pdf-to-text grep workflows.
 fn extract_python_from_notebook(nb_bytes: &[u8]) -> Option<String> {
     let v: serde_json::Value = serde_json::from_slice(nb_bytes).ok()?;
     let cells = v.get("cells")?.as_array()?;
     let mut out = String::new();
+    out.push_str("#!/usr/bin/env python3\n");
+    out.push_str("# -*- coding: utf-8 -*-\n");
     out.push_str("# Source code extracted from notebook.ipynb\n");
     out.push_str("# Generated by mathodology submission bundle.\n\n");
     for (idx, cell) in cells.iter().enumerate() {
         if cell.get("cell_type").and_then(|t| t.as_str()) != Some("code") {
             continue;
         }
-        let source = cell.get("source")?;
+        // Programmatically-built notebooks sometimes omit `source` entirely
+        // (`nbformat.v4.new_code_cell()` with no body); skip the cell
+        // rather than aborting the whole extraction — losing one cell's
+        // listing is better than losing the entire source.py.
+        let source = match cell.get("source") {
+            Some(s) => s,
+            None => continue,
+        };
         // `source` is either a string or an array of strings (per nbformat 4)
         let text = match source {
             serde_json::Value::String(s) => s.clone(),
@@ -621,6 +646,56 @@ fn extract_python_from_notebook(nb_bytes: &[u8]) -> Option<String> {
         out.push('\n');
     }
     Some(out)
+}
+
+/// Remove identifying metadata from a Jupyter notebook before bundling.
+///
+/// CUMCM's anonymity rule covers "文档属性" (document properties), and
+/// `nbformat`'s top-level `metadata` field is a documented carrier for
+/// author / kernel / institution names. Per-cell metadata is also
+/// commonly used by JupyterLab plugins for the same purpose.
+///
+/// On any parse failure we return the input unchanged — losing the scrub
+/// is preferable to losing the notebook.
+fn scrub_notebook_metadata(nb_bytes: &[u8]) -> Vec<u8> {
+    let mut v: serde_json::Value = match serde_json::from_slice(nb_bytes) {
+        Ok(v) => v,
+        Err(_) => return nb_bytes.to_vec(),
+    };
+    // Scrub top-level metadata fields that commonly carry author info.
+    // We leave kernelspec / language_info alone (they're needed for
+    // re-execution), but drop the human-name display name in favour of
+    // the language name only.
+    if let Some(meta) = v.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+        for key in ["authors", "author", "title", "institution", "affiliation"] {
+            meta.remove(key);
+        }
+        if let Some(ks) = meta.get_mut("kernelspec").and_then(|k| k.as_object_mut()) {
+            // "Python 3 (ipykernel)" -> "Python 3"; harmless but tidy.
+            if let Some(name) = ks.get("name").and_then(|n| n.as_str()) {
+                let pinned = name.to_string();
+                ks.insert(
+                    "display_name".into(),
+                    serde_json::Value::String(pinned.clone()),
+                );
+            }
+        }
+    }
+    // Per-cell metadata authors (rare but real for hand-edited
+    // notebooks).
+    if let Some(cells) = v.get_mut("cells").and_then(|c| c.as_array_mut()) {
+        for cell in cells.iter_mut() {
+            if let Some(meta) = cell.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+                for key in ["authors", "author", "tags"] {
+                    // `tags` removed because some labs tag cells with team
+                    // identifiers ("team-12345-final"); judges don't need
+                    // them.
+                    meta.remove(key);
+                }
+            }
+        }
+    }
+    serde_json::to_vec(&v).unwrap_or_else(|_| nb_bytes.to_vec())
 }
 
 /// Accepts both `ZipError` (start_file/finish) and `io::Error`
@@ -689,8 +764,11 @@ Before submitting:
      advisor name, or institution name. The header shows only
      "Team #  , Page X of Y" (intentionally blank — leave it that way).
 
-  4. Upload via https://forms.comap.org/241335097294056 by the official
-     deadline (typically 9:00 PM EST on the final contest day).
+  4. Upload from the contest dashboard. The submission form URL changes
+     each contest year; navigate to it from
+     https://www.comap.com/contests/mcm-icm by following the "Submit your
+     paper" link for the current year. The deadline is typically 9:00 PM
+     EST on the final contest day.
 
 Generated by mathodology submission-bundle endpoint.
 "#;
@@ -709,24 +787,32 @@ const README_CUMCM: &str = r#"CUMCM 全国大学生数学建模竞赛 — 提交
   MD5.txt                 上传时所需的 MD5 校验码。
   README.txt              本文件。
 
-提交流程（依据 mcm.edu.cn 2025/2026 官方规则）：
+提交流程（依据 mcm.edu.cn 官方规则）：
 
   1. 登录 https://cumcm.cnki.net 竞赛管理系统。
 
-  2. 在客户端中按提示分别上传：
-       a. "参赛论文"  -> 论文-匿名版.pdf
-       b. "支撑材料"  -> 支撑材料.zip
-     如客户端要求填写 MD5 校验码，请参考 MD5.txt 中的对应值。
+  2. 将下列文件重命名为本队 12 位参赛队号后再上传：
+       论文-匿名版.pdf   →  <12 位队号>.pdf
+       支撑材料.zip      →  <12 位队号>.zip
+     cnki 客户端会校验文件名与队号一致；不重命名将上传失败。
 
-  3. 打印 论文-打印版-签字用.pdf：
+  3. 在客户端中按提示分别上传：
+       a. "参赛论文"   -> <12 位队号>.pdf
+       b. "支撑材料"   -> <12 位队号>.zip
+     如客户端要求填写 MD5 校验码，请参考 MD5.txt 中的对应值
+     （重命名不会改变文件内容，MD5 仍然有效）。
+
+  4. 打印 论文-打印版-签字用.pdf：
        第 1 页为承诺书 —— 三位队员、指导教师签字，并填写参赛队号、题号、学校。
        第 2 页为编号专用页 —— 留空，由赛区/全国组委会评阅时填写。
        第 3 页起为论文正文。
      按赛区要求装订后交本校竞赛组负责老师。
 
-  4. 关键匿名要求：参赛论文电子版及支撑材料压缩包内 任何位置（含文件夹名、
+  5. 关键匿名要求：参赛论文电子版及支撑材料压缩包内 任何位置（含文件夹名、
      文件名、文档属性）均不能包含与参赛队有关的信息。本工具生成的两个 ZIP
-     已严格匿名，请勿在提交前手工添加 README 或重命名队员信息相关文件。
+     已严格匿名（论文 PDF 的标题元数据被改写成通用字符串，notebook 的
+     authors 元数据已剥离），请勿在提交前手工添加 README 或重命名队员信息
+     相关文件。
 
 Generated by mathodology submission-bundle endpoint.
 "#;
@@ -743,7 +829,8 @@ const README_HUASHU: &str = r#""华数杯"全国大学生数学建模竞赛 — 
 
 提交流程（依据 saikr.com 官方赛事页）：
 
-  1. 由队长用电脑登录 https://www.saikr.com/vse/chinamcm/<年份> 提交。
+  1. 由队长用电脑登录赛氪官网 https://www.saikr.com ，在搜索框输入
+     "华数杯"，进入本届赛事页（年度赛事页路径每年不同，请从官网导航）。
 
   2. 打印 论文.pdf 第一页（承诺书），三位队员签字，扫描或拍照插回 PDF
      之前；或按赛事页指示，将签字版作为附件一并上传。
@@ -754,7 +841,7 @@ const README_HUASHU: &str = r#""华数杯"全国大学生数学建模竞赛 — 
   4. 注意事项：
        * 论文将通过查重系统比对；
        * 获奖论文的源代码将被运行检查，请确保 支撑材料.zip 中的代码可执行；
-       * 严禁参加各种竞赛思路交流群，违者将取消参赛资格。
+       * 请遵守竞赛规则，禁止参赛队员加入与赛题相关的思路交流群。
 
 Generated by mathodology submission-bundle endpoint.
 "#;
@@ -815,7 +902,8 @@ mod tests {
             "cumcm_cover_letter.tex.tera",
             "huashu_cover_letter.tex.tera",
         ] {
-            let out = render_fragment(name).unwrap_or_else(|e| panic!("render {name}: {e:?}"));
+            let out = render_fragment(name, 2026)
+                .unwrap_or_else(|e| panic!("render {name}: {e:?}"));
             assert!(out.contains("承诺书"), "{name} renders the 承诺书 header");
         }
     }
@@ -893,6 +981,87 @@ mod tests {
     fn extract_python_returns_none_on_garbage() {
         assert!(extract_python_from_notebook(b"not json").is_none());
         assert!(extract_python_from_notebook(b"{}").is_none());
+    }
+
+    #[test]
+    fn extract_python_skips_cells_missing_source() {
+        // Regression for B3: a code cell missing `source` (legal per
+        // nbformat, produced e.g. by `new_code_cell()` with no body)
+        // used to early-return None and drop the ENTIRE source.py.
+        // After fix: skip just that cell, keep the rest.
+        let nb = serde_json::json!({
+            "cells": [
+                {"cell_type": "code", "source": "ok = 1\n"},
+                {"cell_type": "code"},  // no `source` at all
+                {"cell_type": "code", "source": "ok = 2\n"},
+            ]
+        });
+        let bytes = serde_json::to_vec(&nb).unwrap();
+        let out = extract_python_from_notebook(&bytes).expect("must NOT be None");
+        assert!(out.contains("ok = 1"));
+        assert!(out.contains("ok = 2"));
+        // The shebang + coding-cookie header is present too.
+        assert!(out.starts_with("#!/usr/bin/env python3"));
+    }
+
+    #[test]
+    fn scrub_notebook_metadata_removes_authors() {
+        let nb = serde_json::json!({
+            "metadata": {
+                "authors": [{"name": "Alice"}],
+                "author": "Bob",
+                "title": "team-12345-final",
+                "institution": "Tsinghua",
+                "kernelspec": {"name": "python3", "display_name": "Alice's local Python"},
+                "language_info": {"name": "python", "version": "3.11"},
+            },
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "source": "print(1)",
+                    "metadata": {"authors": ["Alice"], "tags": ["team-12345-final"]},
+                }
+            ]
+        });
+        let scrubbed = scrub_notebook_metadata(&serde_json::to_vec(&nb).unwrap());
+        let v: serde_json::Value = serde_json::from_slice(&scrubbed).unwrap();
+        let meta = v.get("metadata").unwrap();
+        assert!(meta.get("authors").is_none());
+        assert!(meta.get("author").is_none());
+        assert!(meta.get("title").is_none());
+        assert!(meta.get("institution").is_none());
+        // kernelspec.display_name rewritten to kernelspec.name
+        assert_eq!(
+            meta.pointer("/kernelspec/display_name").and_then(|v| v.as_str()),
+            Some("python3")
+        );
+        // language_info preserved (needed for re-execution).
+        assert_eq!(
+            meta.pointer("/language_info/name").and_then(|v| v.as_str()),
+            Some("python")
+        );
+        // Per-cell authors + tags scrubbed.
+        let cell_meta = v.pointer("/cells/0/metadata").unwrap();
+        assert!(cell_meta.get("authors").is_none());
+        assert!(cell_meta.get("tags").is_none());
+    }
+
+    #[test]
+    fn scrub_notebook_metadata_passes_garbage_through() {
+        // On unparseable input, the scrubber returns the raw bytes
+        // unchanged — losing the scrub is preferable to losing the
+        // notebook entirely.
+        let raw = b"this is not a notebook";
+        assert_eq!(scrub_notebook_metadata(raw), raw);
+    }
+
+    #[test]
+    fn render_fragment_substitutes_year() {
+        let out = render_fragment("cumcm_cover_letter.tex.tera", 2027).unwrap();
+        assert!(out.contains("2027 高教社杯"));
+        assert!(!out.contains("2025 高教社杯"));
+        let out_h = render_fragment("huashu_cover_letter.tex.tera", 2027).unwrap();
+        assert!(out_h.contains("2027 “华数杯”"));
     }
 
     #[tokio::test]

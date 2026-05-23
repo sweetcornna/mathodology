@@ -204,12 +204,81 @@ fn auth_headers() -> HeaderMap {
     h
 }
 
+/// Check whether `name` is on PATH and spawnable. We only care about
+/// spawn success — not the exit status — because some binaries (notably
+/// poppler's `pdftotext` and `pdfinfo`) reject `--version` and exit
+/// non-zero even when fully installed (they want `-v`). The previous
+/// `--version + status.success()` check silently skipped poppler-gated
+/// assertions even when poppler was installed.
 fn have_binary(name: &str) -> bool {
-    std::process::Command::new(name)
-        .arg("--version")
+    match std::process::Command::new(name).arg("-v").output() {
+        Ok(_) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => false,
+    }
+}
+
+/// Shell out to `pdftotext - -` (read PDF from stdin, write text to stdout)
+/// and return the extracted text. Panics on failure — only called from
+/// tests gated on `have_binary("pdftotext")`.
+fn pdftotext_all(pdf_bytes: &[u8]) -> String {
+    use std::io::Write as _;
+    let mut child = std::process::Command::new("pdftotext")
+        .arg("-")
+        .arg("-")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn pdftotext");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(pdf_bytes)
+        .expect("write pdf");
+    let out = child.wait_with_output().expect("wait pdftotext");
+    assert!(out.status.success(), "pdftotext failed: {:?}", out.stderr);
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+fn pdftotext_first_page(pdf_bytes: &[u8]) -> String {
+    use std::io::Write as _;
+    let mut child = std::process::Command::new("pdftotext")
+        .args(["-f", "1", "-l", "1", "-", "-"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn pdftotext");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(pdf_bytes)
+        .expect("write pdf");
+    let out = child.wait_with_output().expect("wait pdftotext");
+    assert!(out.status.success(), "pdftotext failed: {:?}", out.stderr);
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// `pdfinfo` doesn't read PDF from stdin, so we write the bytes to a
+/// temp file first.
+fn pdfinfo_title(pdf_bytes: &[u8]) -> String {
+    let tmp = tempfile::NamedTempFile::new().expect("tempfile");
+    std::fs::write(tmp.path(), pdf_bytes).expect("write tmp pdf");
+    let out = std::process::Command::new("pdfinfo")
+        .arg(tmp.path())
         .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+        .expect("spawn pdfinfo");
+    assert!(out.status.success(), "pdfinfo failed: {:?}", out.stderr);
+    let s = String::from_utf8_lossy(&out.stdout);
+    for line in s.lines() {
+        if let Some(rest) = line.strip_prefix("Title:") {
+            return rest.trim().to_string();
+        }
+    }
+    String::new()
 }
 
 // ---------------------------------------------------------------------------
@@ -399,13 +468,67 @@ async fn submission_cumcm_bundle_has_anon_print_and_md5() {
     let print = read_zip_entry(&mut archive, "论文-打印版-签字用.pdf");
     assert!(anon.starts_with(b"%PDF"));
     assert!(print.starts_with(b"%PDF"));
-    // Anonymous variant should be smaller (no 承诺书 + 编号专用页 pages).
-    assert!(
-        anon.len() < print.len(),
-        "anon ({} bytes) should be smaller than print ({} bytes) — 承诺书 + 编号专用页 add 2 pages",
-        anon.len(),
-        print.len(),
-    );
+
+    // ANONYMITY + INJECTION proof — the original size-comparison check
+    // (anon.len() < print.len()) is theatre: PDF size depends heavily on
+    // compression / font subset reuse / xref overhead, and adding two
+    // mostly-empty pages can land EITHER way. Replace with a semantic
+    // check via poppler's `pdftotext`: the printed variant's first page
+    // must contain 承诺书 text, the anonymous variant must NOT contain
+    // any 承诺书 / 编号专用页 strings anywhere.
+    if have_binary("pdftotext") {
+        let anon_text = pdftotext_all(&anon);
+        let print_first = pdftotext_first_page(&print);
+        // We probe via body-text strings that appear ONLY in the cover
+        // letter, not the paper body. Heading glyphs like "承诺书"
+        // rendered with `\Large\bfseries` under Fandol fonts often lose
+        // their ToUnicode CMap entries in poppler's text extraction, so
+        // those strings are unreliable witnesses. The two-line policy
+        // body extracts cleanly.
+        let cover_only_strings = [
+            "我们仔细阅读了《全国大学生数学建模竞赛章程》",
+            "我们郑重承诺",
+        ];
+        for needle in cover_only_strings {
+            assert!(
+                print_first.contains(needle),
+                "printed variant page 1 missing cover-letter witness {needle:?}; \
+                 first-page text was:\n{print_first}"
+            );
+            assert!(
+                !anon_text.contains(needle),
+                "anonymous variant leaks cover-letter witness {needle:?}; \
+                 leak text len = {} chars",
+                anon_text.len()
+            );
+        }
+        // The 编号专用页 reviewer-record table is similarly cover-only.
+        assert!(
+            !anon_text.contains("赛区评阅编号"),
+            "anonymous variant must not contain 赛区评阅编号"
+        );
+        // PDF metadata title must NOT carry meta.title verbatim — the
+        // anon path overrides pdftitle to a generic string. We probe
+        // via pdfinfo Title field.
+        if have_binary("pdfinfo") {
+            let anon_title = pdfinfo_title(&anon);
+            let print_title = pdfinfo_title(&print);
+            assert!(
+                !anon_title.contains("End-to-end submission bundle"),
+                "anon PDF metadata title leaks meta.title: {anon_title:?}"
+            );
+            assert!(
+                anon_title.to_ascii_lowercase().contains("anonymous"),
+                "anon PDF should advertise itself as anonymous in title; got {anon_title:?}"
+            );
+            assert!(
+                print_title.contains("End-to-end submission bundle"),
+                "print PDF should keep meta.title in metadata; got {print_title:?}"
+            );
+        }
+    } else {
+        eprintln!("skipping content-based anon/print assertions: pdftotext not on PATH");
+    }
 
     // MD5 manifest: contains both file names and 32-char hex lines.
     let md5 = String::from_utf8(read_zip_entry(&mut archive, "MD5.txt")).unwrap();

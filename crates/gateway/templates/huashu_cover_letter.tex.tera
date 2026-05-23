@@ -6,7 +6,7 @@
 \thispagestyle{empty}
 
 \begin{center}
-{\Large\bfseries “华数杯”全国大学生数学建模竞赛}\\[0.4em]
+{\Large\bfseries {{ year | latex_escape }} “华数杯”全国大学生数学建模竞赛}\\[0.4em]
 {\Large\bfseries 承\quad 诺\quad 书}
 \end{center}
 
@@ -53,5 +53,5 @@
 \vspace{1.5em}
 
 \noindent\hfill 日\quad 期：\rule{1.5cm}{0.4pt}\,年\,\rule{1cm}{0.4pt}\,月\,\rule{1cm}{0.4pt}\,日
-
-\newpage
+% Trailing \newpage deliberately omitted — calling template's
+% \begin{titlepage} forces the break.
