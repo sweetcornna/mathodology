@@ -113,8 +113,7 @@ pub async fn record_completion_cost(
         // delta is fine (no-op net) and we still call it so the key
         // exists eagerly for the run.
         let cost_redis_key = cost_key(&rid);
-        let _: redis::RedisResult<f64> =
-            redis.incr(cost_redis_key, delta).await;
+        let _: redis::RedisResult<f64> = redis.incr(cost_redis_key, delta).await;
 
         // XADD kind=cost event to the run stream. Seq from shared counter.
         let seq = next_seq(redis, &rid).await?;

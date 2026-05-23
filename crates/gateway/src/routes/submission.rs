@@ -133,7 +133,10 @@ pub async fn export_submission(
 
     let (zip_bytes, label) = match template {
         TemplateKind::Mcm => (build_mcm_bundle(&meta, &canonical, run_id).await?, "mcm"),
-        TemplateKind::Cumcm => (build_cumcm_bundle(&meta, &canonical, run_id).await?, "cumcm"),
+        TemplateKind::Cumcm => (
+            build_cumcm_bundle(&meta, &canonical, run_id).await?,
+            "cumcm",
+        ),
         TemplateKind::Huashu => (
             build_huashu_bundle(&meta, &canonical, run_id).await?,
             "huashu",
@@ -268,7 +271,8 @@ async fn build_cumcm_bundle(
          支撑材料.zip       {support_md5}\n",
     );
 
-    let mut buf: Vec<u8> = Vec::with_capacity(anon_pdf.len() + print_pdf.len() + support_zip.len() + 64 * 1024);
+    let mut buf: Vec<u8> =
+        Vec::with_capacity(anon_pdf.len() + print_pdf.len() + support_zip.len() + 64 * 1024);
     {
         let mut zw = ZipWriter::new(std::io::Cursor::new(&mut buf));
         let opts = SimpleFileOptions::default()
@@ -390,7 +394,14 @@ async fn build_support_zip(run_root: &StdPath) -> Result<Vec<u8>, AppError> {
         // Both share a SupportBudget so cumulative size / file-count
         // caps are enforced across the two directories together.
         let mut budget = SupportBudget::new();
-        add_dir_to_zip(&mut zw, &run_root.join("figures"), "figures", opts, &mut budget).await?;
+        add_dir_to_zip(
+            &mut zw,
+            &run_root.join("figures"),
+            "figures",
+            opts,
+            &mut budget,
+        )
+        .await?;
         let data_dir = run_root.join("data");
         if is_existing_dir(&data_dir).await {
             add_dir_to_zip(&mut zw, &data_dir, "data", opts, &mut budget).await?;
@@ -399,8 +410,7 @@ async fn build_support_zip(run_root: &StdPath) -> Result<Vec<u8>, AppError> {
         // 5. README inside the inner zip — survives unpacking the
         //    nested archive (reviewers might extract this independently).
         zw.start_file("README.txt", opts).map_err(zip_err)?;
-        zw.write_all(README_SUPPORT.as_bytes())
-            .map_err(zip_err)?;
+        zw.write_all(README_SUPPORT.as_bytes()).map_err(zip_err)?;
 
         zw.finish().map_err(zip_err)?;
     }
@@ -628,14 +638,8 @@ async fn build_ai_use_report_section(events_path: &StdPath) -> Result<String, Ap
             // the call originated from the main pipeline or a finetune
             // chat session. Judges only care about the role; collapse
             // the finetune_ prefix so the "Used by" cell stays clean.
-            let agent = v
-                .get("agent")
-                .and_then(|a| a.as_str())
-                .unwrap_or("unknown");
-            let agent = agent
-                .strip_prefix("finetune_")
-                .unwrap_or(agent)
-                .to_string();
+            let agent = v.get("agent").and_then(|a| a.as_str()).unwrap_or("unknown");
+            let agent = agent.strip_prefix("finetune_").unwrap_or(agent).to_string();
 
             let entry = models.entry(model).or_default();
             entry.calls += 1;
@@ -1053,8 +1057,8 @@ mod tests {
             "cumcm_cover_letter.tex.tera",
             "huashu_cover_letter.tex.tera",
         ] {
-            let out = render_fragment(name, 2026)
-                .unwrap_or_else(|e| panic!("render {name}: {e:?}"));
+            let out =
+                render_fragment(name, 2026).unwrap_or_else(|e| panic!("render {name}: {e:?}"));
             assert!(out.contains("承诺书"), "{name} renders the 承诺书 header");
         }
     }
@@ -1183,7 +1187,8 @@ mod tests {
         assert!(meta.get("institution").is_none());
         // kernelspec.display_name rewritten to kernelspec.name
         assert_eq!(
-            meta.pointer("/kernelspec/display_name").and_then(|v| v.as_str()),
+            meta.pointer("/kernelspec/display_name")
+                .and_then(|v| v.as_str()),
             Some("python3")
         );
         // language_info preserved (needed for re-execution).

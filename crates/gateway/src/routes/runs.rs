@@ -153,7 +153,9 @@ pub async fn finetune_run(
     Json(req): Json<FinetuneRequest>,
 ) -> Result<(StatusCode, Json<FinetuneAccepted>), AppError> {
     if req.message.trim().is_empty() {
-        return Err(AppError::BadRequest("message must be non-empty".to_string()));
+        return Err(AppError::BadRequest(
+            "message must be non-empty".to_string(),
+        ));
     }
     // Verify the run exists. We don't require status='success' — users may
     // want to fine-tune a paper from a partially-failed run too.

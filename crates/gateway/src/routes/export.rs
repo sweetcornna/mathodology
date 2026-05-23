@@ -278,13 +278,23 @@ pub async fn export_paper(
     match fmt {
         ExportFormat::Md => unreachable!("handled above"),
         ExportFormat::Tex => {
-            let tex =
-                render_tex(&meta, template, &canonical_run_root, RenderExtras::default()).await?;
+            let tex = render_tex(
+                &meta,
+                template,
+                &canonical_run_root,
+                RenderExtras::default(),
+            )
+            .await?;
             build_binary_response(fmt, run_id, tex.into_bytes())
         }
         ExportFormat::Pdf => {
-            let tex =
-                render_tex(&meta, template, &canonical_run_root, RenderExtras::default()).await?;
+            let tex = render_tex(
+                &meta,
+                template,
+                &canonical_run_root,
+                RenderExtras::default(),
+            )
+            .await?;
             let pdf = compile_pdf(&tex).await?;
             build_binary_response(fmt, run_id, pdf)
         }
@@ -640,7 +650,10 @@ pub(crate) async fn compile_pdf(tex: &str) -> Result<Vec<u8>, AppError> {
         .map_err(|e| AppError::Internal(format!("read compiled pdf: {e}")))
 }
 
-pub(crate) async fn compile_docx(paper_md: &StdPath, run_root: &StdPath) -> Result<Vec<u8>, AppError> {
+pub(crate) async fn compile_docx(
+    paper_md: &StdPath,
+    run_root: &StdPath,
+) -> Result<Vec<u8>, AppError> {
     let tmp = tempfile::TempDir::new().map_err(|e| AppError::Internal(format!("tempdir: {e}")))?;
     let out_path = tmp.path().join("paper.docx");
 
@@ -775,7 +788,10 @@ fn latex_escape_filter(
 // Helpers shared with figures.rs (kept separate to avoid churning that file)
 // ---------------------------------------------------------------------------
 
-pub(crate) async fn resolve_within(prefix: &StdPath, requested: &StdPath) -> Result<PathBuf, AppError> {
+pub(crate) async fn resolve_within(
+    prefix: &StdPath,
+    requested: &StdPath,
+) -> Result<PathBuf, AppError> {
     let canonical_prefix = tokio::fs::canonicalize(prefix)
         .await
         .map_err(|_| AppError::NotFound)?;

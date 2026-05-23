@@ -377,10 +377,7 @@ fn assert_zip_contains(bytes: &[u8], expected: &[&str]) -> zip::ZipArchive<Curso
     archive
 }
 
-fn read_zip_entry(
-    archive: &mut zip::ZipArchive<Cursor<Vec<u8>>>,
-    name: &str,
-) -> Vec<u8> {
+fn read_zip_entry(archive: &mut zip::ZipArchive<Cursor<Vec<u8>>>, name: &str) -> Vec<u8> {
     let mut file = archive.by_name(name).expect(name);
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).expect("read");
@@ -411,7 +408,9 @@ async fn submission_mcm_bundle_has_pdf_and_readme() {
     .expect("send");
     assert_eq!(resp.status(), 200);
     assert_eq!(
-        resp.headers().get(CONTENT_TYPE).and_then(|v| v.to_str().ok()),
+        resp.headers()
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok()),
         Some("application/zip")
     );
     let cd = resp.headers().get(CONTENT_DISPOSITION).cloned();
@@ -558,7 +557,9 @@ async fn submission_cumcm_bundle_has_anon_print_and_md5() {
         .lines()
         .filter(|l| {
             let parts: Vec<&str> = l.split_whitespace().collect();
-            parts.len() >= 2 && parts[1].len() == 32 && parts[1].chars().all(|c| c.is_ascii_hexdigit())
+            parts.len() >= 2
+                && parts[1].len() == 32
+                && parts[1].chars().all(|c| c.is_ascii_hexdigit())
         })
         .count();
     assert!(
@@ -626,8 +627,7 @@ async fn submission_huashu_bundle_has_paper_and_support() {
     assert_eq!(resp.status(), 200);
 
     let bytes = resp.bytes().await.expect("body").to_vec();
-    let mut archive =
-        assert_zip_contains(&bytes, &["论文.pdf", "支撑材料.zip", "README.txt"]);
+    let mut archive = assert_zip_contains(&bytes, &["论文.pdf", "支撑材料.zip", "README.txt"]);
 
     let pdf = read_zip_entry(&mut archive, "论文.pdf");
     assert!(pdf.starts_with(b"%PDF"));
