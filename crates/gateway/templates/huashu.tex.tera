@@ -52,6 +52,12 @@
 
 \begin{document}
 
+% =============== 承诺书（仅打印版） ===============
+% Submission bundle (template=huashu) injects 承诺书 here when generating
+% the print/upload version. Saikr requires the commitment letter on the
+% first page; the body fragment leaves all team fields blank for hand-fill.
+{% if cover_letter_section %}{{ cover_letter_section | safe }}{% endif %}
+
 % =============== 封面 ===============
 \begin{titlepage}
 \begin{center}

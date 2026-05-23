@@ -90,3 +90,50 @@ export async function exportPaper(params: ExportParams): Promise<void> {
   // revoked synchronously.
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
+
+/**
+ * Fetch the competition-specific submission bundle ZIP and trigger
+ * download. The gateway packs cover-letter / 编号专用页 / 支撑材料 /
+ * MD5 manifest / AI-use report per the chosen template so the file
+ * downloaded here is the exact payload the team uploads to the contest
+ * platform (modulo COMAP's rename-to-control-number step, noted in the
+ * bundled README.txt).
+ */
+export async function downloadSubmissionBundle(params: {
+  runId: string;
+  template: ExportTemplate;
+}): Promise<void> {
+  const url =
+    `${BASE}/runs/${params.runId}/submission?template=` +
+    encodeURIComponent(params.template);
+  const headers = new Headers({ accept: "application/zip" });
+  if (TOKEN) headers.set("authorization", `Bearer ${TOKEN}`);
+
+  const res = await fetch(url, { method: "GET", headers });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    const err = new Error(
+      `HTTP ${res.status} ${res.statusText} for ${url}`,
+    ) as ExportError;
+    err.status = res.status;
+    if (text) err.detail = text.slice(0, 200);
+    throw err;
+  }
+
+  const blob = await res.blob();
+  const cd = res.headers.get("content-disposition") ?? "";
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+  const fallback = `submission-${params.template}-${params.runId.slice(0, 8)}.zip`;
+  const filename = match?.[1] ? decodeURIComponent(match[1]) : fallback;
+
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}

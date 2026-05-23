@@ -5,4 +5,5 @@ pub mod llm;
 pub mod runs;
 pub mod search;
 pub mod stats;
+pub mod submission;
 pub mod ws_run;

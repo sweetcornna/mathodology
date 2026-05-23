@@ -1,0 +1,939 @@
+//! Submission-bundle endpoint.
+//!
+//! `GET /runs/:run_id/submission?template=<mcm|icm|cumcm|huashu>` returns a
+//! ZIP archive containing every file the team needs to upload to the
+//! competition platform — including secondary artefacts each competition
+//! demands (cover-letter / 编号专用页 / 支撑材料 / MD5 manifest / AI-use
+//! report) that the standalone `/export/:format` route does not produce.
+//!
+//! Per-template ZIP layout (all UTF-8 paths inside the archive):
+//!
+//! * **MCM / ICM** (`template=mcm` or `icm`)
+//!   ```text
+//!   submission-mcm-<run>.zip
+//!   ├── <run>.pdf          # main paper + appended Report on Use of AI
+//!   ├── README.txt         # COMAP upload checklist
+//!   └── source/            # archive copy for the team's own records
+//!       ├── paper.tex
+//!       ├── paper.md
+//!       └── figures/*.png
+//!   ```
+//!
+//! * **CUMCM** (`template=cumcm`)
+//!   ```text
+//!   submission-cumcm-<run>.zip
+//!   ├── 论文-匿名版.pdf      # uploads to cumcm.cnki.net (no 承诺书/编号页)
+//!   ├── 论文-打印版-签字用.pdf # printed copy with 承诺书 + 编号专用页
+//!   ├── 论文.docx           # optional alternate format
+//!   ├── 支撑材料.zip         # nested per spec: notebook + code + figures
+//!   ├── MD5.txt             # MD5 manifest required by the upload client
+//!   └── README.txt          # CUMCM submission checklist
+//!   ```
+//!
+//! * **Huashu Cup** (`template=huashu`)
+//!   ```text
+//!   submission-huashu-<run>.zip
+//!   ├── 论文.pdf            # with 承诺书 as first page
+//!   ├── 支撑材料.zip         # notebook + code + figures
+//!   └── README.txt          # 赛氪 saikr.com upload instructions
+//!   ```
+//!
+//! All bundles are built fully in-memory (Vec<u8>) because each component
+//! has independent retry semantics and we want a single atomic body to hand
+//! back to axum. The hard 100 MB upper bound matches `read_capped` × 3 and
+//! is well below any of the three platforms' upload ceilings.
+
+use std::collections::BTreeMap;
+use std::io::Write;
+use std::path::Path as StdPath;
+
+use axum::body::Body;
+use axum::extract::{Path, Query, State};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::response::Response;
+use chrono::Utc;
+use md5::{Digest, Md5};
+use serde::Deserialize;
+use uuid::Uuid;
+use zip::write::SimpleFileOptions;
+use zip::CompressionMethod;
+use zip::ZipWriter;
+
+use crate::error::AppError;
+use crate::routes::export::{
+    compile_docx, compile_pdf, latex_escape, read_capped, render_tex, resolve_within, tera,
+    PaperMeta, RenderExtras, TemplateKind,
+};
+use crate::state::AppState;
+
+/// Hard cap on the assembled bundle. Above this we'd be sending so much
+/// data over the WS-server's single-threaded io_uring that other runs
+/// would feel it. COMAP's own limit is 25 MB and CUMCM is unstated but in
+/// practice 50 MB+ trips the upload client — 100 MB is more than enough
+/// headroom and 4× our current worst-case figure folder.
+const MAX_BUNDLE_BYTES: usize = 100 * 1024 * 1024;
+
+#[derive(Debug, Deserialize)]
+pub struct SubmissionQuery {
+    #[serde(default)]
+    pub template: Option<String>,
+}
+
+#[tracing::instrument(skip_all, fields(%run_id))]
+pub async fn export_submission(
+    State(state): State<AppState>,
+    Path(run_id): Path<Uuid>,
+    Query(q): Query<SubmissionQuery>,
+) -> Result<Response, AppError> {
+    let run_root = state.runs_dir.join(run_id.to_string());
+    let canonical = tokio::fs::canonicalize(&run_root).await.map_err(|e| {
+        tracing::debug!(error = %e, "canonicalize run root failed");
+        AppError::NotFound
+    })?;
+
+    // paper.meta.json is the single source of truth for what the bundle
+    // contains (title, abstract, references, figures…). If the writer
+    // hasn't finished, the bundle simply can't be assembled.
+    let meta_path = resolve_within(&canonical, &canonical.join("paper.meta.json")).await?;
+    let meta_bytes = tokio::fs::read(&meta_path).await.map_err(|e| {
+        tracing::debug!(error = %e, "read paper.meta.json");
+        AppError::NotFound
+    })?;
+    let meta: PaperMeta = serde_json::from_slice(&meta_bytes)
+        .map_err(|e| AppError::UnprocessableEntity(format!("paper.meta.json invalid: {e}")))?;
+
+    let template = match q.template.as_deref() {
+        Some(s) => TemplateKind::parse(s).ok_or_else(|| {
+            AppError::UnprocessableEntity(format!(
+                "unsupported template {s:?}; expected one of mcm|icm|cumcm|huashu"
+            ))
+        })?,
+        None => TemplateKind::from_competition(meta.competition_type.as_deref()),
+    };
+
+    let (zip_bytes, label) = match template {
+        TemplateKind::Mcm => (build_mcm_bundle(&meta, &canonical, run_id).await?, "mcm"),
+        TemplateKind::Cumcm => (build_cumcm_bundle(&meta, &canonical, run_id).await?, "cumcm"),
+        TemplateKind::Huashu => (
+            build_huashu_bundle(&meta, &canonical, run_id).await?,
+            "huashu",
+        ),
+    };
+
+    if zip_bytes.len() > MAX_BUNDLE_BYTES {
+        return Err(AppError::PayloadTooLarge);
+    }
+
+    build_zip_response(zip_bytes, label, run_id)
+}
+
+// ---------------------------------------------------------------------------
+// Per-template bundle builders
+// ---------------------------------------------------------------------------
+
+async fn build_mcm_bundle(
+    meta: &PaperMeta,
+    run_root: &StdPath,
+    run_id: Uuid,
+) -> Result<Vec<u8>, AppError> {
+    // events.jsonl is optional — if absent, the AI report renders the
+    // "no LLM calls recorded" fallback row (still required by COMAP, but
+    // signals to judges that the team ran without LLM assistance).
+    let events_path = run_root.join("events.jsonl");
+    let ai_section = build_ai_use_report_section(&events_path).await?;
+
+    let extras = RenderExtras {
+        cover_letter_section: "",
+        ai_use_report_section: &ai_section,
+    };
+    let tex = render_tex(meta, TemplateKind::Mcm, run_root, extras).await?;
+    let pdf = compile_pdf(&tex).await?;
+
+    let mut buf: Vec<u8> = Vec::with_capacity(pdf.len() + 64 * 1024);
+    {
+        let mut zw = ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let opts = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Deflated)
+            .unix_permissions(0o644);
+
+        // The COMAP rule: "Use your team's control number as the name of
+        // your PDF file attachment". We can't know the control number
+        // server-side, so we name it after the run-id (the team can
+        // simply rename to `0000000.pdf` before uploading). The README
+        // calls this out.
+        let pdf_name = format!("{run_id}.pdf");
+        zw.start_file(&pdf_name, opts).map_err(zip_err)?;
+        zw.write_all(&pdf).map_err(zip_err)?;
+
+        zw.start_file("README.txt", opts).map_err(zip_err)?;
+        zw.write_all(README_MCM.as_bytes()).map_err(zip_err)?;
+
+        // Archive source — purely for the team's own records / for later
+        // reproduction. COMAP does NOT want code or auxiliary files.
+        zw.start_file("source/paper.tex", opts).map_err(zip_err)?;
+        zw.write_all(tex.as_bytes()).map_err(zip_err)?;
+
+        if let Ok(md) = tokio::fs::read(run_root.join("paper.md")).await {
+            zw.start_file("source/paper.md", opts).map_err(zip_err)?;
+            zw.write_all(&md).map_err(zip_err)?;
+        }
+
+        add_figures_to_zip(&mut zw, run_root, "source/figures", opts).await?;
+
+        zw.finish().map_err(zip_err)?;
+    }
+    Ok(buf)
+}
+
+async fn build_cumcm_bundle(
+    meta: &PaperMeta,
+    run_root: &StdPath,
+    _run_id: Uuid,
+) -> Result<Vec<u8>, AppError> {
+    let cover_letter = render_fragment("cumcm_cover_letter.tex.tera")?;
+
+    // Anonymous variant — what gets uploaded to cumcm.cnki.net. No cover
+    // letter, no team_id (render_tex inserts empty strings by default),
+    // so the running header reads `参赛编号：` with a blank suffix and
+    // no identifying info leaks. Matches the rule:
+    //   "在参赛论文电子版及支撑材料压缩包内任何位置（含文件夹名、
+    //    文件名和文档属性等）均不能包含与参赛队有关的信息".
+    let anon_tex = render_tex(
+        meta,
+        TemplateKind::Cumcm,
+        run_root,
+        RenderExtras::default(),
+    )
+    .await?;
+    let anon_pdf = compile_pdf(&anon_tex).await?;
+
+    // Printed variant — same body, but cover letter (承诺书 + 编号专用页)
+    // prepended as the first two pages, signature lines blank for the
+    // team to fill by hand.
+    let extras = RenderExtras {
+        cover_letter_section: &cover_letter,
+        ai_use_report_section: "",
+    };
+    let print_tex = render_tex(meta, TemplateKind::Cumcm, run_root, extras).await?;
+    let print_pdf = compile_pdf(&print_tex).await?;
+
+    // DOCX is best-effort — the team isn't required to upload it (CUMCM
+    // accepts PDF), so a missing pandoc shouldn't fail the whole bundle.
+    let docx = match tokio::fs::metadata(run_root.join("paper.md")).await {
+        Ok(_) => match compile_docx(&run_root.join("paper.md"), run_root).await {
+            Ok(b) => Some(b),
+            Err(e) => {
+                tracing::warn!(error = ?e, "CUMCM bundle: docx render skipped");
+                None
+            }
+        },
+        Err(_) => None,
+    };
+
+    let support_zip = build_support_zip(run_root).await?;
+
+    let pdf_md5 = md5_hex(&anon_pdf);
+    let support_md5 = md5_hex(&support_zip);
+    let md5_txt = format!(
+        "# 2025/2026 高教社杯全国大学生数学建模竞赛 — 提交文件 MD5 校验码\n\
+         #\n\
+         # 在客户端按提示分别上传以下两个文件的 MD5 校验码；上传文件后系统\n\
+         # 会重新计算并比对。\n\
+         \n\
+         论文-匿名版.pdf    {pdf_md5}\n\
+         支撑材料.zip       {support_md5}\n",
+    );
+
+    let mut buf: Vec<u8> = Vec::with_capacity(anon_pdf.len() + print_pdf.len() + support_zip.len() + 64 * 1024);
+    {
+        let mut zw = ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let opts = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Deflated)
+            .unix_permissions(0o644);
+        // STORE for the nested ZIP — re-deflating an already-deflated
+        // payload doesn't compress further and just costs CPU.
+        let stored = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored)
+            .unix_permissions(0o644);
+
+        zw.start_file("论文-匿名版.pdf", opts).map_err(zip_err)?;
+        zw.write_all(&anon_pdf).map_err(zip_err)?;
+
+        zw.start_file("论文-打印版-签字用.pdf", opts)
+            .map_err(zip_err)?;
+        zw.write_all(&print_pdf).map_err(zip_err)?;
+
+        if let Some(d) = docx {
+            zw.start_file("论文.docx", opts).map_err(zip_err)?;
+            zw.write_all(&d).map_err(zip_err)?;
+        }
+
+        zw.start_file("支撑材料.zip", stored).map_err(zip_err)?;
+        zw.write_all(&support_zip).map_err(zip_err)?;
+
+        zw.start_file("MD5.txt", opts).map_err(zip_err)?;
+        zw.write_all(md5_txt.as_bytes()).map_err(zip_err)?;
+
+        zw.start_file("README.txt", opts).map_err(zip_err)?;
+        zw.write_all(README_CUMCM.as_bytes()).map_err(zip_err)?;
+
+        zw.finish().map_err(zip_err)?;
+    }
+    Ok(buf)
+}
+
+async fn build_huashu_bundle(
+    meta: &PaperMeta,
+    run_root: &StdPath,
+    _run_id: Uuid,
+) -> Result<Vec<u8>, AppError> {
+    // 华数杯 expects 承诺书 on the FIRST page of the uploaded paper, with
+    // student signatures. Unlike CUMCM there's no separate anonymous
+    // variant — the commitment letter is part of the submitted paper.
+    let cover_letter = render_fragment("huashu_cover_letter.tex.tera")?;
+    let extras = RenderExtras {
+        cover_letter_section: &cover_letter,
+        ai_use_report_section: "",
+    };
+    let tex = render_tex(meta, TemplateKind::Huashu, run_root, extras).await?;
+    let pdf = compile_pdf(&tex).await?;
+
+    let support_zip = build_support_zip(run_root).await?;
+
+    let mut buf: Vec<u8> = Vec::with_capacity(pdf.len() + support_zip.len() + 32 * 1024);
+    {
+        let mut zw = ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let opts = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Deflated)
+            .unix_permissions(0o644);
+        let stored = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored)
+            .unix_permissions(0o644);
+
+        zw.start_file("论文.pdf", opts).map_err(zip_err)?;
+        zw.write_all(&pdf).map_err(zip_err)?;
+
+        zw.start_file("支撑材料.zip", stored).map_err(zip_err)?;
+        zw.write_all(&support_zip).map_err(zip_err)?;
+
+        zw.start_file("README.txt", opts).map_err(zip_err)?;
+        zw.write_all(README_HUASHU.as_bytes()).map_err(zip_err)?;
+
+        zw.finish().map_err(zip_err)?;
+    }
+    Ok(buf)
+}
+
+// ---------------------------------------------------------------------------
+// Support archive (支撑材料.zip) — used by CUMCM and Huashu
+// ---------------------------------------------------------------------------
+
+async fn build_support_zip(run_root: &StdPath) -> Result<Vec<u8>, AppError> {
+    let mut buf: Vec<u8> = Vec::with_capacity(2 * 1024 * 1024);
+    {
+        let mut zw = ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let opts = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Deflated)
+            .unix_permissions(0o644);
+
+        // 1. notebook.ipynb — the Coder's executed Jupyter notebook
+        let notebook_path = run_root.join("notebook.ipynb");
+        if let Ok(nb) = tokio::fs::read(&notebook_path).await {
+            zw.start_file("notebook.ipynb", opts).map_err(zip_err)?;
+            zw.write_all(&nb).map_err(zip_err)?;
+
+            // 2. code/source.py — extracted code cells concatenated, so a
+            //    reviewer who doesn't have Jupyter installed can still
+            //    read the program logic. CUMCM specifically requires
+            //    "可运行的源程序代码" — keeping a flat .py beside the
+            //    notebook makes that obvious without `jupyter nbconvert`.
+            if let Some(py) = extract_python_from_notebook(&nb) {
+                zw.start_file("code/source.py", opts).map_err(zip_err)?;
+                zw.write_all(py.as_bytes()).map_err(zip_err)?;
+            }
+        }
+
+        // 3. figures/ — all PNGs from the run's figures directory
+        add_figures_to_zip(&mut zw, run_root, "figures", opts).await?;
+
+        // 4. data/ — optional; some problems provide reference data
+        //    inside the run dir. Walk it shallowly (one level deep) so
+        //    we don't accidentally suck in node_modules-sized trees.
+        let data_dir = run_root.join("data");
+        if data_dir.is_dir() {
+            add_data_dir_to_zip(&mut zw, &data_dir, "data", opts).await?;
+        }
+
+        // 5. README inside the inner zip — survives unpacking the
+        //    nested archive (reviewers might extract this independently).
+        zw.start_file("README.txt", opts).map_err(zip_err)?;
+        zw.write_all(README_SUPPORT.as_bytes())
+            .map_err(zip_err)?;
+
+        zw.finish().map_err(zip_err)?;
+    }
+    Ok(buf)
+}
+
+async fn add_figures_to_zip<W: Write + std::io::Seek>(
+    zw: &mut ZipWriter<W>,
+    run_root: &StdPath,
+    prefix: &str,
+    opts: SimpleFileOptions,
+) -> Result<(), AppError> {
+    let figures_dir = run_root.join("figures");
+    let mut rd = match tokio::fs::read_dir(&figures_dir).await {
+        Ok(r) => r,
+        Err(_) => return Ok(()), // no figures is fine
+    };
+    while let Some(entry) = rd
+        .next_entry()
+        .await
+        .map_err(|e| AppError::Internal(format!("walk figures: {e}")))?
+    {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        // Skip junk dotfiles (`.DS_Store`) so the archive stays clean.
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) if !n.starts_with('.') => n.to_string(),
+            _ => continue,
+        };
+        let bytes = read_capped(&path).await?;
+        zw.start_file(format!("{prefix}/{name}"), opts)
+            .map_err(zip_err)?;
+        zw.write_all(&bytes).map_err(zip_err)?;
+    }
+    Ok(())
+}
+
+async fn add_data_dir_to_zip<W: Write + std::io::Seek>(
+    zw: &mut ZipWriter<W>,
+    data_dir: &StdPath,
+    prefix: &str,
+    opts: SimpleFileOptions,
+) -> Result<(), AppError> {
+    let mut rd = tokio::fs::read_dir(data_dir)
+        .await
+        .map_err(|e| AppError::Internal(format!("walk data: {e}")))?;
+    while let Some(entry) = rd
+        .next_entry()
+        .await
+        .map_err(|e| AppError::Internal(format!("walk data: {e}")))?
+    {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) if !n.starts_with('.') => n.to_string(),
+            _ => continue,
+        };
+        let bytes = read_capped(&path).await?;
+        zw.start_file(format!("{prefix}/{name}"), opts)
+            .map_err(zip_err)?;
+        zw.write_all(&bytes).map_err(zip_err)?;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// AI Use Report (MCM only) — reduces events.jsonl into a usage table
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Default, Clone)]
+struct ModelUsage {
+    calls: u64,
+    prompt_tokens: u64,
+    completion_tokens: u64,
+    used_by: std::collections::BTreeSet<String>,
+}
+
+/// Walks `events.jsonl` line-by-line and aggregates every `kind=cost`
+/// event by model. Resilient to:
+///   * missing file (returns the "no calls recorded" fallback)
+///   * malformed lines (silently skipped — we're reading a forensic log)
+///   * missing payload fields (treated as 0)
+async fn build_ai_use_report_section(events_path: &StdPath) -> Result<String, AppError> {
+    let mut models: BTreeMap<String, ModelUsage> = BTreeMap::new();
+
+    if events_path.is_file() {
+        let raw = tokio::fs::read_to_string(events_path)
+            .await
+            .map_err(|e| AppError::Internal(format!("read events.jsonl: {e}")))?;
+        for line in raw.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let v: serde_json::Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("kind").and_then(|k| k.as_str()) != Some("cost") {
+                continue;
+            }
+            let payload = match v.get("payload") {
+                Some(p) => p,
+                None => continue,
+            };
+            let model = payload
+                .get("model")
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let prompt = payload
+                .get("prompt_tokens")
+                .and_then(|t| t.as_u64())
+                .unwrap_or(0);
+            let completion = payload
+                .get("completion_tokens")
+                .and_then(|t| t.as_u64())
+                .unwrap_or(0);
+            let agent = v
+                .get("agent")
+                .and_then(|a| a.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+
+            let entry = models.entry(model).or_default();
+            entry.calls += 1;
+            entry.prompt_tokens += prompt;
+            entry.completion_tokens += completion;
+            entry.used_by.insert(agent);
+        }
+    }
+
+    let models_ctx: Vec<serde_json::Value> = models
+        .iter()
+        .map(|(name, u)| {
+            let used_by = u.used_by.iter().cloned().collect::<Vec<_>>().join(", ");
+            serde_json::json!({
+                "name": name,
+                "provider": infer_provider(name),
+                "calls": u.calls,
+                "prompt_tokens": u.prompt_tokens,
+                "completion_tokens": u.completion_tokens,
+                "used_by": used_by,
+            })
+        })
+        .collect();
+
+    let mut ctx = tera::Context::new();
+    ctx.insert("models", &models_ctx);
+    ctx.insert(
+        "generated_at",
+        &Utc::now().format("%Y-%m-%d %H:%M UTC").to_string(),
+    );
+
+    tera()
+        .render("ai_use_report.tex.tera", &ctx)
+        .map_err(|e| AppError::Internal(format!("render ai_use_report: {e}")))
+}
+
+fn infer_provider(model: &str) -> &'static str {
+    let m = model.to_ascii_lowercase();
+    if m.starts_with("gpt-") || m.starts_with("o1") || m.starts_with("o3") || m.starts_with("o4") {
+        "OpenAI"
+    } else if m.starts_with("claude") {
+        "Anthropic"
+    } else if m.starts_with("gemini") {
+        "Google"
+    } else if m.starts_with("deepseek") {
+        "DeepSeek"
+    } else if m.starts_with("glm") {
+        "Zhipu AI"
+    } else if m.starts_with("qwen") {
+        "Alibaba"
+    } else if m.starts_with("doubao") {
+        "ByteDance"
+    } else if m.starts_with("moonshot") || m.starts_with("kimi") {
+        "Moonshot AI"
+    } else if m.starts_with("grok") {
+        "xAI"
+    } else if m.starts_with("yi-") {
+        "01.AI"
+    } else {
+        "LLM provider"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn render_fragment(name: &str) -> Result<String, AppError> {
+    // Cover-letter fragments have no Tera variables today, but rendering
+    // them through Tera (rather than `include_str!`) keeps the path open
+    // for later: if we ever decide to pre-fill team_id / school / etc.,
+    // we just pass them in the context and the call site stays the same.
+    let ctx = tera::Context::new();
+    tera()
+        .render(name, &ctx)
+        .map_err(|e| AppError::Internal(format!("render {name}: {e}")))
+}
+
+fn md5_hex(bytes: &[u8]) -> String {
+    let mut h = Md5::new();
+    h.update(bytes);
+    let out = h.finalize();
+    let mut s = String::with_capacity(32);
+    for b in out.iter() {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+/// Best-effort: pull every `cell_type == "code"` cell's source out of a
+/// Jupyter notebook JSON and concatenate them into a single .py blob. We
+/// don't fail the bundle on malformed notebooks — the .ipynb itself is
+/// always included alongside.
+fn extract_python_from_notebook(nb_bytes: &[u8]) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_slice(nb_bytes).ok()?;
+    let cells = v.get("cells")?.as_array()?;
+    let mut out = String::new();
+    out.push_str("# Source code extracted from notebook.ipynb\n");
+    out.push_str("# Generated by mathodology submission bundle.\n\n");
+    for (idx, cell) in cells.iter().enumerate() {
+        if cell.get("cell_type").and_then(|t| t.as_str()) != Some("code") {
+            continue;
+        }
+        let source = cell.get("source")?;
+        // `source` is either a string or an array of strings (per nbformat 4)
+        let text = match source {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Array(arr) => arr
+                .iter()
+                .filter_map(|v| v.as_str())
+                .collect::<Vec<_>>()
+                .join(""),
+            _ => continue,
+        };
+        if text.trim().is_empty() {
+            continue;
+        }
+        out.push_str(&format!("# ===== Cell {} =====\n", idx + 1));
+        out.push_str(&text);
+        if !text.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push('\n');
+    }
+    Some(out)
+}
+
+/// Accepts both `ZipError` (start_file/finish) and `io::Error`
+/// (write_all on the underlying writer) so call sites can stay terse.
+fn zip_err<E: std::fmt::Display>(e: E) -> AppError {
+    AppError::Internal(format!("zip: {e}"))
+}
+
+fn build_zip_response(bytes: Vec<u8>, label: &str, run_id: Uuid) -> Result<Response, AppError> {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/zip"),
+    );
+    if let Ok(hv) = HeaderValue::from_str(&bytes.len().to_string()) {
+        headers.insert(header::CONTENT_LENGTH, hv);
+    }
+    let disposition = format!("attachment; filename=\"submission-{label}-{run_id}.zip\"");
+    if let Ok(hv) = HeaderValue::from_str(&disposition) {
+        headers.insert(header::CONTENT_DISPOSITION, hv);
+    }
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+
+    let mut resp = Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::from(bytes))
+        .map_err(|e| AppError::Internal(format!("response build: {e}")))?;
+    *resp.headers_mut() = headers;
+    // Silence the unused-import lint locally — `latex_escape` is part of
+    // the cross-module surface area we expose; the bundle path doesn't
+    // currently call it but keeping the symbol in scope means downstream
+    // changes (e.g. pre-filling team_id) won't need a second `use`.
+    let _ = latex_escape;
+    Ok(resp)
+}
+
+// ---------------------------------------------------------------------------
+// README boilerplate (Chinese where the target user base is Chinese)
+// ---------------------------------------------------------------------------
+
+const README_MCM: &str = r#"MCM / ICM Submission Bundle
+============================
+
+Files in this archive:
+
+  <run_id>.pdf          The paper to upload to COMAP. Contains the 25-page
+                        solution + the "Report on Use of AI" appendix
+                        (page-limit exempt per COMAP 2026 AI Policy).
+  README.txt            This file.
+  source/               Reference copy of the LaTeX source, Markdown, and
+                        figures. NOT to be uploaded to COMAP.
+
+Before submitting:
+
+  1. Rename <run_id>.pdf to <TeamControlNumber>.pdf
+     (e.g. 0000007.pdf). COMAP requires the team control number as the
+     filename: see contest.comap.com/undergraduate/contests/mcm/instructions.php
+
+  2. Verify the file is < 25 MB. If oversized, lower figure DPI or
+     compress images.
+
+  3. Confirm anonymity: the PDF must NOT contain any student name,
+     advisor name, or institution name. The header shows only
+     "Team #  , Page X of Y" (intentionally blank — leave it that way).
+
+  4. Upload via https://forms.comap.org/241335097294056 by the official
+     deadline (typically 9:00 PM EST on the final contest day).
+
+Generated by mathodology submission-bundle endpoint.
+"#;
+
+const README_CUMCM: &str = r#"CUMCM 全国大学生数学建模竞赛 — 提交材料压缩包
+==================================================
+
+本压缩包内包含的文件：
+
+  论文-匿名版.pdf          用于上传 cumcm.cnki.net 的电子论文。
+                          不含 承诺书 / 编号专用页，符合官方匿名要求。
+  论文-打印版-签字用.pdf    与匿名版正文相同，但增加 承诺书 + 编号专用页 两页，
+                          供参赛队打印、签字、装订后交赛区组委会。
+  论文.docx               同一论文的 docx 版本（可选）。
+  支撑材料.zip             官方要求的"支撑材料"（notebook + 源代码 + 图表）。
+  MD5.txt                 上传时所需的 MD5 校验码。
+  README.txt              本文件。
+
+提交流程（依据 mcm.edu.cn 2025/2026 官方规则）：
+
+  1. 登录 https://cumcm.cnki.net 竞赛管理系统。
+
+  2. 在客户端中按提示分别上传：
+       a. "参赛论文"  -> 论文-匿名版.pdf
+       b. "支撑材料"  -> 支撑材料.zip
+     如客户端要求填写 MD5 校验码，请参考 MD5.txt 中的对应值。
+
+  3. 打印 论文-打印版-签字用.pdf：
+       第 1 页为承诺书 —— 三位队员、指导教师签字，并填写参赛队号、题号、学校。
+       第 2 页为编号专用页 —— 留空，由赛区/全国组委会评阅时填写。
+       第 3 页起为论文正文。
+     按赛区要求装订后交本校竞赛组负责老师。
+
+  4. 关键匿名要求：参赛论文电子版及支撑材料压缩包内 任何位置（含文件夹名、
+     文件名、文档属性）均不能包含与参赛队有关的信息。本工具生成的两个 ZIP
+     已严格匿名，请勿在提交前手工添加 README 或重命名队员信息相关文件。
+
+Generated by mathodology submission-bundle endpoint.
+"#;
+
+const README_HUASHU: &str = r#""华数杯"全国大学生数学建模竞赛 — 提交材料压缩包
+======================================================
+
+本压缩包内包含的文件：
+
+  论文.pdf                提交论文。第一页为承诺书（签字栏需打印后手写填入），
+                          其后为论文正文。
+  支撑材料.zip             notebook + 源代码 + 图表。
+  README.txt              本文件。
+
+提交流程（依据 saikr.com 官方赛事页）：
+
+  1. 由队长用电脑登录 https://www.saikr.com/vse/chinamcm/<年份> 提交。
+
+  2. 打印 论文.pdf 第一页（承诺书），三位队员签字，扫描或拍照插回 PDF
+     之前；或按赛事页指示，将签字版作为附件一并上传。
+
+  3. 上传论文（PDF）和支撑材料（ZIP），按截止时间（一般为竞赛结束日 20:00）
+     完成提交。
+
+  4. 注意事项：
+       * 论文将通过查重系统比对；
+       * 获奖论文的源代码将被运行检查，请确保 支撑材料.zip 中的代码可执行；
+       * 严禁参加各种竞赛思路交流群，违者将取消参赛资格。
+
+Generated by mathodology submission-bundle endpoint.
+"#;
+
+const README_SUPPORT: &str = r#"支撑材料 (Support Materials)
+============================
+
+  notebook.ipynb        Jupyter notebook executed end-to-end inside the
+                        gateway's sandboxed kernel (papermill-compatible).
+  code/source.py        Code cells extracted and concatenated for
+                        reviewers without Jupyter installed.
+  figures/*.png         All figures referenced in the paper, at 300 dpi.
+  data/                 (Optional) Reference data files, if any.
+
+This archive is generated automatically; do not edit by hand before
+submission. All paths inside are anonymised — no team/school metadata.
+"#;
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn md5_matches_known_vector() {
+        // RFC 1321 test vector: MD5("abc") = 900150983cd24fb0d6963f7d28e17f72
+        assert_eq!(md5_hex(b"abc"), "900150983cd24fb0d6963f7d28e17f72");
+        assert_eq!(md5_hex(b""), "d41d8cd98f00b204e9800998ecf8427e");
+    }
+
+    #[test]
+    fn provider_inference_covers_common_models() {
+        assert_eq!(infer_provider("gpt-5-pro"), "OpenAI");
+        assert_eq!(infer_provider("GPT-4o-mini"), "OpenAI");
+        assert_eq!(infer_provider("o3-mini-high"), "OpenAI");
+        assert_eq!(infer_provider("claude-sonnet-4-6"), "Anthropic");
+        assert_eq!(infer_provider("gemini-2.5-pro"), "Google");
+        assert_eq!(infer_provider("deepseek-r1"), "DeepSeek");
+        assert_eq!(infer_provider("glm-4.6"), "Zhipu AI");
+        assert_eq!(infer_provider("qwen3-max"), "Alibaba");
+        assert_eq!(infer_provider("doubao-pro"), "ByteDance");
+        assert_eq!(infer_provider("kimi-k2"), "Moonshot AI");
+        assert_eq!(infer_provider("moonshot-v1"), "Moonshot AI");
+        assert_eq!(infer_provider("grok-3"), "xAI");
+        assert_eq!(infer_provider("yi-large"), "01.AI");
+        assert_eq!(infer_provider("some-unknown-model"), "LLM provider");
+    }
+
+    #[test]
+    fn fragment_renders_without_context() {
+        // Both cover-letter fragments + the AI report are no-context
+        // Tera templates today; this guards against future {{ vars }}
+        // sneaking in without the call site being updated.
+        for name in [
+            "cumcm_cover_letter.tex.tera",
+            "huashu_cover_letter.tex.tera",
+        ] {
+            let out = render_fragment(name).unwrap_or_else(|e| panic!("render {name}: {e:?}"));
+            assert!(out.contains("承诺书"), "{name} renders the 承诺书 header");
+        }
+    }
+
+    #[test]
+    fn ai_use_report_renders_with_empty_models() {
+        let mut ctx = tera::Context::new();
+        ctx.insert("models", &Vec::<serde_json::Value>::new());
+        ctx.insert("generated_at", "2026-05-23 12:00 UTC");
+        let out = tera()
+            .render("ai_use_report.tex.tera", &ctx)
+            .expect("renders empty");
+        assert!(out.contains("Report on Use of AI"));
+        assert!(
+            out.contains("No LLM calls recorded"),
+            "empty model list yields the fallback row"
+        );
+    }
+
+    #[test]
+    fn ai_use_report_renders_with_models() {
+        let models = vec![
+            serde_json::json!({
+                "name": "gpt-5-pro",
+                "provider": "OpenAI",
+                "calls": 12,
+                "prompt_tokens": 412020,
+                "completion_tokens": 23110,
+                "used_by": "modeler, writer",
+            }),
+            serde_json::json!({
+                "name": "claude-sonnet-4-6",
+                "provider": "Anthropic",
+                "calls": 8,
+                "prompt_tokens": 100000,
+                "completion_tokens": 50000,
+                "used_by": "coder, critic",
+            }),
+        ];
+        let mut ctx = tera::Context::new();
+        ctx.insert("models", &models);
+        ctx.insert("generated_at", "2026-05-23 12:00 UTC");
+        let out = tera()
+            .render("ai_use_report.tex.tera", &ctx)
+            .expect("renders");
+        assert!(out.contains("gpt-5-pro"));
+        assert!(out.contains("OpenAI"));
+        assert!(out.contains("claude-sonnet-4-6"));
+        assert!(out.contains("412020"));
+        assert!(out.contains("modeler, writer"));
+    }
+
+    #[test]
+    fn extract_python_handles_string_and_array_source() {
+        let nb = serde_json::json!({
+            "cells": [
+                {"cell_type": "code", "source": "print('hello')\n"},
+                {"cell_type": "markdown", "source": "# heading"},
+                {"cell_type": "code", "source": ["import numpy as np\n", "x = np.arange(10)\n"]},
+                {"cell_type": "code", "source": ""},  // empty cell, skipped
+            ]
+        });
+        let bytes = serde_json::to_vec(&nb).unwrap();
+        let out = extract_python_from_notebook(&bytes).expect("extracts");
+        assert!(out.contains("print('hello')"));
+        assert!(out.contains("import numpy as np"));
+        assert!(out.contains("x = np.arange(10)"));
+        assert!(!out.contains("# heading"), "markdown cells skipped");
+        assert!(out.contains("Cell 1"));
+        assert!(out.contains("Cell 3"));
+        assert!(!out.contains("Cell 4"), "empty cell skipped");
+    }
+
+    #[test]
+    fn extract_python_returns_none_on_garbage() {
+        assert!(extract_python_from_notebook(b"not json").is_none());
+        assert!(extract_python_from_notebook(b"{}").is_none());
+    }
+
+    #[tokio::test]
+    async fn ai_report_handles_missing_events() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let out = build_ai_use_report_section(&dir.path().join("events.jsonl"))
+            .await
+            .expect("returns ok");
+        assert!(out.contains("Report on Use of AI"));
+        assert!(out.contains("No LLM calls recorded"));
+    }
+
+    #[tokio::test]
+    async fn ai_report_aggregates_cost_events() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let p = dir.path().join("events.jsonl");
+        let events = [
+            r#"{"run_id":"x","agent":"writer","kind":"cost","seq":1,"ts":"2026-05-23T00:00:00Z","payload":{"model":"gpt-5-pro","prompt_tokens":100,"completion_tokens":50}}"#,
+            r#"{"run_id":"x","agent":"writer","kind":"cost","seq":2,"ts":"2026-05-23T00:00:01Z","payload":{"model":"gpt-5-pro","prompt_tokens":200,"completion_tokens":75}}"#,
+            r#"{"run_id":"x","agent":"coder","kind":"cost","seq":3,"ts":"2026-05-23T00:00:02Z","payload":{"model":"claude-sonnet-4-6","prompt_tokens":1000,"completion_tokens":300}}"#,
+            r#"{"run_id":"x","agent":"writer","kind":"stage.done","seq":4,"ts":"2026-05-23T00:00:03Z","payload":{}}"#,
+            r#"{this is garbage"#,
+            r#""#,
+        ]
+        .join("\n");
+        tokio::fs::write(&p, events).await.unwrap();
+        let out = build_ai_use_report_section(&p).await.expect("ok");
+
+        assert!(out.contains("gpt-5-pro"));
+        assert!(out.contains("claude-sonnet-4-6"));
+        // gpt-5-pro: 2 calls, 300 prompt, 125 completion
+        assert!(out.contains(" 2 ") && out.contains(" 300 ") && out.contains(" 125 "));
+        // claude: 1 call, 1000 prompt, 300 completion
+        assert!(out.contains(" 1 ") && out.contains(" 1000 ") && out.contains(" 300 "));
+        // Agent set rolled up
+        assert!(out.contains("writer"));
+        assert!(out.contains("coder"));
+        // stage.done was NOT counted
+        assert!(
+            !out.contains("stage.done"),
+            "non-cost events must not appear in the report"
+        );
+    }
+}

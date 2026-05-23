@@ -44,6 +44,8 @@ config = { workspace = true }
 toml = { workspace = true }
 tera = "=1.19"
 tempfile = { workspace = true }
+zip = { workspace = true }
+md-5 = { workspace = true }
 
 [dev-dependencies]
 wiremock = { workspace = true }

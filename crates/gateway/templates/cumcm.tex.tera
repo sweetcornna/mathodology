@@ -51,6 +51,14 @@
 
 \begin{document}
 
+% =============== 承诺书 + 编号专用页（仅打印版） ===============
+% Submission bundle (template=cumcm, variant="printed") injects the 承诺书
+% and 编号专用页 as the first two pages here. The anonymous variant leaves
+% `cover_letter_section` empty so the PDF starts directly at the 封面 —
+% mandatory because the electronic upload to cumcm.cnki.net must NOT
+% contain identifying or evaluation-numbering pages.
+{% if cover_letter_section %}{{ cover_letter_section | safe }}{% endif %}
+
 % =============== 封面 ===============
 \begin{titlepage}
 \begin{center}

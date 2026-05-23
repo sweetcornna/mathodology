@@ -105,4 +105,12 @@
 \end{thebibliography}
 {% endif %}
 
+% =============== Report on Use of AI (submission bundle only) ===============
+% Per COMAP 2026 Contest_AI_Policy: required if AI tools were used. The
+% report sits AFTER the 25-page solution and is NOT counted toward the
+% page limit. Submission bundle pre-renders the section body from
+% events.jsonl; regular /export/pdf leaves it empty so the standalone
+% paper.pdf stays at the 25-page budget.
+{% if ai_use_report_section %}{{ ai_use_report_section | safe }}{% endif %}
+
 \end{document}

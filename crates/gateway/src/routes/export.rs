@@ -147,7 +147,7 @@ pub enum TemplateKind {
 }
 
 impl TemplateKind {
-    fn parse(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "cumcm" => Some(Self::Cumcm),
             "huashu" => Some(Self::Huashu),
@@ -157,7 +157,7 @@ impl TemplateKind {
         }
     }
 
-    fn file(&self) -> &'static str {
+    pub(crate) fn file(&self) -> &'static str {
         match self {
             Self::Cumcm => "cumcm.tex.tera",
             Self::Huashu => "huashu.tex.tera",
@@ -168,7 +168,7 @@ impl TemplateKind {
     /// Resolve the competition_type → TemplateKind default (used when no
     /// explicit `template=` query is present). `other` degrades to `cumcm`
     /// per spec.
-    fn from_competition(ct: Option<&str>) -> Self {
+    pub fn from_competition(ct: Option<&str>) -> Self {
         match ct.unwrap_or("").to_ascii_lowercase().as_str() {
             "mcm" | "icm" => Self::Mcm,
             "huashu" => Self::Huashu,
@@ -183,7 +183,7 @@ impl TemplateKind {
 // in-memory strings so the binary is portable.
 // ---------------------------------------------------------------------------
 
-fn tera() -> &'static Tera {
+pub(crate) fn tera() -> &'static Tera {
     static INSTANCE: OnceLock<Tera> = OnceLock::new();
     INSTANCE.get_or_init(|| {
         let mut t = Tera::default();
@@ -197,6 +197,23 @@ fn tera() -> &'static Tera {
                 include_str!("../../templates/huashu.tex.tera"),
             ),
             ("mcm.tex.tera", include_str!("../../templates/mcm.tex.tera")),
+            // Submission-bundle fragments — body-only Tera files that are
+            // pre-rendered and then injected into the main templates above
+            // via the `cover_letter_section` / `ai_use_report_section` ctx
+            // variables. Bundled here too so the entire submission build
+            // path stays in-memory and the binary remains portable.
+            (
+                "cumcm_cover_letter.tex.tera",
+                include_str!("../../templates/cumcm_cover_letter.tex.tera"),
+            ),
+            (
+                "huashu_cover_letter.tex.tera",
+                include_str!("../../templates/huashu_cover_letter.tex.tera"),
+            ),
+            (
+                "ai_use_report.tex.tera",
+                include_str!("../../templates/ai_use_report.tex.tera"),
+            ),
         ])
         .expect("bundled Tera templates parse");
         t.register_filter("latex_escape", latex_escape_filter);
@@ -261,11 +278,13 @@ pub async fn export_paper(
     match fmt {
         ExportFormat::Md => unreachable!("handled above"),
         ExportFormat::Tex => {
-            let tex = render_tex(&meta, template, &canonical_run_root).await?;
+            let tex =
+                render_tex(&meta, template, &canonical_run_root, RenderExtras::default()).await?;
             build_binary_response(fmt, run_id, tex.into_bytes())
         }
         ExportFormat::Pdf => {
-            let tex = render_tex(&meta, template, &canonical_run_root).await?;
+            let tex =
+                render_tex(&meta, template, &canonical_run_root, RenderExtras::default()).await?;
             let pdf = compile_pdf(&tex).await?;
             build_binary_response(fmt, run_id, pdf)
         }
@@ -285,10 +304,29 @@ pub async fn export_paper(
 // TeX rendering pipeline
 // ---------------------------------------------------------------------------
 
-async fn render_tex(
+/// Optional Tera fragments injected into the main template for the
+/// submission-bundle pipeline. Both fields default to empty strings, which
+/// matches the original `/export/{pdf,tex}` semantics (no cover letter, no
+/// AI-use report — the standalone paper.pdf stays at the 25-page MCM budget
+/// and the CUMCM PDF starts at the 封面 page as before).
+#[derive(Debug, Default, Clone)]
+pub(crate) struct RenderExtras<'a> {
+    /// Pre-rendered LaTeX for the cover letter block — injected at the top
+    /// of `\begin{document}` in the CUMCM / Huashu templates. The bundle's
+    /// printed-variant PDF sets this; the anonymous-variant leaves it empty.
+    pub cover_letter_section: &'a str,
+    /// Pre-rendered LaTeX for the "Report on Use of AI" section — appended
+    /// at the end of the MCM template before `\end{document}`. Only the
+    /// submission-bundle MCM variant sets this; standalone exports leave it
+    /// empty so they remain inside the 25-page COMAP budget.
+    pub ai_use_report_section: &'a str,
+}
+
+pub(crate) async fn render_tex(
     meta: &PaperMeta,
     template: TemplateKind,
     run_root: &StdPath,
+    extras: RenderExtras<'_>,
 ) -> Result<String, AppError> {
     // Build figure lookup by id.
     let mut figure_map: HashMap<&str, &FigureRef> = HashMap::new();
@@ -347,6 +385,11 @@ async fn render_tex(
     ctx.insert("team_id", "");
     ctx.insert("problem_id", "");
     ctx.insert("graphics_root", &graphics_root);
+    // Always insert the optional fragment slots — Tera errors on undefined
+    // variables inside `{% if %}` blocks, so an empty string is the safe
+    // no-op value for the standalone export path.
+    ctx.insert("cover_letter_section", extras.cover_letter_section);
+    ctx.insert("ai_use_report_section", extras.ai_use_report_section);
 
     let rendered = tera()
         .render(template.file(), &ctx)
@@ -514,7 +557,7 @@ fn matching_brace_end(s: &str) -> Option<usize> {
     None
 }
 
-async fn compile_pdf(tex: &str) -> Result<Vec<u8>, AppError> {
+pub(crate) async fn compile_pdf(tex: &str) -> Result<Vec<u8>, AppError> {
     let tmp = tempfile::TempDir::new().map_err(|e| AppError::Internal(format!("tempdir: {e}")))?;
     let tex_path = tmp.path().join("paper.tex");
     tokio::fs::write(&tex_path, tex)
@@ -555,7 +598,7 @@ async fn compile_pdf(tex: &str) -> Result<Vec<u8>, AppError> {
         .map_err(|e| AppError::Internal(format!("read compiled pdf: {e}")))
 }
 
-async fn compile_docx(paper_md: &StdPath, run_root: &StdPath) -> Result<Vec<u8>, AppError> {
+pub(crate) async fn compile_docx(paper_md: &StdPath, run_root: &StdPath) -> Result<Vec<u8>, AppError> {
     let tmp = tempfile::TempDir::new().map_err(|e| AppError::Internal(format!("tempdir: {e}")))?;
     let out_path = tmp.path().join("paper.docx");
 
@@ -690,7 +733,7 @@ fn latex_escape_filter(
 // Helpers shared with figures.rs (kept separate to avoid churning that file)
 // ---------------------------------------------------------------------------
 
-async fn resolve_within(prefix: &StdPath, requested: &StdPath) -> Result<PathBuf, AppError> {
+pub(crate) async fn resolve_within(prefix: &StdPath, requested: &StdPath) -> Result<PathBuf, AppError> {
     let canonical_prefix = tokio::fs::canonicalize(prefix)
         .await
         .map_err(|_| AppError::NotFound)?;
@@ -714,7 +757,7 @@ async fn resolve_within(prefix: &StdPath, requested: &StdPath) -> Result<PathBuf
     Ok(canonical)
 }
 
-async fn read_capped(path: &StdPath) -> Result<Vec<u8>, AppError> {
+pub(crate) async fn read_capped(path: &StdPath) -> Result<Vec<u8>, AppError> {
     // The 16 MiB figures cap is unnecessarily tight for a paper PDF; we keep
     // the same order of magnitude but bump to 32 MiB for exports.
     const MAX_BYTES: u64 = 32 * 1024 * 1024;
@@ -927,16 +970,36 @@ mod tests {
         let mut ctx = tera::Context::new();
         ctx.insert("title", &meta.title);
         ctx.insert("abstract", &meta.r#abstract);
+        // The templates use `abstract_latex` (pandoc-rendered) for the
+        // visible abstract block. In production it's computed by
+        // render_tex via md_to_latex; here we just feed the raw markdown
+        // through so the template render compiles. Test only validates
+        // template *structure*, not abstract content.
+        ctx.insert("abstract_latex", &meta.r#abstract);
         ctx.insert("problem_text", &meta.problem_text);
         ctx.insert("sections", &sections);
         ctx.insert("references", &meta.references);
         ctx.insert("team_id", "");
         ctx.insert("problem_id", "");
         ctx.insert("graphics_root", "/tmp/fake-run/");
+        // Submission-bundle slots — Tera blows up on undefined vars inside
+        // `{% if %}`, so the standalone export path must always insert
+        // these (as empty strings) too.
+        ctx.insert("cover_letter_section", "");
+        ctx.insert("ai_use_report_section", "");
 
-        tera()
-            .render(template.file(), &ctx)
-            .unwrap_or_else(|e| panic!("render {}: {e}", template.file()))
+        tera().render(template.file(), &ctx).unwrap_or_else(|e| {
+            // Walk the source chain so the panic shows the *underlying*
+            // Tera failure (template name, line, missing var, etc.) and
+            // not just the wrapper.
+            let mut chain = String::new();
+            let mut src: Option<&dyn std::error::Error> = Some(&e);
+            while let Some(err) = src {
+                chain.push_str(&format!("\n  caused by: {err}"));
+                src = err.source();
+            }
+            panic!("render {}: {e}{chain}", template.file())
+        })
     }
 
     #[test]

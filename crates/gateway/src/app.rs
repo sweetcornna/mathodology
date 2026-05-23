@@ -4,7 +4,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 use crate::auth::require_dev_token;
-use crate::routes::{export, figures, health, llm, runs, search, stats, ws_run};
+use crate::routes::{export, figures, health, llm, runs, search, stats, submission, ws_run};
 use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
@@ -19,6 +19,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/runs/:run_id/notebook", get(figures::serve_notebook))
         .route("/runs/:run_id/paper", get(figures::serve_paper))
         .route("/runs/:run_id/export/:format", get(export::export_paper))
+        .route(
+            "/runs/:run_id/submission",
+            get(submission::export_submission),
+        )
         .route("/ws/runs/:run_id", get(ws_run::ws_handler))
         .route("/llm/chat/completions", post(llm::chat_completions))
         .route("/stats/summary", get(stats::stats_summary))

@@ -36,6 +36,17 @@ eventsource-stream = "0.2"
 hex = "0.4"
 wiremock = "=0.6.2"
 tempfile = "=3.14"
+# `zip` 2.x — pure-Rust zip writer used by the submission-bundle endpoint.
+# Default features pull in bzip2/zstd C bindings we don't need; deflate alone
+# is plenty for paper+code archives, and dropping the C deps keeps the
+# cargo-deb / Linux CI build hermetic.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+# md-5: pure-Rust MD5 used by the submission-bundle MD5.txt manifest.
+# CUMCM's submission protocol explicitly asks for MD5 codes (cnki.net uses
+# them as integrity checks against the uploaded files), so SHA-256 isn't a
+# substitute. Cryptographic weakness is acceptable here — this is integrity,
+# not authentication.
+md-5 = "0.10"
 
 [profile.dev]
 opt-level = 0
