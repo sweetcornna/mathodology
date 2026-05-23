@@ -190,9 +190,28 @@ async fn boot_server_with_full_run(
     tokio::spawn(async move {
         let _ = serve(listener, router).await;
     });
-    tokio::time::sleep(Duration::from_millis(20)).await;
+    // N7: drop the 20 ms sleep — flaky on slow CI. Poll TCP connect
+    // until either we get a successful handshake or 2 s elapses, which
+    // is the actual signal we care about (server accept-loop running).
+    wait_ready(addr, Duration::from_secs(2)).await;
 
     (addr, runs_tmp, providers_file, run_id, run_root)
+}
+
+/// Poll-and-give-up: keeps trying TcpStream::connect until success or
+/// `timeout` elapses. Each retry is cheap (sub-ms localhost connect)
+/// so we don't bother backing off.
+async fn wait_ready(addr: SocketAddr, timeout_dur: Duration) {
+    let deadline = std::time::Instant::now() + timeout_dur;
+    loop {
+        if tokio::net::TcpStream::connect(addr).await.is_ok() {
+            return;
+        }
+        if std::time::Instant::now() >= deadline {
+            panic!("server at {addr} did not become ready within {timeout_dur:?}");
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
 }
 
 fn auth_headers() -> HeaderMap {

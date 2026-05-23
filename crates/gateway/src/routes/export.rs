@@ -570,7 +570,36 @@ fn matching_brace_end(s: &str) -> Option<usize> {
     None
 }
 
+/// Cap on concurrent `tectonic` invocations across the whole process.
+///
+/// A cold tectonic compile peaks at ~500 MB resident plus the ~200 MB
+/// TeXLive bundle cache. Two CUMCM submission bundles arriving at the
+/// same time spawn 4 simultaneous compiles (anonymous + printed × 2
+/// requests); on a 4 GB VM that OOMs. `min(num_cpus, 4)` gates this
+/// without serialising single-user latency. The CPU-fanout limit also
+/// matches xetex's own observation that >4 parallel processes thrash
+/// the disk cache on the bundled font/macro files.
+fn tectonic_semaphore() -> &'static tokio::sync::Semaphore {
+    static SEM: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
+    SEM.get_or_init(|| {
+        let n = std::thread::available_parallelism()
+            .map(|p| p.get())
+            .unwrap_or(2)
+            .min(4);
+        tracing::info!(permits = n, "tectonic concurrency semaphore initialised");
+        tokio::sync::Semaphore::new(n)
+    })
+}
+
 pub(crate) async fn compile_pdf(tex: &str) -> Result<Vec<u8>, AppError> {
+    // Acquire BEFORE doing any work — including the tmpdir write — so
+    // queued requests don't waste FDs while waiting their turn. Permit
+    // is held for the entire compile, released on drop.
+    let _permit = tectonic_semaphore()
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(format!("tectonic semaphore: {e}")))?;
+
     let tmp = tempfile::TempDir::new().map_err(|e| AppError::Internal(format!("tempdir: {e}")))?;
     let tex_path = tmp.path().join("paper.tex");
     tokio::fs::write(&tex_path, tex)
@@ -1030,6 +1059,60 @@ mod tests {
         // references rendered
         assert!(out.contains("\\begin{thebibliography}"));
         assert!(out.contains("Knuth, D."));
+        // N6 guard: empty cover_letter_section must NOT smuggle in the
+        // 承诺书 page. If a future refactor inverts the `{% if %}`
+        // condition, this fires before the anonymous CUMCM bundle
+        // silently starts carrying the cover letter.
+        assert!(
+            !out.contains("我们郑重承诺"),
+            "empty cover_letter_section should not render cover-letter body"
+        );
+    }
+
+    #[test]
+    fn cumcm_template_injects_cover_letter_when_provided() {
+        let meta = fixture_meta();
+        let sections: Vec<serde_json::Value> = meta
+            .sections
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "title": s.title,
+                    "body_latex": format!("%% section placeholder body for {}", s.title),
+                })
+            })
+            .collect();
+
+        let mut ctx = tera::Context::new();
+        ctx.insert("title", &meta.title);
+        ctx.insert("abstract", &meta.r#abstract);
+        ctx.insert("abstract_latex", &meta.r#abstract);
+        ctx.insert("problem_text", &meta.problem_text);
+        ctx.insert("sections", &sections);
+        ctx.insert("references", &meta.references);
+        ctx.insert("team_id", "");
+        ctx.insert("problem_id", "");
+        ctx.insert("graphics_root", "/tmp/fake-run/");
+        ctx.insert("ai_use_report_section", "");
+        ctx.insert("pdf_title", &meta.title);
+        // Non-empty cover_letter_section — render path used by the
+        // submission bundle's printed variant.
+        ctx.insert(
+            "cover_letter_section",
+            "\\section*{COVER-LETTER-MARKER} 我们郑重承诺",
+        );
+
+        let out = tera()
+            .render(TemplateKind::Cumcm.file(), &ctx)
+            .expect("renders");
+        assert!(
+            out.contains("COVER-LETTER-MARKER"),
+            "non-empty cover_letter_section must render verbatim"
+        );
+        assert!(
+            out.contains("我们郑重承诺"),
+            "cover-letter body text reaches the rendered LaTeX"
+        );
     }
 
     #[test]

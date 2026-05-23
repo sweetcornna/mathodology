@@ -39,9 +39,13 @@
 //!   ```
 //!
 //! All bundles are built fully in-memory (Vec<u8>) because each component
-//! has independent retry semantics and we want a single atomic body to hand
-//! back to axum. The hard 100 MB upper bound matches `read_capped` × 3 and
-//! is well below any of the three platforms' upload ceilings.
+//! has independent retry semantics and we want a single atomic body to
+//! hand back to axum. The 100 MB hard cap avoids buffering the response
+//! body twice (once here, once in axum), and is well below any of the
+//! three platforms' upload ceilings. The support-archive walker enforces
+//! a tighter 80 MB / 500-file budget *during* construction so we reject
+//! before the OOM window opens, rather than after assembly when the
+//! damage is already done.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -61,17 +65,33 @@ use zip::ZipWriter;
 
 use crate::error::AppError;
 use crate::routes::export::{
-    compile_docx, compile_pdf, latex_escape, read_capped, render_tex, resolve_within, tera,
-    PaperMeta, RenderExtras, TemplateKind,
+    compile_docx, compile_pdf, render_tex, resolve_within, tera, PaperMeta, RenderExtras,
+    TemplateKind,
 };
 use crate::state::AppState;
 
-/// Hard cap on the assembled bundle. Above this we'd be sending so much
-/// data over the WS-server's single-threaded io_uring that other runs
-/// would feel it. COMAP's own limit is 25 MB and CUMCM is unstated but in
-/// practice 50 MB+ trips the upload client — 100 MB is more than enough
-/// headroom and 4× our current worst-case figure folder.
+/// Hard cap on the *assembled* bundle (post-build safety net). COMAP's own
+/// upload limit is 25 MB; CUMCM is unstated but in practice 50 MB+ trips
+/// the upload client. 100 MB leaves headroom for two CUMCM variants +
+/// docx + figures while staying well under any platform ceiling.
 const MAX_BUNDLE_BYTES: usize = 100 * 1024 * 1024;
+
+/// Per-bundle budget for the support archive (figures + data combined).
+/// Enforced *during* the walk so we reject oversized inputs before
+/// committing them to memory — avoids the post-build OOM window where a
+/// malicious or misconfigured run could buffer ~512 MB before the
+/// `MAX_BUNDLE_BYTES` check trips.
+const SUPPORT_MAX_BYTES: u64 = 80 * 1024 * 1024;
+/// Cap on the number of files included in the support archive. Bounds the
+/// ZIP central directory size; without this a `data/` dir holding 10k
+/// small CSVs would balloon the metadata even if total bytes stay sane.
+const SUPPORT_MAX_FILES: usize = 500;
+/// Per-file size cap for support-archive entries. Larger than the
+/// figures-export 32 MB cap because competition input data files
+/// (NetCDF, parquet, large CSVs) routinely exceed 32 MB. Files above
+/// this are warn-and-skipped, not fatal: better to ship a slightly
+/// incomplete bundle than to fail the whole submission.
+const SUPPORT_PER_FILE_MAX_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 pub struct SubmissionQuery {
@@ -179,7 +199,7 @@ async fn build_mcm_bundle(
             zw.write_all(&md).map_err(zip_err)?;
         }
 
-        add_figures_to_zip(&mut zw, run_root, "source/figures", opts).await?;
+        add_archival_figures_to_zip(&mut zw, run_root, "source/figures", opts).await?;
 
         zw.finish().map_err(zip_err)?;
     }
@@ -363,15 +383,17 @@ async fn build_support_zip(run_root: &StdPath) -> Result<Vec<u8>, AppError> {
             }
         }
 
-        // 3. figures/ — all PNGs from the run's figures directory
-        add_figures_to_zip(&mut zw, run_root, "figures", opts).await?;
-
+        // 3. figures/ — all PNGs from the run's figures directory.
         // 4. data/ — optional; some problems provide reference data
-        //    inside the run dir. Walk it shallowly (one level deep) so
+        //    inside the run dir. Walked shallowly (one level deep) so
         //    we don't accidentally suck in node_modules-sized trees.
+        // Both share a SupportBudget so cumulative size / file-count
+        // caps are enforced across the two directories together.
+        let mut budget = SupportBudget::new();
+        add_dir_to_zip(&mut zw, &run_root.join("figures"), "figures", opts, &mut budget).await?;
         let data_dir = run_root.join("data");
-        if data_dir.is_dir() {
-            add_data_dir_to_zip(&mut zw, &data_dir, "data", opts).await?;
+        if is_existing_dir(&data_dir).await {
+            add_dir_to_zip(&mut zw, &data_dir, "data", opts, &mut budget).await?;
         }
 
         // 5. README inside the inner zip — survives unpacking the
@@ -385,7 +407,110 @@ async fn build_support_zip(run_root: &StdPath) -> Result<Vec<u8>, AppError> {
     Ok(buf)
 }
 
-async fn add_figures_to_zip<W: Write + std::io::Seek>(
+/// Running totals enforced across all support-archive directories.
+/// Single mutable struct passed by reference so figures + data share
+/// one budget (10 000 figures × 1 MB shouldn't be allowed just because
+/// they're spread across two directories).
+struct SupportBudget {
+    bytes: u64,
+    files: usize,
+}
+
+impl SupportBudget {
+    fn new() -> Self {
+        Self { bytes: 0, files: 0 }
+    }
+
+    /// Reserve `size` bytes + 1 file slot. Returns `Err(PayloadTooLarge)`
+    /// when adding would exceed either cap so the caller bails before
+    /// reading the file into memory.
+    fn try_reserve(&mut self, size: u64) -> Result<(), AppError> {
+        if self.files + 1 > SUPPORT_MAX_FILES {
+            tracing::warn!(
+                cap = SUPPORT_MAX_FILES,
+                "support archive: file count cap exceeded"
+            );
+            return Err(AppError::PayloadTooLarge);
+        }
+        let projected = self.bytes.saturating_add(size);
+        if projected > SUPPORT_MAX_BYTES {
+            tracing::warn!(
+                projected,
+                cap = SUPPORT_MAX_BYTES,
+                "support archive: cumulative size cap exceeded"
+            );
+            return Err(AppError::PayloadTooLarge);
+        }
+        self.bytes = projected;
+        self.files += 1;
+        Ok(())
+    }
+}
+
+/// Unified directory-to-zip walker used for both `figures/` and `data/`.
+/// Missing source dir is non-fatal (returns Ok). Each file is:
+///   * skipped if its name starts with `.` (dotfiles like `.DS_Store`)
+///   * skipped (with warn) if its size exceeds `SUPPORT_PER_FILE_MAX_BYTES`
+///   * counted against the shared `SupportBudget`; bundle aborted with
+///     `PayloadTooLarge` if budget is busted.
+async fn add_dir_to_zip<W: Write + std::io::Seek>(
+    zw: &mut ZipWriter<W>,
+    src_dir: &StdPath,
+    prefix: &str,
+    opts: SimpleFileOptions,
+    budget: &mut SupportBudget,
+) -> Result<(), AppError> {
+    let mut rd = match tokio::fs::read_dir(src_dir).await {
+        Ok(r) => r,
+        Err(_) => return Ok(()), // missing source dir is OK
+    };
+    while let Some(entry) = rd
+        .next_entry()
+        .await
+        .map_err(|e| AppError::Internal(format!("walk {}: {e}", src_dir.display())))?
+    {
+        let path = entry.path();
+        let meta = match tokio::fs::metadata(&path).await {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) if !n.starts_with('.') => n.to_string(),
+            _ => continue,
+        };
+        // M7: single oversized file → warn + skip, NOT fail the bundle.
+        // Competition data files routinely exceed the 32 MB figures cap
+        // (NetCDF, parquet, raw sensor dumps). Better a slightly thin
+        // bundle than no bundle.
+        let size = meta.len();
+        if size > SUPPORT_PER_FILE_MAX_BYTES {
+            tracing::warn!(
+                path = %path.display(),
+                size,
+                cap = SUPPORT_PER_FILE_MAX_BYTES,
+                "support archive: skipping file above per-file cap"
+            );
+            continue;
+        }
+        budget.try_reserve(size)?;
+        let bytes = tokio::fs::read(&path)
+            .await
+            .map_err(|e| AppError::Internal(format!("read {}: {e}", path.display())))?;
+        zw.start_file(format!("{prefix}/{name}"), opts)
+            .map_err(zip_err)?;
+        zw.write_all(&bytes).map_err(zip_err)?;
+    }
+    Ok(())
+}
+
+/// MCM bundle's archival `source/figures/` copy — no budget tracking
+/// because (a) it's the team's own paper figures, bounded by the
+/// pipeline, and (b) the COMAP bundle ships only the main PDF for
+/// upload, so source/ exists purely for the team's offline records.
+async fn add_archival_figures_to_zip<W: Write + std::io::Seek>(
     zw: &mut ZipWriter<W>,
     run_root: &StdPath,
     prefix: &str,
@@ -394,7 +519,7 @@ async fn add_figures_to_zip<W: Write + std::io::Seek>(
     let figures_dir = run_root.join("figures");
     let mut rd = match tokio::fs::read_dir(&figures_dir).await {
         Ok(r) => r,
-        Err(_) => return Ok(()), // no figures is fine
+        Err(_) => return Ok(()),
     };
     while let Some(entry) = rd
         .next_entry()
@@ -402,15 +527,31 @@ async fn add_figures_to_zip<W: Write + std::io::Seek>(
         .map_err(|e| AppError::Internal(format!("walk figures: {e}")))?
     {
         let path = entry.path();
-        if !path.is_file() {
+        let meta = match tokio::fs::metadata(&path).await {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if !meta.is_file() {
             continue;
         }
-        // Skip junk dotfiles (`.DS_Store`) so the archive stays clean.
         let name = match path.file_name().and_then(|n| n.to_str()) {
             Some(n) if !n.starts_with('.') => n.to_string(),
             _ => continue,
         };
-        let bytes = read_capped(&path).await?;
+        // Pipeline-produced figures are tightly bounded (8-12 PNGs at
+        // <2 MB each); a 32 MB ceiling is generous and rejects only
+        // genuinely broken inputs.
+        if meta.len() > 32 * 1024 * 1024 {
+            tracing::warn!(
+                path = %path.display(),
+                size = meta.len(),
+                "archival figures: skipping oversized file"
+            );
+            continue;
+        }
+        let bytes = tokio::fs::read(&path)
+            .await
+            .map_err(|e| AppError::Internal(format!("read {}: {e}", path.display())))?;
         zw.start_file(format!("{prefix}/{name}"), opts)
             .map_err(zip_err)?;
         zw.write_all(&bytes).map_err(zip_err)?;
@@ -418,34 +559,15 @@ async fn add_figures_to_zip<W: Write + std::io::Seek>(
     Ok(())
 }
 
-async fn add_data_dir_to_zip<W: Write + std::io::Seek>(
-    zw: &mut ZipWriter<W>,
-    data_dir: &StdPath,
-    prefix: &str,
-    opts: SimpleFileOptions,
-) -> Result<(), AppError> {
-    let mut rd = tokio::fs::read_dir(data_dir)
+/// Async replacement for `Path::is_dir()` which would otherwise issue a
+/// blocking `stat(2)` syscall on the tokio runtime. Cheap (one syscall)
+/// but the rest of the module is meticulous about async I/O; staying
+/// consistent avoids future surprises when this gets called under load.
+async fn is_existing_dir(path: &StdPath) -> bool {
+    tokio::fs::metadata(path)
         .await
-        .map_err(|e| AppError::Internal(format!("walk data: {e}")))?;
-    while let Some(entry) = rd
-        .next_entry()
-        .await
-        .map_err(|e| AppError::Internal(format!("walk data: {e}")))?
-    {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let name = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) if !n.starts_with('.') => n.to_string(),
-            _ => continue,
-        };
-        let bytes = read_capped(&path).await?;
-        zw.start_file(format!("{prefix}/{name}"), opts)
-            .map_err(zip_err)?;
-        zw.write_all(&bytes).map_err(zip_err)?;
-    }
-    Ok(())
+        .map(|m| m.is_dir())
+        .unwrap_or(false)
 }
 
 // ---------------------------------------------------------------------------
@@ -501,10 +623,18 @@ async fn build_ai_use_report_section(events_path: &StdPath) -> Result<String, Ap
                 .get("completion_tokens")
                 .and_then(|t| t.as_u64())
                 .unwrap_or(0);
+            // Normalize agent names: a single agent can show up as
+            // both "writer" and "finetune_writer" depending on whether
+            // the call originated from the main pipeline or a finetune
+            // chat session. Judges only care about the role; collapse
+            // the finetune_ prefix so the "Used by" cell stays clean.
             let agent = v
                 .get("agent")
                 .and_then(|a| a.as_str())
-                .unwrap_or("unknown")
+                .unwrap_or("unknown");
+            let agent = agent
+                .strip_prefix("finetune_")
+                .unwrap_or(agent)
                 .to_string();
 
             let entry = models.entry(model).or_default();
@@ -542,30 +672,48 @@ async fn build_ai_use_report_section(events_path: &StdPath) -> Result<String, Ap
         .map_err(|e| AppError::Internal(format!("render ai_use_report: {e}")))
 }
 
-fn infer_provider(model: &str) -> &'static str {
+fn infer_provider(model: &str) -> String {
     let m = model.to_ascii_lowercase();
-    if m.starts_with("gpt-") || m.starts_with("o1") || m.starts_with("o3") || m.starts_with("o4") {
-        "OpenAI"
+    let known: Option<&str> = if m.starts_with("gpt-")
+        || m.starts_with("o1")
+        || m.starts_with("o3")
+        || m.starts_with("o4")
+    {
+        Some("OpenAI")
     } else if m.starts_with("claude") {
-        "Anthropic"
+        Some("Anthropic")
     } else if m.starts_with("gemini") {
-        "Google"
+        Some("Google")
     } else if m.starts_with("deepseek") {
-        "DeepSeek"
+        Some("DeepSeek")
     } else if m.starts_with("glm") {
-        "Zhipu AI"
+        Some("Zhipu AI")
     } else if m.starts_with("qwen") {
-        "Alibaba"
+        Some("Alibaba")
     } else if m.starts_with("doubao") {
-        "ByteDance"
+        Some("ByteDance")
     } else if m.starts_with("moonshot") || m.starts_with("kimi") {
-        "Moonshot AI"
+        Some("Moonshot AI")
     } else if m.starts_with("grok") {
-        "xAI"
+        Some("xAI")
     } else if m.starts_with("yi-") {
-        "01.AI"
+        Some("01.AI")
     } else {
-        "LLM provider"
+        None
+    };
+    match known {
+        Some(s) => s.to_string(),
+        // Fallback: use the model's first hyphen-separated segment,
+        // title-cased. "foobar-pro-v2" → "Foobar". Reads more naturally
+        // in the judges' table than a literal "LLM provider".
+        None => {
+            let first = model.split('-').next().unwrap_or(model);
+            let mut chars = first.chars();
+            match chars.next() {
+                Some(c) => c.to_ascii_uppercase().to_string() + chars.as_str(),
+                None => "Other".to_string(),
+            }
+        }
     }
 }
 
@@ -587,12 +735,15 @@ fn render_fragment(name: &str, year: i32) -> Result<String, AppError> {
 }
 
 fn md5_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
     let mut h = Md5::new();
     h.update(bytes);
     let out = h.finalize();
     let mut s = String::with_capacity(32);
     for b in out.iter() {
-        s.push_str(&format!("{b:02x}"));
+        // write! writes into the existing String buffer; format!() would
+        // allocate a fresh 2-char String per byte.
+        write!(&mut s, "{b:02x}").expect("infallible into String");
     }
     s
 }
@@ -727,11 +878,6 @@ fn build_zip_response(bytes: Vec<u8>, label: &str, run_id: Uuid) -> Result<Respo
         .body(Body::from(bytes))
         .map_err(|e| AppError::Internal(format!("response build: {e}")))?;
     *resp.headers_mut() = headers;
-    // Silence the unused-import lint locally — `latex_escape` is part of
-    // the cross-module surface area we expose; the bundle path doesn't
-    // currently call it but keeping the symbol in scope means downstream
-    // changes (e.g. pre-filling team_id) won't need a second `use`.
-    let _ = latex_escape;
     Ok(resp)
 }
 
@@ -890,7 +1036,12 @@ mod tests {
         assert_eq!(infer_provider("moonshot-v1"), "Moonshot AI");
         assert_eq!(infer_provider("grok-3"), "xAI");
         assert_eq!(infer_provider("yi-large"), "01.AI");
-        assert_eq!(infer_provider("some-unknown-model"), "LLM provider");
+        // Unknown models fall back to the title-cased first segment of
+        // the model name — reads more naturally to a judge than a
+        // literal "LLM provider" placeholder.
+        assert_eq!(infer_provider("some-unknown-model"), "Some");
+        assert_eq!(infer_provider("foobar"), "Foobar");
+        assert_eq!(infer_provider(""), "Other");
     }
 
     #[test]
