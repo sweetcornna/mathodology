@@ -230,7 +230,11 @@ impl ProviderAdapter for AnthropicAdapter {
     }
 
     fn has_credentials(&self) -> bool {
-        !self.api_key.is_empty()
+        // Mirror openai_compat: a local/no-auth endpoint (self-hosted proxy or
+        // test mock speaking the Anthropic API) is usable without a key.
+        // Without this the router's credentials gate skipped a keyless local
+        // Anthropic provider entirely (it returned 500 "no adapter").
+        !self.api_key.is_empty() || super::is_local_base_url(&self.base_url)
     }
 
     async fn complete(&self, req: CanonicalRequest) -> Result<CanonicalResponse, ProviderError> {
@@ -575,6 +579,27 @@ mod tests {
         assert_eq!(msgs.len(), 3);
         assert_eq!(msgs[0]["role"], "user");
         assert_eq!(msgs[1]["role"], "assistant");
+    }
+
+    #[test]
+    fn has_credentials_true_for_key_or_local_endpoint() {
+        let mk = |base: &str, key: &str| {
+            AnthropicAdapter::new(
+                "anth".into(),
+                base.into(),
+                key.into(),
+                vec!["claude-sonnet-4-6".into()],
+                Client::new(),
+            )
+        };
+        // Real API + key: has creds.
+        assert!(mk("https://api.anthropic.com", "sk").has_credentials());
+        // Remote endpoint, empty key: dead key -> skipped by the router.
+        assert!(!mk("https://api.anthropic.com", "").has_credentials());
+        // Local/no-auth endpoint, empty key: usable (mirrors openai_compat).
+        // This is exactly the case that made the anthropic_stream mock 500.
+        assert!(mk("http://127.0.0.1:8123", "").has_credentials());
+        assert!(mk("http://localhost:8123", "").has_credentials());
     }
 
     #[test]

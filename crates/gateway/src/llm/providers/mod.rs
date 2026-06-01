@@ -73,6 +73,16 @@ impl From<ProviderError> for AppError {
     }
 }
 
+/// True when a provider base URL points at a local endpoint that usually needs
+/// no auth (Ollama, a self-hosted proxy, or a test mock). Adapters use this so
+/// an empty API key against a local URL counts as "intentionally
+/// unauthenticated" rather than a dead key — keeping `has_credentials()`
+/// consistent across adapters (anthropic previously lacked this clause, so a
+/// keyless local Anthropic-shaped endpoint was wrongly skipped by the router).
+pub(crate) fn is_local_base_url(base_url: &str) -> bool {
+    base_url.contains("127.0.0.1") || base_url.contains("localhost")
+}
+
 /// Adapter that can route a canonical request to a concrete upstream
 /// provider. Each live adapter holds its own HTTP client, base URL, and key.
 #[async_trait::async_trait]
