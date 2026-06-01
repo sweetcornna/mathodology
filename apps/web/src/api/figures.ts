@@ -31,6 +31,19 @@ function withDevToken(url: string): string {
   return `${url}${sep}token=${encodeURIComponent(TOKEN)}`;
 }
 
+// Production figure/notebook/paper requests ride in `<img src>` / `<a href>`,
+// which cannot carry an Authorization header. The gateway accepts an `mm_auth`
+// cookie for GET asset routes only (so it can't be replayed as CSRF against the
+// mutating POST endpoints), so we set it once at app init from the configured
+// token — the token never enters a URL. In dev the SPA is cross-origin to the
+// gateway (Vite proxy, different port) so this cookie isn't sent and the
+// DEV-only `?token=` fallback applies; in prod the SPA is served same-origin
+// (see config/Caddyfile.prod) and the browser sends the cookie automatically.
+export function ensureAuthCookie(): void {
+  if (typeof document === "undefined" || !TOKEN) return;
+  document.cookie = `mm_auth=${TOKEN}; path=/; SameSite=Lax`;
+}
+
 export function figureUrl(runId: string, relPath: string): string {
   // `relPath` is produced by the worker as e.g. "figures/fig-0.png". It may
   // already contain slashes — encode each segment so a stray space or non-ascii
