@@ -13,7 +13,7 @@
     },
     "agent": {
       "type": ["string", "null"],
-      "enum": ["analyzer", "modeler", "coder", "writer", "critic", "searcher", null]
+      "enum": ["analyzer", "modeler", "coder", "writer", "critic", "searcher", "paper_editor", "audit", null]
     },
     "kind": {
       "type": "string",
@@ -23,9 +23,16 @@
         "log",
         "token",
         "cost",
+        "finetune.session.start",
+        "finetune.session.done",
+        "finetune.session.error",
+        "finetune.tool_call",
+        "finetune.tool_result",
+        "finetune.token",
         "agent.output",
         "kernel.stdout",
         "kernel.figure",
+        "kernel.error",
         "error",
         "done"
       ]
@@ -133,6 +140,74 @@
         "notebook_path": { "type": "string" },
         "paper_path": { "type": "string" },
         "cost_rmb": { "type": "number" }
+      }
+    },
+    "kernelError": {
+      "type": "object",
+      "description": "Cell execution failed in the Jupyter or Matlab/Octave kernel. Tagged `agent: coder`.",
+      "required": ["traceback"],
+      "properties": {
+        "traceback": { "type": "string", "description": "Tail of the error traceback / stderr; truncated to keep the payload small." },
+        "exit_code": { "type": "integer", "description": "Process exit code (Matlab/Octave batch runs); omitted for the Python kernel." },
+        "cell_index": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "finetuneSessionStart": {
+      "type": "object",
+      "description": "A PaperEditor fine-tune session began. Tagged `agent: paper_editor`.",
+      "required": ["session_id"],
+      "properties": {
+        "session_id": { "type": "string", "format": "uuid" },
+        "user_message": { "type": "string", "description": "The natural-language edit request (truncated)." }
+      }
+    },
+    "finetuneSessionDone": {
+      "type": "object",
+      "description": "A PaperEditor fine-tune session finished successfully.",
+      "required": ["session_id"],
+      "properties": {
+        "session_id": { "type": "string", "format": "uuid" },
+        "summary": { "type": "string", "description": "Final natural-language summary of the edits applied." }
+      }
+    },
+    "finetuneSessionError": {
+      "type": "object",
+      "description": "A PaperEditor fine-tune session failed.",
+      "required": ["session_id", "message"],
+      "properties": {
+        "session_id": { "type": "string", "format": "uuid" },
+        "message": { "type": "string" },
+        "code": { "type": "string", "description": "Exception class name." }
+      }
+    },
+    "finetuneToolCall": {
+      "type": "object",
+      "description": "PaperEditor invoked a surgical-edit tool.",
+      "required": ["tool"],
+      "properties": {
+        "tool": { "type": "string", "description": "Tool name, e.g. edit_section / regenerate_figure." },
+        "args": { "type": "object", "additionalProperties": true },
+        "reasoning": { "type": "string" }
+      }
+    },
+    "finetuneToolResult": {
+      "type": "object",
+      "description": "Result of a PaperEditor tool call.",
+      "required": ["tool", "ok"],
+      "properties": {
+        "tool": { "type": "string" },
+        "ok": { "type": "boolean" },
+        "summary": { "type": "string" },
+        "error": { "type": ["string", "null"] }
+      }
+    },
+    "finetuneToken": {
+      "type": "object",
+      "description": "Streamed token from a PaperEditor LLM turn. Mirrors `token` but namespaced so the UI can filter fine-tune output.",
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string" },
+        "model": { "type": "string" }
       }
     }
   }

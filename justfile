@@ -26,7 +26,7 @@ dev-gateway:
     cargo run -p gateway
 
 dev-worker:
-    cd apps/agent-worker && uv run arq agent_worker.main.WorkerSettings
+    cd apps/agent-worker && uv run python -m agent_worker
 
 dev-web:
     pnpm --filter web dev
@@ -42,12 +42,13 @@ migrate-add name:
 gen: gen-py gen-ts
 
 gen-py:
-    uv run datamodel-codegen \
+    uvx --from datamodel-code-generator datamodel-codegen \
         --input packages/contracts/openapi.yaml \
         --input-file-type openapi \
         --output packages/py-contracts/src/mm_contracts/generated.py \
         --output-model-type pydantic_v2.BaseModel \
-        --target-python-version 3.11
+        --target-python-version 3.11 \
+        --disable-timestamp
 
 gen-ts:
     pnpm exec openapi-typescript packages/contracts/openapi.yaml -o packages/ts-contracts/src/generated.ts
