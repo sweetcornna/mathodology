@@ -66,6 +66,16 @@ def test_sensitivity_finds_cn_heading() -> None:
     assert findings.has_sensitivity_section
 
 
+def test_sensitivity_section_accepts_robustness_and_validation_titles() -> None:
+    """C5: the CUMCM rubric accepts 鲁棒性分析 / 模型验证 / robustness / validation
+    in lieu of an explicitly-named sensitivity section. A paper using one of
+    these titles must NOT be flagged for a missing sensitivity section."""
+    for title in ("鲁棒性分析", "模型验证", "Robustness Analysis", "Model Validation"):
+        p = _draft([(title, "We perturbed α by ±10%.")])
+        findings = mine_sensitivity_evidence(p)
+        assert findings.has_sensitivity_section, f"title {title!r} not detected"
+
+
 # --- anonymity ------------------------------------------------------------
 
 
@@ -97,6 +107,58 @@ def test_anonymity_flags_advisor_in_references() -> None:
     )
     findings = scan_anonymity_violations(p)
     assert findings.has_violations
+
+
+def test_anonymity_ignores_gbt7714_publisher_in_references() -> None:
+    """D14: GB/T 7714-2015 references legitimately carry publisher cities and
+    institution presses (北京: 清华大学出版社). These must NOT trigger a BLOCKING
+    anonymity finding — that drove needless Critic revisions that corrupted
+    correctly-formatted bibliographies."""
+    p = PaperDraft(
+        title="T",
+        abstract="Clean abstract with predicted error 3.2%.",
+        sections=[PaperSection(title="Body", body_markdown="Model with parameter α.")],
+        references=[
+            "[1] 赵某某. 数学建模[M]. 北京: 清华大学出版社, 2020.",
+            "[2] Li M. Optimization. Shanghai: Fudan University Press, 2019.",
+        ],
+        figure_refs=[],
+    )
+    findings = scan_anonymity_violations(p)
+    assert not findings.has_violations
+    assert anonymity_criteria(findings) == []
+
+
+def test_anonymity_still_flags_advisor_intro_in_references() -> None:
+    """D14 must not over-suppress: an author/advisor intro (指导教师:) in the
+    references is a genuine identity leak and must still be flagged even
+    though publisher cities/universities there are exempted."""
+    p = PaperDraft(
+        title="T",
+        abstract="abs",
+        sections=[PaperSection(title="x", body_markdown="y")],
+        references=["指导教师：张教授. 数学建模指南. 2021."],
+        figure_refs=[],
+    )
+    findings = scan_anonymity_violations(p)
+    assert findings.has_violations
+    assert any(label == "references" for label, _ in findings.violations)
+
+
+def test_anonymity_still_flags_university_in_body_not_references() -> None:
+    """A real school name in the body is still caught; only the references
+    section is exempted from the university/region patterns."""
+    p = PaperDraft(
+        title="T",
+        abstract="abs",
+        sections=[PaperSection(title="Intro", body_markdown="Our team from 清华大学 ...")],
+        references=["[1] 赵某某. 数学建模[M]. 北京: 清华大学出版社, 2020."],
+        figure_refs=[],
+    )
+    findings = scan_anonymity_violations(p)
+    assert findings.has_violations
+    # The hit must come from the body, not the (exempted) references.
+    assert all(label != "references" for label, _ in findings.violations)
 
 
 def test_anonymity_clean_paper_passes() -> None:

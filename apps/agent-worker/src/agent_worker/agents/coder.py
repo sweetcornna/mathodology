@@ -493,27 +493,6 @@ class CoderAgent:
             reasoning_effort=self.prompt.reasoning_effort or self._run_effort,
         )
 
-    async def _stream_and_collect_raw(
-        self, model: str, messages: list[dict[str, Any]]
-    ) -> str:
-        # Kept for any future need — currently unused. The original inline
-        # implementation is left below for reference / diff compactness.
-        effort = self.prompt.reasoning_effort or self._run_effort
-        parts: list[str] = []
-        async for delta in self.gateway.stream_completion(
-            run_id=self.emitter.run_id,
-            agent=self.AGENT_NAME,
-            model=model,
-            messages=messages,
-            temperature=self.prompt.temperature,
-            # 20k default, 1M when long-context opt-in is set. See base.py.
-            max_tokens=1_000_000 if self._long_context else 20000,
-            response_format={"type": "json_object"},
-            reasoning_effort=effort,
-        ):
-            parts.append(delta)
-        return "".join(parts)
-
     @staticmethod
     def _parse_directive(text: str) -> CoderDirective:
         cleaned = text.strip()

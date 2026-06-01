@@ -11,6 +11,7 @@ from agent_worker.few_shot import (
     FewShotLibrary,
     format_writer_block,
 )
+from agent_worker.few_shot.loader import _normalize_family
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -148,6 +149,30 @@ def test_normalize_family_handles_cn_aliases(tmp_path: Path) -> None:
     assert lib.top_k("国赛", "A", k=1)[0].paper_id == "cumcm_A"
     # "huashu" should fall through to sibling cumcm
     assert lib.top_k("huashu", "A", k=1)[0].paper_id == "cumcm_A"
+
+
+def test_normalize_family_all_four_families() -> None:
+    """Regression for the 'cumcm' -> 'mcm' substring mismap (D2).
+
+    'mcm' is a substring of 'cumcm', so a naive ordered check that tested
+    'mcm' before 'cumcm' returned 'mcm' for every CUMCM run, injecting the
+    wrong (MCM) exemplar corpus into the zh prompt block.
+    """
+    # CUMCM (the regressed case): must NOT be mistaken for mcm.
+    assert _normalize_family("cumcm") == "cumcm"
+    assert _normalize_family("CUMCM") == "cumcm"
+    assert _normalize_family("国赛") == "cumcm"
+    assert _normalize_family("CUMCM 2024 A") == "cumcm"
+    # The other three families stay correct.
+    assert _normalize_family("mcm") == "mcm"
+    assert _normalize_family("MCM") == "mcm"
+    assert _normalize_family("icm") == "icm"
+    assert _normalize_family("ICM 2023 D") == "icm"
+    assert _normalize_family("huashu") == "huashu"
+    assert _normalize_family("华数杯") == "huashu"
+    # Unknown / empty defaults to mcm (unchanged behavior).
+    assert _normalize_family("") == "mcm"
+    assert _normalize_family("something-else") == "mcm"
 
 
 def test_format_writer_block_empty_returns_empty_string() -> None:

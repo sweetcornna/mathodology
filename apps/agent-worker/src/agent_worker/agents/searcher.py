@@ -1037,11 +1037,20 @@ class SearcherAgent:
         ``_refine_queries``. Pass ``response_format=None`` for free-form text
         responses (e.g. the compaction LLM call, which returns markdown).
         """
+        # Route through the shared retry helper so every Searcher LLM path
+        # (_synthesize, _refine_queries, revise_with_critique, compactor) gets
+        # the same transport-error / empty-200 resilience as BaseAgent
+        # subclasses and the Coder. Previously this was a bare stream loop, so
+        # a single ReadTimeout / RemoteProtocolError in _synthesize aborted the
+        # whole run (D7). response_format is passed through verbatim so the
+        # markdown compactor path (response_format=None) is unaffected.
+        from agent_worker.agents.base import _stream_with_retry
+
         effort = self.prompt.reasoning_effort or self._run_effort
-        parts: list[str] = []
-        async for delta in self.gateway.stream_completion(
-            run_id=self.emitter.run_id,
-            agent=self.AGENT_NAME,
+        return await _stream_with_retry(
+            gateway=self.gateway,
+            emitter=self.emitter,
+            agent_name=self.AGENT_NAME,
             model=model,
             messages=messages,
             temperature=self.prompt.temperature,
@@ -1049,9 +1058,7 @@ class SearcherAgent:
             max_tokens=1_000_000 if self._long_context else 20000,
             response_format=response_format,
             reasoning_effort=effort,
-        ):
-            parts.append(delta)
-        return "".join(parts)
+        )
 
     @staticmethod
     def _parse_findings(text: str) -> SearchFindings:

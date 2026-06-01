@@ -272,6 +272,80 @@ async def test_batch_search_web_empty_queries_short_circuits() -> None:
     assert await batch_search_web([]) == {}
 
 
+async def test_batch_search_web_debounce_runs_before_semaphore(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D21: the per-engine debounce must be acquired BEFORE the concurrency
+    semaphore, so a debounce sleep never occupies a slot.
+
+    We record the order of (debounce-acquire, sem-acquire) events per query.
+    Pre-fix the order was sem-acquire then debounce-acquire (debounce held the
+    slot); post-fix every query debounces first, then takes the sem.
+    """
+    monkeypatch.setattr(
+        "agent_worker.tools.web_search_mcp._resolve_command",
+        lambda cmd: "/usr/bin/true",
+    )
+
+    events: list[str] = []
+
+    import agent_worker.tools.web_search_mcp as mod
+
+    class _RecordingDebouncer:
+        def __init__(self, *_a: object, **_k: object) -> None:
+            pass
+
+        async def acquire(self, _engines: object) -> None:
+            events.append("debounce")
+
+    real_sem_cls = asyncio.Semaphore
+
+    class _RecordingSemaphore:
+        def __init__(self, value: int) -> None:
+            self._sem = real_sem_cls(value)
+
+        async def __aenter__(self) -> None:
+            await self._sem.acquire()
+            events.append("sem")
+
+        async def __aexit__(self, *_e: object) -> None:
+            self._sem.release()
+
+    monkeypatch.setattr(mod, "_EngineDebouncer", _RecordingDebouncer)
+    monkeypatch.setattr(mod.asyncio, "Semaphore", _RecordingSemaphore)
+
+    session = _FakeSession({"*": {"results": []}})
+
+    out = await batch_search_web(
+        ["q1", "q2"],
+        engines=("bing",),
+        max_per_query=3,
+        concurrency=2,
+        command="fake",
+        stdio_client_factory=_stdio_factory_ok,
+        session_factory=_session_factory_for(session),
+    )
+
+    assert set(out.keys()) == {"q1", "q2"}
+    # Two queries → two debounce events and two sem events.
+    assert events.count("debounce") == 2
+    assert events.count("sem") == 2
+    # The invariant: at every point, the number of semaphore slots taken never
+    # exceeds the number of debounces already completed. Pre-fix (acquire
+    # inside the sem) a 'sem' event preceded its query's 'debounce', so the
+    # running counts would violate this. Post-fix every query debounces first.
+    seen_debounce = 0
+    seen_sem = 0
+    for kind in events:
+        if kind == "debounce":
+            seen_debounce += 1
+        else:
+            seen_sem += 1
+        assert seen_sem <= seen_debounce, (
+            f"a semaphore slot was taken before debounce: {events}"
+        )
+
+
 async def test_batch_search_web_degrades_when_spawn_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

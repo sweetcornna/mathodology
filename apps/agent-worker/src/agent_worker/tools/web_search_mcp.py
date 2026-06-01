@@ -281,8 +281,14 @@ async def batch_search_web(
                 return results
 
             async def _one(q: str) -> None:
+                # Self-throttle per engine BEFORE entering the concurrency
+                # gate. The debounce can sleep up to cooldown_s per engine; if
+                # that happened inside `async with sem` it would occupy a
+                # concurrency slot for the whole sleep, serializing queries
+                # (D21). The debouncer's own per-engine locks still prevent
+                # hammering any single engine.
+                await debouncer.acquire(engines)
                 async with sem:
-                    await debouncer.acquire(engines)
                     try:
                         call = session.call_tool(
                             _SEARCH_TOOL,

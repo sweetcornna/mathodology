@@ -169,6 +169,93 @@ async def test_run_finetune_emits_session_start_and_done(
     assert fake_gw.calls >= 1
 
 
+async def test_run_finetune_shuts_down_kernel_on_clean_run(
+    tmp_path: Path,
+    fake_redis: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D1: the Jupyter kernel must be shut down in `finally`, else every
+    fine-tune leaks an ipykernel subprocess."""
+    run_id = uuid4()
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / str(run_id)).mkdir()
+    seeded = _seed_run_dir(tmp_path)
+    for f in seeded.iterdir():
+        if f.is_dir():
+            (runs_dir / str(run_id) / f.name).mkdir(exist_ok=True)
+        else:
+            (runs_dir / str(run_id) / f.name).write_bytes(f.read_bytes())
+
+    monkeypatch.setenv("RUNS_DIR", str(runs_dir))
+    monkeypatch.setenv("REDIS_URL", "redis://stub")
+    monkeypatch.setenv("GATEWAY_HTTP", "http://stub")
+    cfg = Settings()
+
+    fake_gw = _FakeGateway()
+    fake_kernel = AsyncMock()
+    monkeypatch.setattr(finetune_main, "GatewayClient", lambda *a, **k: fake_gw)
+    monkeypatch.setattr(finetune_main, "KernelSession", lambda *a, **k: fake_kernel)
+
+    await finetune_main.run_finetune(
+        redis=fake_redis,
+        cfg=cfg,
+        run_id=run_id,
+        session_id=uuid4(),
+        user_message="ensure abstract is concise",
+    )
+
+    fake_kernel.shutdown.assert_awaited_once()
+    assert fake_gw.closed is True
+
+
+async def test_run_finetune_shuts_down_kernel_on_failure(
+    tmp_path: Path,
+    fake_redis: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D1: even when the run fails mid-way, the kernel must still be torn down
+    in `finally`. Force the LLM stream to raise so the except path runs."""
+    run_id = uuid4()
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    (runs_dir / str(run_id)).mkdir()
+    seeded = _seed_run_dir(tmp_path)
+    for f in seeded.iterdir():
+        if f.is_dir():
+            (runs_dir / str(run_id) / f.name).mkdir(exist_ok=True)
+        else:
+            (runs_dir / str(run_id) / f.name).write_bytes(f.read_bytes())
+
+    monkeypatch.setenv("RUNS_DIR", str(runs_dir))
+    monkeypatch.setenv("REDIS_URL", "redis://stub")
+    monkeypatch.setenv("GATEWAY_HTTP", "http://stub")
+    cfg = Settings()
+
+    class _BoomGateway(_FakeGateway):
+        async def stream_completion(self, **_: object) -> AsyncIterator[str]:
+            raise RuntimeError("simulated transport blowup")
+            yield ""  # pragma: no cover — make this an async generator
+
+    boom_gw = _BoomGateway()
+    fake_kernel = AsyncMock()
+    monkeypatch.setattr(finetune_main, "GatewayClient", lambda *a, **k: boom_gw)
+    monkeypatch.setattr(finetune_main, "KernelSession", lambda *a, **k: fake_kernel)
+
+    # run_finetune swallows the exception (logs + emits error) — it must not
+    # re-raise, and it must still shut the kernel down.
+    await finetune_main.run_finetune(
+        redis=fake_redis,
+        cfg=cfg,
+        run_id=run_id,
+        session_id=uuid4(),
+        user_message="anything",
+    )
+
+    fake_kernel.shutdown.assert_awaited_once()
+    assert boom_gw.closed is True
+
+
 async def test_run_finetune_bails_when_run_dir_missing(
     tmp_path: Path,
     fake_redis: AsyncMock,
@@ -203,3 +290,85 @@ async def test_run_finetune_bails_when_run_dir_missing(
     # before constructing it.
     assert fake_gw.calls == 0
     assert fake_gw.closed is False
+
+
+# --- D13: run_locks eviction -----------------------------------------------
+
+
+async def test_maybe_evict_lock_drops_uncontended_lock() -> None:
+    """An uncontended (unlocked, no-waiters) lock is evicted so run_locks
+    can't grow unboundedly across runs."""
+    import asyncio
+
+    from agent_worker.finetune_main import _maybe_evict_lock
+
+    run_id = uuid4()
+    run_locks: dict = {}
+    lock = run_locks.setdefault(run_id, asyncio.Lock())
+    # Simulate a completed run: lock acquired then released.
+    async with lock:
+        pass
+    assert run_id in run_locks
+    _maybe_evict_lock(run_locks, run_id)
+    assert run_id not in run_locks
+    # Idempotent on an already-evicted id.
+    _maybe_evict_lock(run_locks, run_id)
+
+
+async def test_maybe_evict_lock_keeps_held_lock() -> None:
+    """A currently-held lock must NOT be evicted — another coroutine owns it."""
+    import asyncio
+
+    from agent_worker.finetune_main import _maybe_evict_lock
+
+    run_id = uuid4()
+    run_locks: dict = {}
+    lock = run_locks.setdefault(run_id, asyncio.Lock())
+    async with lock:
+        _maybe_evict_lock(run_locks, run_id)
+        assert run_id in run_locks  # still held → kept
+
+
+async def test_maybe_evict_lock_keeps_lock_with_waiters() -> None:
+    """A lock with a queued waiter must NOT be evicted, or the waiter would
+    wake on a lock no longer in the shared map (the finetune/pipeline race)."""
+    import asyncio
+
+    from agent_worker.finetune_main import _maybe_evict_lock
+
+    run_id = uuid4()
+    run_locks: dict = {}
+    lock = run_locks.setdefault(run_id, asyncio.Lock())
+
+    await lock.acquire()  # hold it
+
+    async def _waiter() -> None:
+        async with lock:  # queues behind the held lock
+            pass
+
+    waiter_task = asyncio.create_task(_waiter())
+    await asyncio.sleep(0)  # let the waiter queue up
+
+    # While held with a pending waiter, eviction must be refused.
+    _maybe_evict_lock(run_locks, run_id)
+    assert run_id in run_locks
+
+    lock.release()
+    await waiter_task
+
+
+async def test_run_locks_recreated_after_eviction() -> None:
+    """A request arriving after eviction recreates the lock via setdefault —
+    correct, since the prior writer already finished."""
+    import asyncio
+
+    from agent_worker.finetune_main import _maybe_evict_lock
+
+    run_id = uuid4()
+    run_locks: dict = {}
+    first = run_locks.setdefault(run_id, asyncio.Lock())
+    _maybe_evict_lock(run_locks, run_id)
+    assert run_id not in run_locks
+    second = run_locks.setdefault(run_id, asyncio.Lock())
+    assert second is not first
+    assert run_id in run_locks

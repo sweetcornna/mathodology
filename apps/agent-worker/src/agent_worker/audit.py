@@ -183,6 +183,69 @@ def check_figure_orphans(
     )
 
 
+# Sub-question coverage heuristic (D15). The old check used a fixed 12-char
+# prefix substring, which both over-matched (a common prefix like
+# "maximize prof" appears in unrelated prose → false "covered") and
+# under-matched (a 4-CJK-char prefix is not distinctive). We now score
+# content-word overlap for whitespace-tokenizable text, and fall back to a
+# longer, more distinctive prefix for CJK-dominant questions.
+_SUBQ_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "the", "a", "an", "and", "or", "of", "to", "for", "in", "on", "at",
+        "by", "is", "are", "be", "with", "that", "this", "these", "those",
+        "as", "from", "we", "our", "it", "its", "how", "what", "which",
+        "does", "do", "can", "should", "must", "will", "given", "using",
+        "over", "across", "between", "into", "per",
+    }
+)
+_CJK_RE = re.compile(r"[一-鿿]")
+# Fraction of content words (or CJK bigrams) that must appear for "covered".
+_SUBQ_COVERAGE_RATIO = 0.5
+
+
+def _subq_content_words(cleaned: str) -> list[str]:
+    """Lowercased content words (>=3 chars, non-stopword) from `cleaned`."""
+    words = re.findall(r"[a-z0-9]+", cleaned.lower())
+    return [w for w in words if len(w) >= 3 and w not in _SUBQ_STOPWORDS]
+
+
+def _cjk_bigrams(text: str) -> list[str]:
+    """Overlapping CJK character bigrams of `text`. Bigrams survive small
+    insertions ('预测未来' still shares '预测','未来' with '预测了未来') far better
+    than an exact prefix substring, while staying distinctive enough that an
+    unrelated section won't coincidentally match a majority of them."""
+    cjk = "".join(_CJK_RE.findall(text))
+    if len(cjk) < 2:
+        return [cjk] if cjk else []
+    return [cjk[i : i + 2] for i in range(len(cjk) - 1)]
+
+
+def _subquestion_is_covered(cleaned: str, md_lower: str, body_words: set[str]) -> bool:
+    """True if the sub-question appears (even paraphrased) in the body.
+
+    - English-ish (whitespace-tokenizable) questions: at least
+      `_SUBQ_COVERAGE_RATIO` of content words present in the body as WHOLE
+      words. Whole-word matching (vs the old prefix substring) avoids the
+      coincidental in-word hit the 12-char prefix produced (e.g. "rate"
+      matching inside "accelerate").
+    - CJK-dominant questions (few/no whitespace tokens): a longer prefix
+      substring match, which is far more distinctive than the old 12 chars.
+    """
+    content = _subq_content_words(cleaned)
+    if content:
+        hits = sum(1 for w in content if w in body_words)
+        return hits / len(content) >= _SUBQ_COVERAGE_RATIO
+    # No Latin content words — treat as CJK / symbolic. Score CJK-bigram
+    # overlap against the body so a paraphrase with small insertions still
+    # registers as covered.
+    bigrams = _cjk_bigrams(cleaned)
+    if not bigrams:
+        return True  # nothing distinctive to check → don't flag
+    body_bigrams = set(_cjk_bigrams(md_lower))
+    hits = sum(1 for b in bigrams if b in body_bigrams)
+    return hits / len(bigrams) >= _SUBQ_COVERAGE_RATIO
+
+
 def check_subquestion_coverage(
     *,
     paper: PaperDraft,
@@ -192,24 +255,24 @@ def check_subquestion_coverage(
     paper_md: str,
 ) -> AuditFinding | None:
     """Every sub-question that the Analyzer identified must be visibly
-    addressed in the paper. We do a substring match against a short
-    distinctive phrase from each sub_question (first 10 chars, stripped
-    of punctuation). Missed sub-questions are a top scoring concern in
-    MCM/CUMCM rubrics.
+    addressed in the paper. Coverage is scored by content-word overlap
+    (English) or a distinctive CJK prefix (Chinese) — see
+    `_subquestion_is_covered`. Missed sub-questions are a top scoring concern
+    in MCM/CUMCM rubrics.
     """
     if not analysis.sub_questions:
         return None
     md_lower = paper_md.lower()
+    # Whole-word set of the body for content-word matching (avoids the
+    # coincidental in-word substring hits the old prefix check produced).
+    body_words = set(re.findall(r"[a-z0-9]+", md_lower))
     missing: list[str] = []
     for q in analysis.sub_questions:
         # Strip leading "问题N：" or "Q: " prefixes that won't appear in body.
         cleaned = re.sub(r"^[\s问题题目QqＱ]+[:：\d.0-9、\-\s]*", "", q).strip()
         if not cleaned:
             continue
-        # Use first ~12 characters; long enough to be distinctive, short
-        # enough to survive paraphrasing in the body.
-        key = cleaned[:12].lower()
-        if key and key not in md_lower:
+        if not _subquestion_is_covered(cleaned, md_lower, body_words):
             missing.append(q[:60])
     if not missing:
         return None

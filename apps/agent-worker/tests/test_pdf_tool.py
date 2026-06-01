@@ -147,6 +147,72 @@ async def test_fetch_and_extract_returns_none_on_timeout(httpx_mock) -> None:  #
     assert parser == "none"
 
 
+# --- D9: streaming download aborts past max_bytes --------------------------
+
+
+async def test_fetch_and_extract_aborts_streaming_past_max_bytes(httpx_mock) -> None:  # type: ignore[no-untyped-def]
+    """A body larger than max_bytes must be aborted mid-download, never fully
+    buffered. We feed the body as discrete chunks and count how many the
+    fetcher consumes — it must stop once the cap is crossed."""
+    from pytest_httpx import IteratorStream
+
+    chunk = b"x" * (256 * 1024)  # 256 KB per chunk
+    consumed = 0
+
+    def _chunks():  # type: ignore[no-untyped-def]
+        nonlocal consumed
+        for _ in range(40):  # would be 10 MB if fully read
+            consumed += 1
+            yield chunk
+
+    httpx_mock.add_response(
+        stream=IteratorStream(_chunks()),
+        headers={"content-type": "application/pdf"},
+    )
+    text, parser = await fetch_and_extract(
+        "http://example.com/big.pdf", max_bytes=1_000_000
+    )
+    assert text is None
+    assert parser == "none"
+    # Aborted early: must not have drained all 40 chunks (10 MB). A 1 MB cap
+    # with 256 KB chunks trips after ~5 chunks.
+    assert consumed < 40
+
+
+# --- D28: SSRF guard -------------------------------------------------------
+
+
+async def test_fetch_and_extract_refuses_metadata_host_without_request(httpx_mock) -> None:  # type: ignore[no-untyped-def]
+    """A spoofed Unpaywall url pointing at the cloud-metadata endpoint must be
+    refused before any HTTP request is issued (SSRF)."""
+    text, parser = await fetch_and_extract(
+        "http://169.254.169.254/latest/meta-data/"
+    )
+    assert text is None
+    assert parser == "none"
+    # No request must have been attempted against the internal host.
+    assert httpx_mock.get_requests() == []
+
+
+def test_is_safe_fetch_url_policy() -> None:
+    from agent_worker.tools.pdf import _is_safe_fetch_url
+
+    # Internal / link-local / loopback / private / reserved — all blocked.
+    assert not _is_safe_fetch_url("http://169.254.169.254/latest/meta-data/")
+    assert not _is_safe_fetch_url("http://127.0.0.1/secret")
+    assert not _is_safe_fetch_url("http://localhost/secret")
+    assert not _is_safe_fetch_url("http://10.0.0.5/internal")
+    assert not _is_safe_fetch_url("http://192.168.1.1/router")
+    assert not _is_safe_fetch_url("http://[::1]/secret")
+    # Non-http(s) schemes blocked.
+    assert not _is_safe_fetch_url("file:///etc/passwd")
+    assert not _is_safe_fetch_url("gopher://internal/")
+    assert not _is_safe_fetch_url("")
+    # Public OA hosts (http or https) allowed.
+    assert _is_safe_fetch_url("https://arxiv.org/pdf/2301.00001.pdf")
+    assert _is_safe_fetch_url("http://example.com/p.pdf")
+
+
 async def test_fetch_and_extract_returns_none_when_extractor_returns_empty(
     httpx_mock, monkeypatch  # type: ignore[no-untyped-def]
 ) -> None:

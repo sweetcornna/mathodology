@@ -23,6 +23,7 @@ from agent_worker.editor_tools import (
     RunCellTool,
     ToolContext,
 )
+from agent_worker.editor_tools.tools import _render_paper_md
 
 PAPER_META: dict[str, Any] = {
     "title": "On the Stability of Lamprey Sex Ratios",
@@ -258,6 +259,67 @@ async def test_regenerate_figure_errors_when_png_missing(tmp_path: Path) -> None
     )
     assert not result.ok
     assert "doesnotexist" in (result.error or "")
+
+
+@pytest.mark.parametrize(
+    "bad_id",
+    [
+        "../../../etc/passwd",
+        "..%2F..%2Fsecret",
+        "foo/bar",
+        "Tornado",  # uppercase — not a valid slug
+        "_leading",  # must start with a lowercase letter
+        "fig.png",  # dot not allowed
+        "fig-1",  # hyphen not allowed
+        "",
+    ],
+)
+async def test_regenerate_figure_rejects_invalid_figure_id(
+    tmp_path: Path, bad_id: str
+) -> None:
+    """D6: figure_id is LLM-controlled and is interpolated into a filesystem
+    path. It must be validated against the same `^[a-z][a-z0-9_]*$` slug the
+    save_figure helper enforces, so a traversal id never reaches stat()."""
+    kernel = AsyncMock()
+    # If validation is skipped the tool would call kernel.execute / stat();
+    # a side_effect that raises makes that observable.
+    kernel.execute.side_effect = AssertionError("kernel must not run for bad id")
+    ctx = _make_ctx(tmp_path, kernel=kernel)
+    result = await RegenerateFigureTool().execute(
+        {"figure_id": bad_id, "code": "x = 1"}, ctx
+    )
+    assert not result.ok
+    kernel.execute.assert_not_called()
+
+
+def test_render_paper_md_preserves_bracket_numbered_refs() -> None:
+    """D27: refs the Writer already prefixed with [N] must NOT be re-numbered.
+    Mirrors pipeline._render_paper_markdown so a fine-tune edit doesn't emit
+    '1. [1] Smith...' double-numbering."""
+    meta: dict[str, Any] = {
+        "title": "T",
+        "abstract": "a",
+        "sections": [],
+        "references": ["[1] Smith. A paper. 2020.", "[2] Jones. Another. 2021."],
+    }
+    md = _render_paper_md(meta)
+    assert "[1] Smith. A paper. 2020." in md
+    assert "1. [1] Smith" not in md
+    assert "2. [2] Jones" not in md
+
+
+def test_render_paper_md_autonumbers_unprefixed_refs() -> None:
+    """When refs are NOT [N]-prefixed, fall through to auto-numbering — same
+    behavior as the canonical pipeline renderer."""
+    meta: dict[str, Any] = {
+        "title": "T",
+        "abstract": "a",
+        "sections": [],
+        "references": ["Smith. A paper. 2020.", "Jones. Another. 2021."],
+    }
+    md = _render_paper_md(meta)
+    assert "1. Smith. A paper. 2020." in md
+    assert "2. Jones. Another. 2021." in md
 
 
 async def test_recompile_pdf_calls_gateway_export_paper(tmp_path: Path) -> None:

@@ -133,23 +133,85 @@ async def test_search_openalex_passes_mailto(httpx_mock) -> None:  # type: ignor
     assert "mailto=bot%40example.com" in str(request.url)
 
 
-async def test_search_openalex_swallows_owned_client_errors(httpx_mock) -> None:  # type: ignore[no-untyped-def]
-    """When we own the client and the server returns 5xx, propagate raises."""
-    httpx_mock.add_response(status_code=503)
+async def test_search_openalex_swallows_owned_client_errors(httpx_mock, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """When we own the client and the server keeps returning 503, the retry
+    budget is exhausted and the final error propagates."""
+    async def _no_sleep(_d: float) -> None:
+        return None
+
+    monkeypatch.setattr("agent_worker.tools.openalex.asyncio.sleep", _no_sleep)
+    # 503 is retried; 1 initial + _MAX_RETRIES attempts all 503 → final raise.
+    for _ in range(4):
+        httpx_mock.add_response(status_code=503)
     with pytest.raises(httpx.HTTPStatusError):
         await search_openalex("anything")
 
 
-async def test_batch_search_openalex_skips_failed_queries(httpx_mock) -> None:  # type: ignore[no-untyped-def]
-    httpx_mock.add_response(json=_SAMPLE_WORKS)
+async def test_search_openalex_retries_on_429_then_succeeds(httpx_mock, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """D20: a transient 429 must be retried, not silently dropped."""
+    async def _no_sleep(_d: float) -> None:
+        return None
+
+    monkeypatch.setattr("agent_worker.tools.openalex.asyncio.sleep", _no_sleep)
     httpx_mock.add_response(status_code=429)
-    httpx_mock.add_response(json={"results": []})
+    httpx_mock.add_response(json=_SAMPLE_WORKS)
+    papers = await search_openalex("signal timing", max_results=5)
+    assert len(papers) == 2
+    # Two HTTP calls: the 429 and the retried 200.
+    assert len(httpx_mock.get_requests()) == 2
+
+
+async def test_search_openalex_retries_on_503_then_succeeds(httpx_mock, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    async def _no_sleep(_d: float) -> None:
+        return None
+
+    monkeypatch.setattr("agent_worker.tools.openalex.asyncio.sleep", _no_sleep)
+    httpx_mock.add_response(status_code=503)
+    httpx_mock.add_response(json=_SAMPLE_WORKS)
+    papers = await search_openalex("signal timing")
+    assert len(papers) == 2
+
+
+async def test_search_openalex_does_not_retry_on_400(httpx_mock, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A 400 is our bug, not transient — must raise immediately, no retry."""
+    async def _no_sleep(_d: float) -> None:
+        return None
+
+    monkeypatch.setattr("agent_worker.tools.openalex.asyncio.sleep", _no_sleep)
+    httpx_mock.add_response(status_code=400)
+    with pytest.raises(httpx.HTTPStatusError):
+        await search_openalex("anything")
+    assert len(httpx_mock.get_requests()) == 1
+
+
+async def test_batch_search_openalex_skips_failed_queries(httpx_mock, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import httpx as _httpx
+
+    async def _no_sleep(_d: float) -> None:
+        return None
+
+    monkeypatch.setattr("agent_worker.tools.openalex.asyncio.sleep", _no_sleep)
+
+    # Route by the distinct `search` query param via a callback so the
+    # concurrent retry interleaving stays deterministic regardless of order.
+    # q1 succeeds; q2 always 429s (exhausts its retry budget → wrapped to []);
+    # q3 returns empty.
+    def _router(request: _httpx.Request) -> _httpx.Response:
+        search = request.url.params.get("search")
+        if search == "q1":
+            return _httpx.Response(200, json=_SAMPLE_WORKS)
+        if search == "q2":
+            return _httpx.Response(429)
+        return _httpx.Response(200, json={"results": []})
+
+    httpx_mock.add_callback(_router, is_reusable=True)
 
     results = await batch_search_openalex(["q1", "q2", "q3"], max_per_query=5)
     assert set(results.keys()) == {"q1", "q2", "q3"}
-    # q1 succeeds (2), q2 429s (0 — wrapped), q3 empty (0).
-    total = sum(len(v) for v in results.values())
-    assert total == 2
+    # q1 → 2 papers; q2 → [] (retries exhausted, wrapped); q3 → [].
+    assert len(results["q1"]) == 2
+    assert results["q2"] == []
+    assert results["q3"] == []
 
 
 async def test_batch_search_openalex_empty_queries() -> None:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -64,6 +66,9 @@ class EventEmitter:
         self._seq_key = f"mm:seq:{run_id}"
         self._seq = 0
         self._events_log_path = events_log_path
+        # Serializes off-loop forensic writes so concurrent emit() calls keep
+        # append ordering even though each write hops to a worker thread.
+        self._log_lock = asyncio.Lock()
 
     @property
     def run_id(self) -> UUID:
@@ -92,17 +97,26 @@ class EventEmitter:
         dumped = event.model_dump(mode="json")
         body = orjson.dumps(dumped).decode("utf-8")
         # Persist forensic events to disk before the Redis stream MAXLEN
-        # rolls them off. Failures here must NOT block the live stream.
+        # rolls them off. The open+write is done off the event loop via
+        # asyncio.to_thread so high event volume can't block token streaming
+        # / WS fan-out on the loop thread (D22). A per-emitter lock serializes
+        # the thread hops so append ordering is preserved. Failures here must
+        # NOT block the live stream.
         if self._events_log_path is not None and kind in _PERSISTED_KINDS:
-            try:
-                with self._events_log_path.open("ab") as f:  # noqa: ASYNC230
-                    f.write(orjson.dumps(dumped))
-                    f.write(b"\n")
-            except OSError:
-                pass
+            line = orjson.dumps(dumped) + b"\n"
+            async with self._log_lock:
+                with contextlib.suppress(OSError):
+                    await asyncio.to_thread(self._append_log_line, line)
         return await self._redis.xadd(
             self._stream_key,
             {"payload": body},
             maxlen=EVENTS_MAXLEN,
             approximate=True,
         )
+
+    def _append_log_line(self, line: bytes) -> None:
+        """Append one pre-serialized JSONL line. Runs in a worker thread (off
+        the event loop) — see emit(). Synchronous file I/O is fine here."""
+        assert self._events_log_path is not None
+        with self._events_log_path.open("ab") as f:
+            f.write(line)

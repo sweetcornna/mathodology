@@ -278,6 +278,56 @@ async def test_octave_backend_prepends_gnuplot_toolkit(
     assert "--quiet" in argv
 
 
+# ---------------------------------------------------------------- D18: addpath escaping
+
+
+async def test_matlab_batch_escapes_single_quote_in_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D18: a cwd containing a single quote must be escaped (doubled) in the
+    addpath('...') string literal so it can't break out and inject MATLAB."""
+    captured: dict[str, Any] = {}
+
+    class _FakeProc:
+        returncode = 0
+
+        async def communicate(self) -> tuple[bytes, bytes]:
+            return (b"", b"")
+
+    async def fake_create_subprocess_exec(
+        *argv: str, cwd: str | None = None, **_kw: Any
+    ) -> _FakeProc:
+        captured["argv"] = list(argv)
+        return _FakeProc()
+
+    monkeypatch.setattr(
+        "agent_worker.matlab.backends.shutil.which",
+        lambda b: "/usr/bin/matlab" if b == "matlab" else None,
+    )
+    monkeypatch.setattr(
+        "agent_worker.matlab.backends.asyncio.create_subprocess_exec",
+        fake_create_subprocess_exec,
+    )
+
+    # A directory whose name contains a single quote — the injection vector.
+    nasty = tmp_path / "o'brien runs"
+    nasty.mkdir()
+
+    backend = MatlabBatchBackend()
+    await backend.run("x = 1;", nasty, timeout_s=5.0)
+
+    argv = captured["argv"]
+    assert argv[0].endswith("matlab")
+    assert "-batch" in argv
+    batch_arg = argv[-1]
+    # The literal quote must be doubled ('') inside the addpath string, never
+    # left bare (which would terminate the string and start injected code).
+    assert "o''brien runs" in batch_arg, batch_arg
+    assert "addpath('" in batch_arg
+    # Sanity: the path segment with the doubled quote sits inside the literal.
+    assert f"addpath('{str(nasty).replace(chr(39), chr(39) * 2)}')" in batch_arg
+
+
 # ---------------------------------------------------------------- real-octave integration
 
 

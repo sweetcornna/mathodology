@@ -20,6 +20,9 @@ from agent_worker.finetune_main import (
     _consumer_name as _finetune_consumer_name,
 )
 from agent_worker.finetune_main import (
+    _maybe_evict_lock,
+)
+from agent_worker.finetune_main import (
     consume_loop as _finetune_consume_loop,
 )
 from agent_worker.logging import configure_logging, get_logger
@@ -108,6 +111,14 @@ async def _process(
                 await redis.xack(JOBS_STREAM, CONSUMER_GROUP, entry_id)
             except Exception:  # noqa: BLE001
                 log.exception("xack_failed", entry_id=entry_id)
+            # Evict the per-run lock once the run is done so run_locks doesn't
+            # grow unboundedly (one Lock per run forever) — D13. Only evict
+            # when the lock is uncontended: a finetune consumer shares this
+            # map and may be waiting on the same lock. A finetune that arrives
+            # AFTER eviction simply recreates the lock via setdefault, which
+            # is correct since the pipeline write has already completed.
+            if run_id is not None:
+                _maybe_evict_lock(run_locks, run_id)
 
 
 async def _consume_loop(

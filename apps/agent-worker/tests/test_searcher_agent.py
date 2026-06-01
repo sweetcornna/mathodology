@@ -462,3 +462,123 @@ async def test_searcher_skips_enrichment_when_no_papers(
     assert out.papers == []
     assert out.paper_fulltext_paths == []
     assert enrich_called is False
+
+
+# --- D7: _stream_and_collect routes through the shared retry helper ---------
+
+
+class _FlakyGateway:
+    """Raises a transport error on the first N calls, then streams `chunks`.
+
+    Records every response_format it was asked for so we can assert the
+    JSON-default vs free-form (None) passthrough is preserved.
+    """
+
+    def __init__(self, chunks: list[str], fail_times: int, exc: Exception) -> None:
+        self._chunks = chunks
+        self._fail_times = fail_times
+        self._exc = exc
+        self.calls = 0
+        self.response_formats: list[object] = []
+
+    async def stream_completion(self, **kwargs: object) -> AsyncIterator[str]:
+        self.calls += 1
+        self.response_formats.append(kwargs.get("response_format"))
+        if self.calls <= self._fail_times:
+            raise self._exc
+        for c in self._chunks:
+            yield c
+
+    async def close(self) -> None:
+        pass
+
+
+async def test_stream_and_collect_retries_on_transport_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ReadTimeout in a Searcher LLM call must be retried (not abort the
+    run). Pre-D7 the bare stream loop had no retry."""
+    import asyncio
+
+    import httpx
+
+    # No real backoff sleeps in the test.
+    async def _no_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+
+    gateway = _FlakyGateway(
+        ['{"ok": true}'], fail_times=1, exc=httpx.ReadTimeout("boom")
+    )
+    emitter = _FakeEmitter()
+    agent = SearcherAgent(gateway, emitter)  # type: ignore[arg-type]
+
+    out = await agent._stream_and_collect("model-x", [{"role": "user", "content": "hi"}])
+
+    assert out == '{"ok": true}'
+    assert gateway.calls == 2  # one failure + one success
+    # JSON-object default preserved on every attempt.
+    assert all(rf == {"type": "json_object"} for rf in gateway.response_formats)
+
+
+async def test_stream_and_collect_retries_on_empty_200(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty 200 (zero content deltas) must trigger a retry."""
+    import asyncio
+
+    async def _no_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+
+    class _EmptyThenContentGateway:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def stream_completion(self, **_: object) -> AsyncIterator[str]:
+            self.calls += 1
+            if self.calls == 1:
+                return  # empty 200: yield nothing
+                yield ""  # pragma: no cover — keep this an async generator
+            yield '{"done": true}'
+
+        async def close(self) -> None:
+            pass
+
+    gateway = _EmptyThenContentGateway()
+    emitter = _FakeEmitter()
+    agent = SearcherAgent(gateway, emitter)  # type: ignore[arg-type]
+
+    out = await agent._stream_and_collect("model-x", [{"role": "user", "content": "hi"}])
+    assert out == '{"done": true}'
+    assert gateway.calls == 2
+
+
+async def test_stream_and_collect_preserves_response_format_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The compactor path passes response_format=None for free-form markdown;
+    that must survive the routing through _stream_with_retry."""
+    import asyncio
+
+    import httpx
+
+    async def _no_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+
+    gateway = _FlakyGateway(
+        ["# markdown summary"], fail_times=1, exc=httpx.RemoteProtocolError("blip")
+    )
+    emitter = _FakeEmitter()
+    agent = SearcherAgent(gateway, emitter)  # type: ignore[arg-type]
+
+    out = await agent._stream_and_collect(
+        "model-x", [{"role": "user", "content": "hi"}], response_format=None
+    )
+    assert out == "# markdown summary"
+    assert gateway.calls == 2
+    assert all(rf is None for rf in gateway.response_formats)

@@ -33,6 +33,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+# Snake-case figure-id slug. Must match `save_figure` in
+# agent_worker/_chart_helpers.py exactly so ids stay consistent across the
+# save and regenerate paths — and so a figure_id from LLM args can never be a
+# traversal token (`../../etc/passwd`) that escapes run_dir.
+_FIGURE_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+# Reference already prefixed with a `[N]` citation marker. Mirrors
+# pipeline._REF_PREFIX_RE so the editor renderer preserves Writer-produced
+# bracket numbering instead of double-numbering it (`1. [1] Smith...`).
+_REF_PREFIX_RE = re.compile(r"^\s*\[(\d+)\]\s*")
+
 
 @dataclass
 class ToolContext:
@@ -107,8 +118,21 @@ def _render_paper_md(meta: dict[str, Any]) -> str:
     refs = meta.get("references") or []
     if refs:
         parts.extend(["", "## References", ""])
+        # The Writer naturally emits references with a `[N]` prefix matching
+        # the inline citations in the body. Auto-numbering those would
+        # double-number them (`1. [1] Smith...`). Preserve `[N]`-prefixed refs
+        # verbatim (one paragraph each); only fall back to ordered-list
+        # numbering when the refs are NOT already bracket-prefixed. Mirrors
+        # pipeline._render_paper_markdown so the two renderers can't drift.
+        has_bracket_numbers = all(
+            _REF_PREFIX_RE.match(str(r)) for r in refs if str(r).strip()
+        )
         for i, ref in enumerate(refs, start=1):
-            parts.append(f"{i}. {ref}")
+            if has_bracket_numbers:
+                parts.append(str(ref))
+                parts.append("")
+            else:
+                parts.append(f"{i}. {ref}")
     return "\n".join(parts) + "\n"
 
 
@@ -675,6 +699,19 @@ class RegenerateFigureTool:
                 ok=False,
                 summary="regenerate_figure requires figure_id.",
                 error="missing figure_id",
+            )
+        # figure_id is LLM-controlled and is interpolated into a filesystem
+        # path below (`figures/{figure_id}.png`). Validate it against the same
+        # snake-case slug `save_figure` enforces so a traversal id like
+        # `../../../etc/passwd` can never escape run_dir or reach stat().
+        if not _FIGURE_ID_RE.match(figure_id):
+            return ToolResult(
+                ok=False,
+                summary="regenerate_figure requires a snake_case figure_id.",
+                error=(
+                    f"invalid figure_id {figure_id!r}: must match "
+                    "^[a-z][a-z0-9_]*$ (lowercase letter, then letters/digits/_)"
+                ),
             )
         if not isinstance(code, str) or not code.strip():
             return ToolResult(

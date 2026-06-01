@@ -101,10 +101,15 @@ class MatlabBatchBackend:
         script.write_text(code, encoding="utf-8")
         try:
             stem = script.stem
+            # cwd is interpolated into a MATLAB single-quoted string literal.
+            # Escape embedded single quotes by doubling them (MATLAB's literal
+            # escaping) so a RUNS_DIR containing a quote can't break out of the
+            # addpath('...') string and inject MATLAB code (D18).
+            cwd_escaped = str(cwd).replace("'", "''")
             argv = [
                 binary,
                 "-batch",
-                f"addpath('{cwd}'); {stem}",
+                f"addpath('{cwd_escaped}'); {stem}",
             ]
             return await _run_subprocess(argv, cwd, timeout_s)
         finally:
