@@ -84,6 +84,15 @@ export class RunWsClient {
     this.ws?.close(1000, "client-closed");
     this.ws = null;
   }
+
+  // True once a terminal `done` event has been received on this socket. The
+  // client uses this to suppress reconnects after a clean end-of-run; the
+  // store consults it in its onClose handler so a non-1000 close that arrives
+  // *after* done (e.g. server closes with 1001) doesn't get mistaken for a
+  // mid-run drop and stick the "reconnecting…" indicator on.
+  isTerminal(): boolean {
+    return this.terminal;
+  }
 }
 
 function isAgentEvent(v: unknown): v is AgentEvent {
