@@ -13,13 +13,11 @@ from __future__ import annotations
 import json
 import os
 import re
-import sys
 import time
 import traceback
-from collections import Counter, defaultdict
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Optional
 
 import pdfplumber
 
@@ -80,7 +78,7 @@ def comp_type(letter: str) -> str:
     return "mcm" if letter in {"A", "B"} else "icm"
 
 
-def infer_letter(name: str, parent: str) -> Optional[str]:
+def infer_letter(name: str, parent: str) -> str | None:
     """Try parent-dir then filename to detect problem letter."""
     parent = parent.strip()
     # parent like 'A', 'B', 'C', 'D', 'E', 'F'
@@ -257,9 +255,12 @@ def guess_title(head_text: str) -> str:
             # Look back up to 8 lines for a meaty title
             for j in range(i - 1, max(0, i - 9), -1):
                 cand = lines[j].strip()
-                if 8 < len(cand) < 120 and not _TITLE_BLOCKLIST_RE.match(cand):
-                    if not cand.endswith("________________"):
-                        return cand
+                if (
+                    8 < len(cand) < 120
+                    and not _TITLE_BLOCKLIST_RE.match(cand)
+                    and not cand.endswith("________________")
+                ):
+                    return cand
             break
     # Fallback: first line longer than 10 chars not matching boilerplate
     for ln in lines[:30]:
@@ -270,7 +271,7 @@ def guess_title(head_text: str) -> str:
 
 def process_winning_paper(
     pdf_path: str, year: int, parent: str
-) -> tuple[Optional[dict], Optional[str]]:
+) -> tuple[dict | None, str | None]:
     """Extract a single winning paper record. Returns (record, error)."""
     p = Path(pdf_path)
     name = p.name
@@ -306,8 +307,8 @@ def process_winning_paper(
 
 
 def process_problem_pdf(
-    pdf_path: str, year: int, letter: Optional[str]
-) -> tuple[Optional[dict], Optional[str]]:
+    pdf_path: str, year: int, letter: str | None
+) -> tuple[dict | None, str | None]:
     p = Path(pdf_path)
     try:
         with pdfplumber.open(str(p)) as pdf:
@@ -345,10 +346,10 @@ def process_problem_pdf(
 # ---------------------------------------------------------------------------
 
 
-def discover_files() -> tuple[list[tuple[str, int, str]], list[tuple[str, int, Optional[str]]]]:
+def discover_files() -> tuple[list[tuple[str, int, str]], list[tuple[str, int, str | None]]]:
     """Walk dick20 corpus and return (winning_paper_tasks, problem_tasks)."""
     winning: list[tuple[str, int, str]] = []  # (path, year, parent_name)
-    problems: list[tuple[str, int, Optional[str]]] = []  # (path, year, letter)
+    problems: list[tuple[str, int, str | None]] = []  # (path, year, letter)
 
     for year_dir in sorted(ROOT.iterdir()):
         if not year_dir.is_dir():
@@ -471,11 +472,9 @@ def main() -> None:
 
     with ProcessPoolExecutor(max_workers=max_workers) as ex:
         futures = {ex.submit(_worker_winning, t): t for t in winning_tasks}
-        done = 0
         total = len(futures)
-        for fut in as_completed(futures):
+        for done, fut in enumerate(as_completed(futures), start=1):
             rec, err = fut.result()
-            done += 1
             if err:
                 winning_errors.append(err)
             if rec:
@@ -488,11 +487,9 @@ def main() -> None:
 
     with ProcessPoolExecutor(max_workers=max_workers) as ex:
         futures = {ex.submit(_worker_problem, t): t for t in problem_tasks}
-        done = 0
         total = len(futures)
-        for fut in as_completed(futures):
+        for done, fut in enumerate(as_completed(futures), start=1):
             rec, err = fut.result()
-            done += 1
             if err:
                 problem_errors.append(err)
             if rec:
