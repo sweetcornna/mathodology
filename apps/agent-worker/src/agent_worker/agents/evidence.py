@@ -34,9 +34,13 @@ _PCT_DELTA_RE = re.compile(
     r"\b\d+(?:\.\d+)?\s*%\b",
 )
 
-# Variants of "sensitivity analysis" headings in both languages.
+# Variants of "sensitivity analysis" headings in both languages. The CUMCM
+# rubric (writer/v1.toml) also accepts robustness analysis / model validation
+# section titles in lieu of an explicitly-named sensitivity section, so a
+# paper titled 鲁棒性分析 / 模型验证 must not be flagged for a missing section.
 _SENS_HEADING_RE = re.compile(
-    r"\b(sensitivity\s+analys\w+|sensitivity\s+study|敏感性分析|灵敏度分析)\b",
+    r"(sensitivity\s+analys\w+|sensitivity\s+study|robustness\s+analys\w+"
+    r"|validation|敏感性分析|灵敏度分析|鲁棒性\s*分析|模型验证)",
     re.IGNORECASE,
 )
 
@@ -228,6 +232,16 @@ _ALL_ANON_RES = [re.compile(p, re.IGNORECASE | re.MULTILINE) for p in (
     *_AUTHOR_PATTERNS,
 )]
 
+# References are scanned with the AUTHOR patterns ONLY. Under GB/T 7714-2015
+# (mandated by the Writer prompt for CUMCM) a bibliography legitimately
+# contains publisher cities (北京:) and institution presses (清华大学出版社),
+# so the university/region patterns produce false positives there. An
+# author/advisor intro (作者:/指导教师:) in the references is still a genuine
+# disqualification-risk leak and must be flagged.
+_REFERENCE_ANON_RES = [
+    re.compile(p, re.IGNORECASE | re.MULTILINE) for p in _AUTHOR_PATTERNS
+]
+
 
 @dataclass
 class AnonymityFindings:
@@ -253,21 +267,35 @@ def scan_anonymity_violations(paper: PaperDraft) -> AnonymityFindings:
     ]
     for sec in paper.sections:
         fields_to_scan.append((sec.title or "(section)", sec.body_markdown or ""))
-    # Also scan references — schools leak there too.
-    if getattr(paper, "references", None):
-        joined_refs = "\n".join(paper.references)
-        fields_to_scan.append(("references", joined_refs))
 
-    for label, text in fields_to_scan:
+    def _scan(label: str, text: str, patterns: list[re.Pattern[str]]) -> bool:
+        """Search `text` with `patterns`; append a hit per matching pattern.
+        Returns True once the 5-violation cap is reached so the caller can
+        stop early (preserves the original multi-pattern accumulation)."""
         if not text:
-            continue
-        for pattern in _ALL_ANON_RES:
+            return False
+        for pattern in patterns:
             m = pattern.search(text)
             if m:
                 snippet = text[max(0, m.start() - 30) : m.end() + 30].replace("\n", " ")
                 finds.append((label, snippet.strip()))
                 if len(finds) >= 5:
-                    return AnonymityFindings(violations=finds)
+                    return True
+        return False
+
+    for label, text in fields_to_scan:
+        if _scan(label, text, _ALL_ANON_RES):
+            return AnonymityFindings(violations=finds)
+
+    # References get the AUTHOR patterns ONLY. Under GB/T 7714-2015 a
+    # bibliography legitimately carries publisher cities and institution
+    # presses (清华大学出版社, 北京:), so the university/region patterns would
+    # false-positive there and force a needless revision. An author/advisor
+    # intro in the references is still a real DQ leak, so we keep that check.
+    if getattr(paper, "references", None):
+        joined_refs = "\n".join(paper.references)
+        _scan("references", joined_refs, _REFERENCE_ANON_RES)
+
     return AnonymityFindings(violations=finds)
 
 

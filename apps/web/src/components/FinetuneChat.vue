@@ -11,7 +11,7 @@
 // KaTeX inside chat — overkill for ad-hoc messages, and the assistant rarely
 // emits raw $...$ in chat replies (it edits sections instead).
 import { computed, nextTick, ref, watch } from "vue";
-import { Marked } from "marked";
+import { createSafeMarked } from "@/lib/safe-markdown";
 import { useFinetuneStore } from "@/stores/finetune";
 import type { Message, ToolCall } from "@/stores/finetune";
 import { useI18n } from "@/composables/useI18n";
@@ -29,8 +29,13 @@ const emit = defineEmits<{
 const store = useFinetuneStore();
 
 // --- markdown rendering ---------------------------------------------------
-// Plain GFM with no walker — chat doesn't need figure URL rewriting.
-const md = new Marked({ gfm: true, breaks: false });
+// The assistant text streams from the `finetune.token` WS channel — i.e.
+// untrusted LLM output that is manipulable via prompt injection. We render it
+// through `v-html`, so the markdown MUST be sanitized first: a vanilla
+// `marked` instance passes raw `<script>` / `<img onerror=...>` straight
+// through. `createSafeMarked` escapes raw HTML and strips dangerous URL
+// schemes while keeping legitimate markdown (code, links, lists) intact.
+const md = createSafeMarked();
 
 function renderMd(text: string): string {
   if (!text) return "";

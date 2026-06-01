@@ -13,6 +13,7 @@ The two streams are kept separate so:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import socket
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,31 @@ log = get_logger("agent_worker.finetune")
 def _consumer_name() -> str:
     """Hostname-based consumer id (matches main.py convention)."""
     return (socket.gethostname().split(".")[0] or "worker") + ":ft"
+
+
+def _maybe_evict_lock(
+    run_locks: dict[UUID, asyncio.Lock], run_id: UUID
+) -> None:
+    """Drop `run_id`'s lock from the shared map iff nobody holds or awaits it.
+
+    Shared by the pipeline (main.py) and finetune consumers, both of which
+    `setdefault` into the same map. Without eviction the map grows by one
+    asyncio.Lock per run forever (D13). We evict only when the lock is neither
+    held (`locked()`) nor has queued waiters, so we never pull a lock out from
+    under a coroutine about to acquire it. A request that arrives AFTER
+    eviction simply recreates the lock via setdefault — correct, because the
+    prior writer has already finished.
+    """
+    lock = run_locks.get(run_id)
+    if lock is None:
+        return
+    if lock.locked():
+        return
+    # asyncio.Lock queues pending acquirers in a private `_waiters` deque.
+    waiters = getattr(lock, "_waiters", None)
+    if waiters:
+        return
+    run_locks.pop(run_id, None)
 
 
 def _decode(value: Any) -> str:
@@ -145,6 +171,13 @@ async def run_finetune(
         except Exception:  # noqa: BLE001
             log.exception("finetune_error_emit_failed", run_id=str(run_id))
     finally:
+        # Tear down the Jupyter kernel so it never outlives the fine-tune run.
+        # PaperEditorAgent starts it lazily (run_cell / regenerate_figure), so
+        # without this it leaks one ipykernel process per fine-tune (D1, mirror
+        # of run_pipeline). shutdown() is a no-op on an unstarted kernel;
+        # suppress so teardown never masks the primary failure.
+        with contextlib.suppress(Exception):
+            await kernel.shutdown()
         await gateway.close()
 
 
@@ -157,6 +190,7 @@ async def _process(
     run_locks: dict[UUID, asyncio.Lock],
 ) -> None:
     async with semaphore:
+        run_id: UUID | None = None
         try:
             run_id, session_id, message = _parse_entry(fields)
             log.info(
@@ -179,6 +213,10 @@ async def _process(
                 await redis.xack(FINETUNE_STREAM, FINETUNE_GROUP, entry_id)
             except Exception:  # noqa: BLE001
                 log.exception("finetune_xack_failed", entry_id=entry_id)
+            # Evict the per-run lock once done so run_locks doesn't grow
+            # unboundedly (D13). `run_id` stays None if _parse_entry raised.
+            if run_id is not None:
+                _maybe_evict_lock(run_locks, run_id)
 
 
 async def consume_loop(

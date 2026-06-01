@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import os
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -41,6 +42,31 @@ if TYPE_CHECKING:
 
 CELL_EXECUTION_TIMEOUT_S = 60
 KERNEL_READY_TIMEOUT_S = 30
+
+
+def _max_stream_bytes() -> int:
+    """Per-stream (stdout/stderr) accumulation cap for a single cell.
+
+    The cell timeout bounds wall-clock duration but NOT output volume — a tight
+    `print('x' * 1_000_000)` loop can exhaust memory before the timeout fires
+    (D19). Once a stream crosses this cap we stop accumulating and append a
+    single truncation marker. Configurable via MM_KERNEL_MAX_STREAM_BYTES;
+    defaults to 4 MB (generous for legitimate output, bounded for runaway).
+    """
+    raw = os.environ.get("MM_KERNEL_MAX_STREAM_BYTES")
+    if raw:
+        try:
+            val = int(raw)
+            if val > 0:
+                return val
+        except ValueError:
+            pass
+    return 4 * 1024 * 1024
+
+
+_STREAM_TRUNCATION_MARKER = (
+    "\n[... output truncated: exceeded MM_KERNEL_MAX_STREAM_BYTES cap ...]\n"
+)
 
 # Bootstrap source injected once per kernel, right after `start()`. Sets a
 # deterministic matplotlib style with a Chinese-friendly font fallback chain
@@ -266,6 +292,11 @@ class KernelSession:
         result_text: str | None = None
         figure_paths: list[str] = []
         error: str | None = None
+        # Per-stream byte caps (D19): stop accumulating + forwarding once a
+        # stream exceeds the cap, appending a single truncation marker.
+        max_stream_bytes = _max_stream_bytes()
+        stream_bytes = {"stdout": 0, "stderr": 0}
+        stream_truncated = {"stdout": False, "stderr": False}
 
         while True:
             try:
@@ -292,10 +323,28 @@ class KernelSession:
                 text = content.get("text", "")
                 if not text:
                     continue
-                if name == "stderr":
-                    stderr_parts.append(text)
-                else:
-                    stdout_parts.append(text)
+                stream_key = "stderr" if name == "stderr" else "stdout"
+                parts = stderr_parts if stream_key == "stderr" else stdout_parts
+                # Drop everything once this stream has been truncated — both
+                # from the in-memory buffer and from the emitter fan-out (which
+                # may be queued through Redis).
+                if stream_truncated[stream_key]:
+                    continue
+                stream_bytes[stream_key] += len(text.encode("utf-8"))
+                if stream_bytes[stream_key] > max_stream_bytes:
+                    stream_truncated[stream_key] = True
+                    parts.append(_STREAM_TRUNCATION_MARKER)
+                    await emitter.emit(
+                        "kernel.stdout",
+                        {
+                            "text": _STREAM_TRUNCATION_MARKER,
+                            "name": name,
+                            "cell_index": cell_index,
+                        },
+                        agent="coder",
+                    )
+                    continue
+                parts.append(text)
                 await emitter.emit(
                     "kernel.stdout",
                     {"text": text, "name": name, "cell_index": cell_index},

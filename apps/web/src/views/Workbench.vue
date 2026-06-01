@@ -75,9 +75,38 @@ const routeRunId = computed<string | null>(() => {
 // the route param changes. Null until the fetch resolves.
 const runRecord = ref<RunRecord | null>(null);
 
+// Terminal statuses as reported by GET /runs/:id. When the record already
+// shows one of these, the run is finished on the server and WS replay (if it
+// happens at all) will only re-confirm it — so we can trust the HTTP status
+// immediately instead of leaving the UI on the optimistic "running".
+const TERMINAL_RECORD_STATUSES = new Set(["done", "failed", "cancelled"]);
+
 async function loadRunRecord(id: string) {
   try {
-    runRecord.value = await http.get<RunRecord>(`/runs/${id}`);
+    const rec = await http.get<RunRecord>(`/runs/${id}`);
+    runRecord.value = rec;
+    // D26: the route handler optimistically sets run.status = "running" while
+    // the WS connects. If this run is already terminal on the server, the WS
+    // replay can lag (or the run pre-dates this tab entirely), so the header
+    // would show a transient/permanent "running" until events arrive. Apply
+    // the authoritative HTTP status here — but ONLY when (a) this is still the
+    // run we're looking at, (b) the record is terminal, and (c) the store
+    // hasn't already reached a terminal state via WS, so we never clobber a
+    // live run that is genuinely receiving events.
+    if (
+      run.runId === id &&
+      TERMINAL_RECORD_STATUSES.has(rec.status) &&
+      run.status !== "done" &&
+      run.status !== "failed" &&
+      run.status !== "cancelled"
+    ) {
+      run.status = rec.status as typeof run.status;
+      // Adopt the recorded cost too so the header isn't blank/stale for a run
+      // that finished before this tab opened (mirrors the costTarget fallback).
+      if (run.costRmb === 0 && typeof rec.cost_rmb === "number") {
+        run.costRmb = rec.cost_rmb;
+      }
+    }
   } catch (err) {
     console.error("[Workbench] /runs/:id fetch failed", err);
     runRecord.value = null;

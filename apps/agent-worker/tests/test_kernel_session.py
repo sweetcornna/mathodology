@@ -120,3 +120,22 @@ async def test_write_notebook_produces_valid_ipynb(
     assert len(nb.cells) == 1
     assert nb.cells[0].cell_type == "code"
     assert "hello" in nb.cells[0].source or "print" in nb.cells[0].source
+
+
+async def test_execute_caps_stdout_accumulation(
+    session: KernelSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D19: a high-volume print must not accumulate unbounded stdout. With a
+    small cap, the captured stdout is bounded and ends with a truncation
+    marker instead of buffering megabytes."""
+    # 64 KB cap; the loop below prints ~1 MB if uncapped.
+    monkeypatch.setenv("MM_KERNEL_MAX_STREAM_BYTES", str(64 * 1024))
+    emitter = _stub_emitter()
+    src = "for _ in range(200):\n    print('x' * 5000)"
+    cell = await session.execute(src, cell_index=0, emitter=emitter)
+
+    assert cell.error is None
+    # Bounded: cap (64 KB) + one over-cap chunk + marker — well under the ~1 MB
+    # that would accumulate without the cap.
+    assert len(cell.stdout.encode("utf-8")) < 200 * 1024
+    assert "output truncated" in cell.stdout

@@ -10,7 +10,7 @@ Design choices
 --------------
 * Frozen dataclass, not pydantic: the catalog is build-time immutable data;
   no runtime validation needed and pydantic adds import cost we don't need.
-* 18 entries, covering the six competition must-haves (heatmap / residual /
+* 20 entries, covering the six competition must-haves (heatmap / residual /
   convergence / tornado / pareto / network). Each `matplotlib_snippet` stays
   30–60 lines end-to-end (figure → plot → save → close) so it reliably fits
   a single Jupyter cell.

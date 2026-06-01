@@ -1,12 +1,21 @@
 use axum::extract::{Request, State};
-use axum::http::header::AUTHORIZATION;
+use axum::http::header::{AUTHORIZATION, COOKIE};
+use axum::http::Method;
 use axum::middleware::Next;
 use axum::response::Response;
 
 use crate::error::AppError;
 use crate::state::AppState;
 
-/// Require `Authorization: Bearer <token>` OR `?token=<token>` matching DEV_AUTH_TOKEN.
+/// Require `Authorization: Bearer <token>`, OR `?token=<token>`, OR (for safe
+/// GET/HEAD requests only) an `mm_auth=<token>` cookie — all matching
+/// DEV_AUTH_TOKEN.
+///
+/// The cookie path lets same-origin `<img>`/`<a>` asset requests (figures,
+/// notebook, paper) authenticate without putting the token in the URL (where it
+/// would leak via Referer/history/access logs — D8). It is restricted to
+/// GET/HEAD so it cannot be replayed as CSRF against the mutating POST
+/// endpoints, which still require the header.
 ///
 /// Applied to `/runs` and `/ws/runs/*`. NOT applied to `/health`.
 pub async fn require_dev_token(
@@ -35,6 +44,23 @@ pub async fn require_dev_token(
             let v = it.next().unwrap_or("");
             if k == "token" && constant_time_eq(v.as_bytes(), expected.as_bytes()) {
                 return Ok(next.run(req).await);
+            }
+        }
+    }
+
+    // 3) For safe (read-only) requests only, accept an `mm_auth` cookie. This
+    //    authenticates same-origin <img>/<a> asset GETs without a token in the
+    //    URL. GET/HEAD only so it can't be abused for CSRF against mutations.
+    if matches!(*req.method(), Method::GET | Method::HEAD) {
+        if let Some(val) = req.headers().get(COOKIE) {
+            if let Ok(s) = val.to_str() {
+                for pair in s.split(';') {
+                    if let Some(tok) = pair.trim().strip_prefix("mm_auth=") {
+                        if constant_time_eq(tok.as_bytes(), expected.as_bytes()) {
+                            return Ok(next.run(req).await);
+                        }
+                    }
+                }
             }
         }
     }

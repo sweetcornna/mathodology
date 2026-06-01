@@ -13,7 +13,7 @@
 \usepackage{calc}
 % Pandoc-emitted macros that must exist in preamble. Consolidated into
 % one block to drop the historical duplicate \providecommand{\tightlist}
-% that landed across two separate {% raw %} sections.
+% that landed across two separate verbatim sections.
 {% raw %}\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
 \providecommand{\passthrough}[1]{#1}
 \providecommand{\real}[1]{#1}

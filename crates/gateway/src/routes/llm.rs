@@ -22,15 +22,12 @@ use redis::AsyncCommands;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::dispatch::events_stream_key;
+use crate::dispatch::{events_stream_key, EVENTS_MAXLEN};
 use crate::error::AppError;
 use crate::llm::canonical::{CanonicalChunk, CanonicalRequest, Usage};
 use crate::llm::providers::ProviderError;
 use crate::llm::{cache, cost, stream as llm_stream};
 use crate::state::AppState;
-
-/// Stream MAXLEN for `mm:events:<run_id>`. Matches worker emitter.
-const EVENTS_MAXLEN: usize = 5000;
 
 /// Entry point registered in `app::build_router`.
 #[tracing::instrument(skip_all)]
@@ -221,6 +218,36 @@ fn build_forward_stream(
         cost_finalized: bool,
     }
 
+    impl S {
+        /// Record the accumulated usage against the cost ledger exactly once.
+        /// Shared by the clean-EOF (`None`) and the upstream-error (`Err`)
+        /// paths so partial usage is never silently dropped from the ledger
+        /// when a stream ends with an error (D11). Idempotent via
+        /// `cost_finalized`.
+        async fn finalize_cost(&mut self) {
+            if self.cost_finalized {
+                return;
+            }
+            self.cost_finalized = true;
+            let usage = self.usage.clone().unwrap_or_default();
+            if let Err(e) = cost::record_completion_cost(
+                &self.pg,
+                &mut self.redis,
+                &self.llm.prices,
+                self.runs_dir.as_ref(),
+                self.run_id,
+                self.agent.as_deref(),
+                &self.served_model,
+                &usage,
+                false,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, "cost accounting failed on stream end");
+            }
+        }
+    }
+
     let init = S {
         upstream,
         redis,
@@ -276,6 +303,12 @@ fn build_forward_stream(
             }
             Some(Err(err)) => {
                 tracing::warn!(error = %err, "upstream stream error; emitting error event");
+                // D11: finalize cost BEFORE terminating. The provider already
+                // billed for any tokens consumed before the error (usage is
+                // captured in `s.usage`); without this the partial usage is
+                // dropped from the ledger and `mm:cost` since the `None` branch
+                // is bypassed once `done_sent` is set.
+                s.finalize_cost().await;
                 let data = json!({
                     "error": err.to_string(),
                 })
@@ -286,25 +319,7 @@ fn build_forward_stream(
             }
             None => {
                 // Upstream exhausted cleanly. Finalize cost + emit [DONE].
-                if !s.cost_finalized {
-                    s.cost_finalized = true;
-                    let usage = s.usage.clone().unwrap_or_default();
-                    if let Err(e) = cost::record_completion_cost(
-                        &s.pg,
-                        &mut s.redis,
-                        &s.llm.prices,
-                        s.runs_dir.as_ref(),
-                        s.run_id,
-                        s.agent.as_deref(),
-                        &s.served_model,
-                        &usage,
-                        false,
-                    )
-                    .await
-                    {
-                        tracing::warn!(error = %e, "cost accounting failed on stream end");
-                    }
-                }
+                s.finalize_cost().await;
                 s.done_sent = true;
                 Some((Ok(Event::default().data("[DONE]")), s))
             }

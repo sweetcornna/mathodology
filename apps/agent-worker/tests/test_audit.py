@@ -201,6 +201,74 @@ def test_check_subquestion_coverage_blocks_when_missing(tmp_path: Path) -> None:
     assert f.code == "uncovered_subquestions"
 
 
+def test_subquestion_coverage_no_false_positive_on_coincidental_substring(
+    tmp_path: Path,
+) -> None:
+    """D15: the old 12-char-prefix check coincidentally matched a prefix as an
+    in-word substring (e.g. 'rate the per' inside 'accelerate the
+    performance'), wrongly marking the sub-question covered. The content-word
+    heuristic must flag it as uncovered."""
+    md = "We accelerate the performance of the solver to its limit."
+    f = check_subquestion_coverage(
+        paper=_paper(),
+        coder_out=_coder(),
+        analysis=_analysis(["rate the performance of each model"]),
+        run_dir=tmp_path,
+        paper_md=md,
+    )
+    # The 12-char prefix 'rate the per' is a substring of 'acceleRATE THE
+    # PERformance', so the OLD check passed (no finding). The new check sees
+    # only 1/4 content words as whole words and flags it.
+    assert isinstance(f, AuditFinding)
+    assert f.code == "uncovered_subquestions"
+
+
+def test_subquestion_coverage_passes_on_genuine_paraphrase(tmp_path: Path) -> None:
+    """A genuinely-addressed sub-question (most content words present, even if
+    reordered/paraphrased) must NOT be flagged."""
+    md = (
+        "Section 3 estimates the demand at each store and then optimizes the "
+        "allocation of inventory across the planning horizon."
+    )
+    f = check_subquestion_coverage(
+        paper=_paper(),
+        coder_out=_coder(),
+        analysis=_analysis(
+            [
+                "estimate demand for each store",
+                "optimize allocation of inventory",
+            ]
+        ),
+        run_dir=tmp_path,
+        paper_md=md,
+    )
+    assert f is None
+
+
+def test_subquestion_coverage_cjk_uses_distinctive_prefix(tmp_path: Path) -> None:
+    """CJK sub-questions have no whitespace tokens; coverage falls back to a
+    distinctive 20-char CJK prefix instead of the old 4-char-key over-match."""
+    covered_md = "第三节预测了未来五年的全国人口增长趋势并给出置信区间。"
+    f_covered = check_subquestion_coverage(
+        paper=_paper(),
+        coder_out=_coder(),
+        analysis=_analysis(["预测未来五年的全国人口增长趋势"]),
+        run_dir=tmp_path,
+        paper_md=covered_md,
+    )
+    assert f_covered is None
+
+    f_missing = check_subquestion_coverage(
+        paper=_paper(),
+        coder_out=_coder(),
+        analysis=_analysis(["预测未来五年的全国人口增长趋势"]),
+        run_dir=tmp_path,
+        paper_md="本文只讨论了交通流量的建模，没有涉及其它议题。",
+    )
+    assert isinstance(f_missing, AuditFinding)
+    assert f_missing.code == "uncovered_subquestions"
+
+
 # ---------------------------------------------------------------- CJK glyphs
 
 

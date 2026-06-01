@@ -17,6 +17,7 @@ degrades to an empty SearchFindings and the pipeline continues.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -524,8 +525,6 @@ async def _review_and_maybe_revise(
         if reminders_out is not None and next_stage is not None:
             reminders_out[next_stage] = reminder
 
-        import contextlib
-
         # Critic exposes `emitter` on all current builds; suppress just in
         # case a future refactor changes the surface — we never want the
         # hook to be the reason a run fails.
@@ -946,6 +945,22 @@ async def run_pipeline(redis: Redis, run_id: UUID, problem: ProblemInput) -> Non
                     "spec": spec.model_dump(mode="json"),
                     "coder_output": coder_out.model_dump(mode="json"),
                     "search_findings": findings.model_dump(mode="json"),
+                    # C4: the audit gate is exactly when sensitivity / anonymity
+                    # findings matter most, so the audit-triggered revision
+                    # Writer must see the same evidence_scan as the initial
+                    # Critic-review Writer call (above). Sourced identically.
+                    "evidence_scan": {
+                        "sensitivity": {
+                            "has_section": sens_findings.has_sensitivity_section,
+                            "parameter_count_estimate": sens_findings.parameter_count_estimate,
+                            "perturb_mentions": sens_findings.perturb_mention_count,
+                            "tornado_or_mc_referenced": sens_findings.tornado_or_mc_referenced,
+                        },
+                        "anonymity_violations": [
+                            {"location": loc, "snippet": snip}
+                            for loc, snip in anon_findings.violations
+                        ],
+                    },
                 },
                 cost_tracker=cost_tracker,
                 emitter=emitter,
@@ -1027,6 +1042,16 @@ async def run_pipeline(redis: Redis, run_id: UUID, problem: ProblemInput) -> Non
             )
             await emitter.emit("done", {"status": "failed"}, agent=None)
     finally:
+        # Tear down the Jupyter kernel subprocess so it never outlives the
+        # run. The Coder/audit paths start it lazily via run_cell /
+        # regenerate_figure; without this it leaks one ipykernel process per
+        # run (D1). shutdown() is a no-op on an unstarted kernel and swallows
+        # its own errors. Wrap in suppress so teardown never masks the real
+        # failure that brought us into `finally`. (MatlabSession spawns a
+        # fresh subprocess per execute() that has already exited, so there is
+        # no persistent process to shut down there.)
+        with contextlib.suppress(Exception):
+            await kernel.shutdown()
         await gateway.close()
 
 

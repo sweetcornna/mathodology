@@ -106,8 +106,32 @@ pub async fn create_run(
     })?;
 
     // 2) Enqueue job onto mm:jobs.
+    //
+    // D10: INSERT + XADD are not transactional. If the XADD fails, the row we
+    // just inserted would be left permanently `queued` with no worker
+    // consuming it and no audit task (spawn_audit_task below never runs). Roll
+    // back by deleting the orphaned row before propagating the error.
     let payload = serde_json::to_value(&input)?;
-    let stream_id = enqueue_job(&mut state.redis, &run_id, &payload).await?;
+    let stream_id = match enqueue_job(&mut state.redis, &run_id, &payload).await {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::error!(%run_id, error = %e, "enqueue_job failed; deleting orphaned run row");
+            if let Err(del_err) = sqlx::query("DELETE FROM runs WHERE id = $1")
+                .bind(run_id)
+                .execute(&state.pg)
+                .await
+            {
+                // Best-effort cleanup: if even the delete fails we still surface
+                // the original enqueue error, but log the leak for operators.
+                tracing::error!(
+                    %run_id,
+                    error = %del_err,
+                    "failed to delete orphaned run row after enqueue failure; row leaked as 'queued'"
+                );
+            }
+            return Err(e);
+        }
+    };
     tracing::info!(%run_id, stream_id, "run enqueued to mm:jobs");
 
     // 3) Spawn the audit task that tails mm:events:<run_id> into events_audit.
@@ -227,10 +251,35 @@ pub async fn cancel_run(
     ))
 }
 
+/// Query params for `GET /runs/:run_id` event pagination (D23).
+///
+/// The Redis events stream is capped at MAXLEN ~5000, but `events_audit` in
+/// Postgres is unbounded, so a streaming-heavy run can accumulate thousands of
+/// rows. Without a LIMIT the whole table materializes into one response. We
+/// page by `seq` cursor (events are monotonically increasing and gap-free per
+/// run), keeping the default response bounded while staying backwards
+/// compatible: callers that pass nothing get up to `DEFAULT_EVENTS_LIMIT`
+/// events from the start, which covers every normal run.
+#[derive(Debug, Deserialize)]
+pub struct GetRunQuery {
+    /// Return events with `seq > after_seq`. Omit to start from the beginning.
+    pub after_seq: Option<i64>,
+    /// Max events to return (default `DEFAULT_EVENTS_LIMIT`, hard cap `MAX_EVENTS_LIMIT`).
+    pub limit: Option<u32>,
+}
+
+/// Default page size when the caller doesn't specify `limit`. Matches the
+/// Redis stream MAXLEN so the default response is the same set a fresh WS
+/// subscriber would replay for a typical run.
+const DEFAULT_EVENTS_LIMIT: i64 = 5000;
+/// Absolute ceiling on a single page, independent of the requested `limit`.
+const MAX_EVENTS_LIMIT: i64 = 5000;
+
 #[tracing::instrument(skip_all, fields(%run_id))]
 pub async fn get_run(
     State(state): State<AppState>,
     Path(run_id): Path<Uuid>,
+    axum::extract::Query(q): axum::extract::Query<GetRunQuery>,
 ) -> Result<Json<Value>, AppError> {
     // Fetch the run row. RowNotFound -> 404.
     let run: RunRow = sqlx::query_as::<_, RunRow>(
@@ -246,18 +295,35 @@ pub async fn get_run(
     .fetch_one(&state.pg)
     .await?;
 
-    // Fetch all audit events for this run, ordered.
-    let events: Vec<EventRow> = sqlx::query_as::<_, EventRow>(
+    let limit = q
+        .limit
+        .map(|l| (l as i64).clamp(1, MAX_EVENTS_LIMIT))
+        .unwrap_or(DEFAULT_EVENTS_LIMIT);
+    let after_seq = q.after_seq.unwrap_or(0);
+
+    // Fetch a bounded page of audit events for this run, ordered by seq, after
+    // the cursor. LIMIT+1 is requested so we can report `has_more` without a
+    // second COUNT query.
+    let mut events: Vec<EventRow> = sqlx::query_as::<_, EventRow>(
         r#"
         SELECT run_id, seq, ts, agent, kind, payload
         FROM events_audit
-        WHERE run_id = $1
+        WHERE run_id = $1 AND seq > $2
         ORDER BY seq ASC
+        LIMIT $3
         "#,
     )
     .bind(run_id)
+    .bind(after_seq)
+    .bind(limit + 1)
     .fetch_all(&state.pg)
     .await?;
+
+    let has_more = events.len() as i64 > limit;
+    if has_more {
+        events.truncate(limit as usize);
+    }
+    let next_after_seq = events.last().map(|e| e.seq);
 
     let events_json: Vec<Value> = events
         .into_iter()
@@ -285,6 +351,10 @@ pub async fn get_run(
         "notebook_path": run.notebook_path,
         "paper_path": run.paper_path,
         "events": events_json,
+        // Pagination metadata (D23). `has_more` true means call again with
+        // `?after_seq=<next_after_seq>` to fetch the next page.
+        "has_more": has_more,
+        "next_after_seq": next_after_seq,
     })))
 }
 

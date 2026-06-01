@@ -152,6 +152,13 @@ let ws: RunWsClient | null = null;
 // the render rate is capped at ~60fps regardless of token rate.
 const _pendingTokenDeltas: Map<string, { delta: string; model: string | null; ts: string }> = new Map();
 let _flushScheduled = false;
+// Handle for the currently-scheduled rAF flush (or the setTimeout fallback in
+// headless envs). Tracked so reset() can cancel a stale flush before it fires
+// — otherwise a flush scheduled for the *previous* run would clear
+// _flushScheduled mid-frame and the next run's first token frame would have no
+// flush scheduled until that stale callback ran.
+let _flushHandle: number | null = null;
+let _flushUsesRaf = false;
 
 export const useRunStore = defineStore("run", {
   state: (): State => ({
@@ -194,6 +201,21 @@ export const useRunStore = defineStore("run", {
       // Drop any pending token deltas from the prior run so they don't
       // leak into the fresh `tokens` state on the next rAF flush.
       _pendingTokenDeltas.clear();
+      // Cancel any in-flight flush and clear the scheduling flag. Without
+      // this, a flush scheduled for the prior run is still pending: when it
+      // fires it sets _flushScheduled=false, but in the window before it
+      // fires the next run's first token sees _flushScheduled===true and
+      // schedules nothing, dropping the opening frame. Cancelling here keeps
+      // the module-level singletons consistent with the cleared buffer.
+      if (_flushHandle !== null) {
+        if (_flushUsesRaf && typeof cancelAnimationFrame !== "undefined") {
+          cancelAnimationFrame(_flushHandle);
+        } else {
+          clearTimeout(_flushHandle);
+        }
+        _flushHandle = null;
+      }
+      _flushScheduled = false;
       this.runId = null;
       this.status = "idle";
       this.events = [];
@@ -249,6 +271,15 @@ export const useRunStore = defineStore("run", {
     },
 
     openWs(runId: string) {
+      // Close any socket still assigned to the module-level `ws` before we
+      // overwrite it. reset() normally does this, but openWs can be called
+      // directly (Workbench route change) without a preceding reset on every
+      // path, and a rapid re-entry would otherwise orphan the prior socket
+      // (it keeps its handlers wired and leaks until GC closes it).
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
       const wsBase = import.meta.env.VITE_GATEWAY_WS ?? "ws://127.0.0.1:8080";
       const client = new RunWsClient({
         runId,
@@ -262,17 +293,20 @@ export const useRunStore = defineStore("run", {
           },
           onClose: (ev) => {
             this.wsConnected = false;
-            // The RunWsClient already decides whether to attempt a reconnect
-            // (closedByUser, terminal, code 1000 → no retry). We mirror its
-            // rule here so the UI only shows "reconnecting" when one is
-            // actually scheduled. The terminal `done` event flips status
-            // and clears this on the next tick.
-            const willRetry =
-              ev.code !== 1000 &&
-              this.status !== "done" &&
-              this.status !== "failed" &&
-              this.status !== "cancelled";
-            this.wsReconnecting = willRetry;
+            // The RunWsClient owns the authoritative reconnect decision
+            // (closedByUser, terminal `done` received, code 1000 → no retry).
+            // We mirror its rule here so the UI only shows "reconnecting" when
+            // a retry is actually scheduled. Crucially we consult the client's
+            // own terminal flag (set synchronously when the `done` frame is
+            // parsed, before this onClose runs) — not just `this.status`,
+            // which can lag the close under a done-then-1001 sequence and
+            // would otherwise stick the "reconnecting…" indicator on forever.
+            const reachedTerminal =
+              client.isTerminal() ||
+              this.status === "done" ||
+              this.status === "failed" ||
+              this.status === "cancelled";
+            this.wsReconnecting = ev.code !== 1000 && !reachedTerminal;
           },
           onError: () => {
             this.wsConnected = false;
@@ -329,6 +363,7 @@ export const useRunStore = defineStore("run", {
           _flushScheduled = true;
           const flush = (): void => {
             _flushScheduled = false;
+            _flushHandle = null;
             if (_pendingTokenDeltas.size === 0) return;
             for (const [k, p] of _pendingTokenDeltas) {
               const existing = this.tokens[k] ?? emptyStream();
@@ -341,10 +376,12 @@ export const useRunStore = defineStore("run", {
             _pendingTokenDeltas.clear();
           };
           if (typeof requestAnimationFrame !== "undefined") {
-            requestAnimationFrame(flush);
+            _flushUsesRaf = true;
+            _flushHandle = requestAnimationFrame(flush);
           } else {
             // Headless fallback (tests / SSR).
-            setTimeout(flush, 16);
+            _flushUsesRaf = false;
+            _flushHandle = setTimeout(flush, 16) as unknown as number;
           }
         }
         return;

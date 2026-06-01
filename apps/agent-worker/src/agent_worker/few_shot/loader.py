@@ -188,14 +188,18 @@ _SIBLING_FAMILY: dict[str, str] = {
 def _normalize_family(competition_type: str) -> str:
     """Map raw competition_type strings to one of mcm/icm/cumcm/huashu."""
     s = (competition_type or "").lower()
+    # Order matters: 'cumcm' and 'huashu'/'国赛' must be tested before the
+    # bare 'mcm' substring. 'mcm' is a substring of 'cumcm', so checking
+    # 'mcm' first would mismap every CUMCM run to the MCM corpus (and inject
+    # English MCM exemplars into the zh prompt block).
+    if "cumcm" in s or "国赛" in s:
+        return "cumcm"
+    if "huashu" in s or "华数" in s:
+        return "huashu"
     if "icm" in s:
         return "icm"
     if "mcm" in s:
         return "mcm"
-    if "huashu" in s or "华数" in s:
-        return "huashu"
-    if "cumcm" in s or "国赛" in s:
-        return "cumcm"
     return "mcm"
 
 
@@ -213,7 +217,7 @@ def format_writer_block(exemplars: list[Exemplar], language: str = "en") -> str:
     if language == "zh":
         header = (
             "## 同题型获奖论文范本（仅供参考行文风格 + 章节结构，禁止照抄文字）\n"
-            "以下是 dick20 语料库中同题型 (problem_letter 匹配优先) 历年获奖论文的摘要 / 节选。"
+            "以下是获奖论文语料库中同题型 (problem_letter 匹配优先) 历年获奖论文的摘要 / 节选。"
             "判官最看重的是：摘要里塞具体数字、敏感性章节定量、结论与开篇呼应。"
             "请观察并复用其结构与论证密度，但**禁止抄写其文字或数据**——你的数字必须来自 Coder 的本次实验。\n"
         )
