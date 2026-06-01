@@ -328,3 +328,70 @@ async fn c7_health_ok_returns_200() {
     let body: serde_json::Value = resp.json().await.expect("json");
     assert_eq!(body["status"], "ok");
 }
+
+/// D8: an `mm_auth` cookie authenticates GET asset requests (so prod
+/// `<img>`/`<a>` loads work without a token in the URL), but must NOT be
+/// honoured for mutating POSTs — otherwise it would be a CSRF vector.
+#[tokio::test]
+async fn d8_cookie_auth_authorizes_get_only() {
+    let providers = providers_toml();
+    let state = build_state(providers.path().to_path_buf()).await;
+
+    let run_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO runs (id, problem_text, competition_type, status) VALUES ($1,$2,$3,'done')",
+    )
+    .bind(run_id)
+    .bind("D8 cookie auth probe")
+    .bind("mcm")
+    .execute(&state.pg)
+    .await
+    .expect("insert run");
+
+    let addr = boot(state.clone()).await;
+    let client = reqwest::Client::new();
+
+    // Valid cookie, NO Authorization header -> 200 (the <img>/<a> path).
+    let ok = client
+        .get(format!("http://{addr}/runs/{run_id}"))
+        .header("Cookie", format!("mm_auth={DEV_TOKEN}"))
+        .send()
+        .await
+        .expect("cookie GET");
+    let ok_status = ok.status().as_u16();
+
+    // Wrong cookie -> 401.
+    let bad = client
+        .get(format!("http://{addr}/runs/{run_id}"))
+        .header("Cookie", "mm_auth=not-the-token")
+        .send()
+        .await
+        .expect("bad cookie GET");
+    let bad_status = bad.status().as_u16();
+
+    // Cookie-only POST must be rejected (CSRF guard): mutations need the header.
+    let csrf_marker = format!("D8 csrf probe {}", Uuid::new_v4());
+    let csrf = client
+        .post(format!("http://{addr}/runs"))
+        .header("Cookie", format!("mm_auth={DEV_TOKEN}"))
+        .header(CONTENT_TYPE, "application/json")
+        .json(&serde_json::json!({"problem_text": csrf_marker, "competition_type": "mcm"}))
+        .send()
+        .await
+        .expect("csrf POST");
+    let csrf_status = csrf.status().as_u16();
+
+    // Cleanup before assertions so a failure never leaks rows for siblings.
+    let _ = sqlx::query("DELETE FROM runs WHERE id = $1 OR problem_text = $2")
+        .bind(run_id)
+        .bind(&csrf_marker)
+        .execute(&state.pg)
+        .await;
+
+    assert_eq!(ok_status, 200, "valid mm_auth cookie authorizes a GET");
+    assert_eq!(bad_status, 401, "wrong cookie is rejected");
+    assert_eq!(
+        csrf_status, 401,
+        "cookie must NOT authorize a mutating POST (CSRF guard)"
+    );
+}
