@@ -13,9 +13,12 @@ ENV CARGO_TERM_COLOR=always DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       pkg-config libssl-dev ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-# cargo-chef is small (~5 MB binary). Pin a minor version so a future
-# breaking change doesn't surprise us on a clean cache.
-RUN cargo install cargo-chef --locked --version '^0.1.68'
+# cargo-chef is small (~5 MB binary). Pin an EXACT version: cargo-chef
+# >=0.1.72 declares `edition = "2024"`, which the pinned rust:1.83 base
+# cannot build ("edition2024 feature not stabilized" — needs Rust >=1.85).
+# 0.1.71 is the last release that compiles on 1.83 (verified). Bump this in
+# lockstep only if/when the base image moves past Rust 1.85.
+RUN cargo install cargo-chef --locked --version '=0.1.71'
 WORKDIR /src
 
 # ---- planner ----
