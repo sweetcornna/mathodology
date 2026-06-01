@@ -354,18 +354,16 @@ pub(crate) async fn render_tex(
     // blocks (via pandoc's `raw_attribute` extension), then shell out to
     // pandoc to convert the substituted markdown to LaTeX.
     //
-    // We also pandoc-render the section TITLE so inline math like
-    // "§8.2 Focused $\pm10\%$ ..." survives the journey. Title pandoc
-    // output is wrapped in `\hypertarget{}{...}` etc, which is unwanted
-    // inside `\section{...}`; we strip those wrappers below.
+    // The section TITLE is emitted via Tera's `latex_escape` filter (see the
+    // `\section{ {{- sec.title | latex_escape -}} }` line in each template),
+    // so we do NOT pandoc-render it here — that produced an unused
+    // `title_latex` field and burned one pandoc invocation per section.
     let mut rendered_sections: Vec<serde_json::Value> = Vec::with_capacity(meta.sections.len());
     for sec in &meta.sections {
         let substituted = substitute_figures(&sec.body_markdown, &figure_map);
         let body_latex = md_to_latex(&substituted).await?;
-        let title_latex = md_inline_to_latex(&sec.title).await?;
         rendered_sections.push(serde_json::json!({
             "title": sec.title,
-            "title_latex": title_latex,
             "body_latex": body_latex,
         }));
     }
@@ -501,83 +499,6 @@ async fn md_to_latex(md: &str) -> Result<String, AppError> {
     )
     .await?;
     String::from_utf8(out).map_err(|e| AppError::Internal(format!("pandoc output not utf-8: {e}")))
-}
-
-/// Pandoc-convert a single-line inline string (e.g. a section title) and
-/// strip wrappers that pandoc adds for block context but that are illegal
-/// inside `\section{...}` / `\subsection{...}` arguments.
-///
-/// Returns the inline-safe LaTeX. Falls back to `latex_escape` when pandoc
-/// fails so a single weird title can't tank the whole render.
-async fn md_inline_to_latex(md: &str) -> Result<String, AppError> {
-    let trimmed = md.trim();
-    if trimmed.is_empty() {
-        return Ok(String::new());
-    }
-    match md_to_latex(trimmed).await {
-        Ok(out) => Ok(strip_block_wrappers(&out)),
-        Err(_) => Ok(latex_escape(trimmed)),
-    }
-}
-
-/// Remove pandoc-added block context that can't live inside section args:
-/// trailing newlines, leading/trailing `\hypertarget{...}{...}` / `\label{}` /
-/// `\section{}` lines. We keep the inner inline text untouched.
-fn strip_block_wrappers(s: &str) -> String {
-    let trimmed = s.trim();
-    // If pandoc emitted a real `\section{...}` block (because input had a
-    // `#` heading), unwrap one level.
-    for prefix in [
-        "\\section",
-        "\\subsection",
-        "\\subsubsection",
-        "\\paragraph",
-        "\\subparagraph",
-    ] {
-        if let Some(rest) = trimmed.strip_prefix(prefix) {
-            if let Some(inner) = rest.strip_prefix('{') {
-                if let Some(end) = matching_brace_end(inner) {
-                    return inner[..end].to_string();
-                }
-            }
-        }
-    }
-    // Strip a leading `\hypertarget{...}{` wrapper if present and find its
-    // matching close brace; otherwise pass through.
-    if let Some(after) = trimmed.strip_prefix("\\hypertarget{") {
-        if let Some(target_end) = after.find('}') {
-            let after_target = &after[target_end + 1..];
-            if let Some(inner) = after_target.strip_prefix('{') {
-                if let Some(end) = matching_brace_end(inner) {
-                    return inner[..end].to_string();
-                }
-            }
-        }
-    }
-    trimmed.to_string()
-}
-
-fn matching_brace_end(s: &str) -> Option<usize> {
-    let mut depth: i32 = 1;
-    let mut escaped = false;
-    for (i, ch) in s.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match ch {
-            '\\' => escaped = true,
-            '{' => depth += 1,
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(i);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
 }
 
 /// Cap on concurrent `tectonic` invocations across the whole process.
@@ -1144,6 +1065,34 @@ mod tests {
         assert!(out.contains("\\documentclass[a4paper,11pt]{article}"));
         assert!(out.contains("Team Control Number"));
         assert!(out.contains("\\section{Results}"));
+    }
+
+    /// Regression: a preamble LaTeX comment once contained the literal text
+    /// `{% raw %}`, which Tera parsed as the real raw-block opener. That left
+    /// the *intended* `{% raw %}` as literal output; since `%` starts a LaTeX
+    /// comment, the `\providecommand{\tightlist}` line got commented out, so
+    /// any paper with a pandoc "tight list" failed to compile with "Undefined
+    /// control sequence \tightlist". Guard all three competition templates: no
+    /// Tera tag may survive into the output, and the tightlist shim must be
+    /// present on a non-comment line.
+    #[test]
+    fn templates_strip_tera_tags_and_define_tightlist() {
+        for kind in [TemplateKind::Mcm, TemplateKind::Cumcm, TemplateKind::Huashu] {
+            let name = kind.file();
+            let out = render_template(kind);
+            assert!(
+                !out.contains("{% raw %}") && !out.contains("{% endraw %}"),
+                "{name}: a Tera tag leaked into rendered output (a comment likely contains a literal raw/endraw tag)"
+            );
+            let defines_tightlist = out.lines().any(|l| {
+                let t = l.trim_start();
+                !t.starts_with('%') && t.contains("\\providecommand{\\tightlist}")
+            });
+            assert!(
+                defines_tightlist,
+                "{name}: \\providecommand{{\\tightlist}} missing or commented out — pandoc tight lists will fail to compile to PDF"
+            );
+        }
     }
 
     #[test]

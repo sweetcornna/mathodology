@@ -14,13 +14,10 @@ use redis::AsyncCommands;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::dispatch::events_stream_key;
+use crate::dispatch::{events_stream_key, EVENTS_MAXLEN};
 use crate::llm::canonical::Usage;
 use crate::llm::config::{Price, PriceTable};
 use crate::llm::stream::next_seq;
-
-/// Stream MAXLEN for `mm:events:<run_id>`. Matches worker emitter.
-const EVENTS_MAXLEN: usize = 5000;
 
 /// Redis key that holds the per-run running cost total in RMB. Mirrors
 /// `runs.cost_rmb` in Postgres so consumers (e.g. the Python worker's

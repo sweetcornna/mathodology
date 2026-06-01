@@ -396,6 +396,7 @@ async fn build_support_zip(run_root: &StdPath) -> Result<Vec<u8>, AppError> {
         let mut budget = SupportBudget::new();
         add_dir_to_zip(
             &mut zw,
+            run_root,
             &run_root.join("figures"),
             "figures",
             opts,
@@ -404,7 +405,7 @@ async fn build_support_zip(run_root: &StdPath) -> Result<Vec<u8>, AppError> {
         .await?;
         let data_dir = run_root.join("data");
         if is_existing_dir(&data_dir).await {
-            add_dir_to_zip(&mut zw, &data_dir, "data", opts, &mut budget).await?;
+            add_dir_to_zip(&mut zw, run_root, &data_dir, "data", opts, &mut budget).await?;
         }
 
         // 5. README inside the inner zip — survives unpacking the
@@ -465,6 +466,7 @@ impl SupportBudget {
 ///     `PayloadTooLarge` if budget is busted.
 async fn add_dir_to_zip<W: Write + std::io::Seek>(
     zw: &mut ZipWriter<W>,
+    run_root: &StdPath,
     src_dir: &StdPath,
     prefix: &str,
     opts: SimpleFileOptions,
@@ -480,7 +482,14 @@ async fn add_dir_to_zip<W: Write + std::io::Seek>(
         .map_err(|e| AppError::Internal(format!("walk {}: {e}", src_dir.display())))?
     {
         let path = entry.path();
-        let meta = match tokio::fs::metadata(&path).await {
+        // D17: canonicalize and verify the entry stays under run_root before
+        // touching it. tokio::fs::metadata/read follow symlinks, so a symlink
+        // planted in figures/ or data/ pointing at /etc/passwd (or another
+        // run's data) would otherwise be packed into the bundle.
+        let Some(canon) = canonicalize_within(run_root, &path).await else {
+            continue;
+        };
+        let meta = match tokio::fs::metadata(&canon).await {
             Ok(m) => m,
             Err(_) => continue,
         };
@@ -506,9 +515,9 @@ async fn add_dir_to_zip<W: Write + std::io::Seek>(
             continue;
         }
         budget.try_reserve(size)?;
-        let bytes = tokio::fs::read(&path)
+        let bytes = tokio::fs::read(&canon)
             .await
-            .map_err(|e| AppError::Internal(format!("read {}: {e}", path.display())))?;
+            .map_err(|e| AppError::Internal(format!("read {}: {e}", canon.display())))?;
         zw.start_file(format!("{prefix}/{name}"), opts)
             .map_err(zip_err)?;
         zw.write_all(&bytes).map_err(zip_err)?;
@@ -537,7 +546,12 @@ async fn add_archival_figures_to_zip<W: Write + std::io::Seek>(
         .map_err(|e| AppError::Internal(format!("walk figures: {e}")))?
     {
         let path = entry.path();
-        let meta = match tokio::fs::metadata(&path).await {
+        // D17: same symlink-escape guard as add_dir_to_zip — canonicalize and
+        // confirm the entry stays under run_root before reading.
+        let Some(canon) = canonicalize_within(run_root, &path).await else {
+            continue;
+        };
+        let meta = match tokio::fs::metadata(&canon).await {
             Ok(m) => m,
             Err(_) => continue,
         };
@@ -559,14 +573,33 @@ async fn add_archival_figures_to_zip<W: Write + std::io::Seek>(
             );
             continue;
         }
-        let bytes = tokio::fs::read(&path)
+        let bytes = tokio::fs::read(&canon)
             .await
-            .map_err(|e| AppError::Internal(format!("read {}: {e}", path.display())))?;
+            .map_err(|e| AppError::Internal(format!("read {}: {e}", canon.display())))?;
         zw.start_file(format!("{prefix}/{name}"), opts)
             .map_err(zip_err)?;
         zw.write_all(&bytes).map_err(zip_err)?;
     }
     Ok(())
+}
+
+/// Canonicalize `path` and return it only if the real path stays under the
+/// canonical `run_root`. Returns `None` when the path can't be resolved (e.g.
+/// a dangling symlink) or escapes the run directory (D17). Mirrors the
+/// `resolve_within` containment pattern used by the file-serving routes.
+async fn canonicalize_within(run_root: &StdPath, path: &StdPath) -> Option<std::path::PathBuf> {
+    let canon = tokio::fs::canonicalize(path).await.ok()?;
+    if canon.starts_with(run_root) {
+        Some(canon)
+    } else {
+        tracing::warn!(
+            path = %path.display(),
+            resolved = %canon.display(),
+            run_root = %run_root.display(),
+            "support archive: skipping entry that escapes run_root (symlink?)"
+        );
+        None
+    }
 }
 
 /// Async replacement for `Path::is_dir()` which would otherwise issue a
@@ -1076,6 +1109,21 @@ mod tests {
             out.contains("No LLM calls recorded"),
             "empty model list yields the fallback row"
         );
+        // D4 regression: section 5's `\begin{itemize}` must never be emitted
+        // empty — tectonic/XeTeX hard-errors ("missing \item") on an empty
+        // itemize, crashing the documented "no LLM assistance" submission path.
+        // Verify every itemize block in the fragment contains at least one
+        // `\item` even when `models` is empty.
+        for block in out.split("\\begin{itemize}").skip(1) {
+            let body = block
+                .split("\\end{itemize}")
+                .next()
+                .expect("itemize must be closed");
+            assert!(
+                body.contains("\\item"),
+                "empty itemize would crash LaTeX; block was:\n{body}"
+            );
+        }
     }
 
     #[test]
@@ -1260,5 +1308,57 @@ mod tests {
             !out.contains("stage.done"),
             "non-cost events must not appear in the report"
         );
+    }
+
+    // --- D17: symlink-escape containment ----------------------------------
+
+    #[tokio::test]
+    async fn canonicalize_within_accepts_in_root_files() {
+        let root_tmp = tempfile::tempdir().expect("tmp");
+        let run_root = tokio::fs::canonicalize(root_tmp.path()).await.unwrap();
+        let figures = run_root.join("figures");
+        tokio::fs::create_dir_all(&figures).await.unwrap();
+        let png = figures.join("fig-0.png");
+        tokio::fs::write(&png, b"\x89PNG").await.unwrap();
+
+        let resolved = canonicalize_within(&run_root, &png).await;
+        assert!(
+            resolved.is_some(),
+            "a real file under run_root must be accepted"
+        );
+        assert!(resolved.unwrap().starts_with(&run_root));
+    }
+
+    #[tokio::test]
+    async fn canonicalize_within_rejects_symlink_escape() {
+        // A symlink inside figures/ pointing at a file OUTSIDE run_root must
+        // be rejected so it can never be packed into the support archive.
+        let outside_tmp = tempfile::tempdir().expect("outside tmp");
+        let secret = outside_tmp.path().join("secret.txt");
+        tokio::fs::write(&secret, b"TOP SECRET").await.unwrap();
+        let secret = tokio::fs::canonicalize(&secret).await.unwrap();
+
+        let root_tmp = tempfile::tempdir().expect("run tmp");
+        let run_root = tokio::fs::canonicalize(root_tmp.path()).await.unwrap();
+        let figures = run_root.join("figures");
+        tokio::fs::create_dir_all(&figures).await.unwrap();
+        let evil = figures.join("evil.png");
+        std::os::unix::fs::symlink(&secret, &evil).expect("symlink");
+
+        let resolved = canonicalize_within(&run_root, &evil).await;
+        assert!(
+            resolved.is_none(),
+            "a symlink escaping run_root must be rejected (got {resolved:?})"
+        );
+    }
+
+    #[tokio::test]
+    async fn canonicalize_within_rejects_dangling_symlink() {
+        let root_tmp = tempfile::tempdir().expect("run tmp");
+        let run_root = tokio::fs::canonicalize(root_tmp.path()).await.unwrap();
+        let dangling = run_root.join("figures-link");
+        std::os::unix::fs::symlink("/nonexistent/path/xyz", &dangling).expect("symlink");
+        let resolved = canonicalize_within(&run_root, &dangling).await;
+        assert!(resolved.is_none(), "dangling symlink must be rejected");
     }
 }

@@ -189,14 +189,18 @@ impl AnthropicAdapter {
                 body["system"] = json!(system);
             }
         }
-        if let Some(t) = req.temperature {
-            body["temperature"] = json!(t);
-        }
         if thinking_budget > 0 {
+            // Extended thinking is mutually exclusive with a non-1 temperature:
+            // Anthropic's /v1/messages returns HTTP 400 ("`temperature` may only
+            // be set to 1 when thinking is enabled") if both are present. The
+            // pipeline sends temperature≈0.2 by default, so we OMIT temperature
+            // entirely on the thinking path (equivalent to the required temp=1).
             body["thinking"] = json!({
                 "type": "enabled",
                 "budget_tokens": thinking_budget,
             });
+        } else if let Some(t) = req.temperature {
+            body["temperature"] = json!(t);
         }
         body
     }
@@ -629,6 +633,58 @@ mod tests {
                 "max_tokens {mt} < budget+1024 for {level}"
             );
         }
+    }
+
+    #[test]
+    fn build_body_omits_temperature_when_thinking_enabled() {
+        // D3 regression: Anthropic returns HTTP 400 if `temperature` is sent
+        // alongside extended thinking unless temperature==1. The default
+        // pipeline temperature is 0.2, so we must omit it on the thinking path.
+        let adapter = AnthropicAdapter::new(
+            "anth".into(),
+            "https://x".into(),
+            "k".into(),
+            vec!["claude-sonnet-4-6".into()],
+            Client::new(),
+        );
+        for level in ["low", "medium", "high"] {
+            let mut req = mk_req_with(vec![("user", "go")]);
+            req.temperature = Some(0.2);
+            req.reasoning_effort = Some(level.into());
+            let body = adapter.build_body(&req, false);
+            assert_eq!(body["thinking"]["type"], "enabled", "level {level}");
+            assert!(
+                body.get("temperature").is_none(),
+                "temperature must be omitted when thinking is enabled (level {level})"
+            );
+        }
+    }
+
+    #[test]
+    fn build_body_keeps_temperature_without_thinking() {
+        // D3 regression: the non-thinking path must still forward temperature.
+        let adapter = AnthropicAdapter::new(
+            "anth".into(),
+            "https://x".into(),
+            "k".into(),
+            vec!["claude-sonnet-4-6".into()],
+            Client::new(),
+        );
+        let mut req = mk_req_with(vec![("user", "go")]);
+        req.temperature = Some(0.2);
+        req.reasoning_effort = Some("off".into());
+        let body = adapter.build_body(&req, false);
+        assert!(body.get("thinking").is_none());
+        let t = body["temperature"].as_f64().expect("temperature present");
+        assert!((t - 0.2).abs() < 1e-6, "temperature {t} should be ~0.2");
+
+        // And with reasoning_effort unset entirely.
+        let mut req = mk_req_with(vec![("user", "go")]);
+        req.temperature = Some(0.7);
+        let body = adapter.build_body(&req, false);
+        assert!(body.get("thinking").is_none());
+        let t = body["temperature"].as_f64().expect("temperature present");
+        assert!((t - 0.7).abs() < 1e-6, "temperature {t} should be ~0.7");
     }
 
     #[test]

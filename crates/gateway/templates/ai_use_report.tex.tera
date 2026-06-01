@@ -57,7 +57,8 @@ All AI outputs in the submitted paper were reviewed by the team for mathematical
 
 \begin{itemize}
 {% for m in models %}\item {{ m.name | latex_escape }} ({{ m.provider | latex_escape }}). Used for the purposes listed in section~3.
-{% endfor %}\end{itemize}
+{% endfor %}{% if not models or models | length == 0 %}\item N/A --- no LLM calls recorded; this submission was prepared without AI assistance.
+{% endif %}\end{itemize}
 
 \vspace{1em}
 {\small\textit{Generated on {{ generated_at | latex_escape }} from the run's accounting log.}}

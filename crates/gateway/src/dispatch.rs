@@ -19,6 +19,11 @@ pub fn events_stream_key(run_id: &Uuid) -> String {
     format!("mm:events:{run_id}")
 }
 
+/// Approximate MAXLEN for each per-run `mm:events:<run_id>` stream. Must match
+/// the worker emitter's cap so the gateway and worker trim consistently.
+/// Single source of truth shared by the cost ledger and the LLM token fan-out.
+pub const EVENTS_MAXLEN: usize = 5000;
+
 /// XADD mm:jobs with approximate maxlen, fields: run_id, payload, created_at.
 pub async fn enqueue_job(
     redis: &mut ConnectionManager,
