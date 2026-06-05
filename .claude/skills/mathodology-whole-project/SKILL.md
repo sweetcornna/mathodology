@@ -66,12 +66,18 @@ Use the shared phase model in `docs/WORKFLOWS.md`:
 
 The bar is national-first-prize or MCM/ICM O-prize level: multiple model routes, evidence-backed assumptions, reproducible computation, sensitivity and robustness checks, polished paper, independent critic review, and complete submission package.
 
-## User Install
+## User Install And Update
 
 For end users, prefer the mature `skills` CLI installer:
 
 ```bash
 npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent codex --agent claude-code --copy --yes
+```
+
+Update installed Mathodology skills with:
+
+```bash
+npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 See `docs/INSTALL.md` for target-specific variants.

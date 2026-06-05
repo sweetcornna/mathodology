@@ -22,7 +22,7 @@ Mathodology 现在是面向 Claude Code、Codex 等 AI 编程工具的 skills-on
 
 这个分支不保留应用源码、CI workflow、部署文件、生成的 contracts、包锁文件、数据集、构建产物或安装器资源。
 
-## 一键安装
+## 一键安装与更新
 
 一条命令把全部 Mathodology skills 全局安装到 Codex 和 Claude Code：
 
@@ -30,9 +30,15 @@ Mathodology 现在是面向 Claude Code、Codex 等 AI 编程工具的 skills-on
 npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent codex --agent claude-code --copy --yes
 ```
 
+一条命令更新已安装的 Mathodology skills：
+
+```bash
+npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+```
+
 这条命令使用 `vercel-labs/skills` 提供的开放 `skills` CLI，从 GitHub 安装 Agent Skills 到对应 agent 的 skills 目录。
 
-安装后重启 Codex 或 Claude Code，让新 skills 被发现。
+安装或更新后重启 Codex 或 Claude Code，让新 skills 被发现。
 
 更多目标和验证方式见 [docs/INSTALL_zh.md](docs/INSTALL_zh.md)。
 

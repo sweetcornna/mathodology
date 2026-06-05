@@ -1,4 +1,4 @@
-# One-Command Install
+# One-Command Install And Update
 
 Mathodology uses the open `skills` CLI from `vercel-labs/skills` as its installer. The repository does not maintain a custom package manager.
 
@@ -22,6 +22,30 @@ What it does:
 Restart Codex or Claude Code after installation.
 
 The `skills` CLI installs skill packages. For Claude Code project subagents and workflow templates, clone the repository or copy `.claude/agents/` and `.claude/workflows/` into the target project.
+
+## Update Installed Skills
+
+Update only Mathodology skills:
+
+```bash
+npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+```
+
+Update all globally installed skills:
+
+```bash
+npx -y skills@latest update -g -y
+```
+
+Restart Codex or Claude Code after updating.
+
+If you cloned this repository to use Claude Code project subagents and workflow templates, update the checkout with:
+
+```bash
+git pull --ff-only
+```
+
+Then copy `.claude/agents/` and `.claude/workflows/` into any target project that should use those project-level assets.
 
 ## Install For One Agent
 
@@ -75,11 +99,11 @@ Claude Code global install:
 ls ~/.claude/skills | rg '^mathodology-'
 ```
 
-If a skill already exists, remove or update it with the `skills` CLI before reinstalling:
+If a skill already exists and update is not enough, remove it before reinstalling:
 
 ```bash
 npx -y skills@latest remove --global --agent codex mathodology-whole-project --yes
-npx -y skills@latest update --global --yes
+npx -y skills@latest add sweetcornna/mathodology --skill mathodology-whole-project --global --agent codex --copy --yes
 ```
 
 ## Requirements

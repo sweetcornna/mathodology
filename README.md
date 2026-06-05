@@ -22,7 +22,7 @@ This branch intentionally does not ship the former runnable application source. 
 
 No application source, CI workflows, deployment files, generated contracts, package lockfiles, datasets, build outputs, or installer assets are kept on this branch.
 
-## One-Command Install
+## One-Command Install And Update
 
 Install all Mathodology skills globally for Codex and Claude Code:
 
@@ -30,9 +30,15 @@ Install all Mathodology skills globally for Codex and Claude Code:
 npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent codex --agent claude-code --copy --yes
 ```
 
+Update installed Mathodology skills:
+
+```bash
+npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+```
+
 This uses the open `skills` CLI from `vercel-labs/skills`, which installs Agent Skills from GitHub into the right agent directories.
 
-Restart Codex or Claude Code after installation so the new skills are discovered.
+Restart Codex or Claude Code after installation or update so the new skills are discovered.
 
 See [docs/INSTALL.md](docs/INSTALL.md) for target-specific commands and verification.
 
