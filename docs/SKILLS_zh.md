@@ -26,10 +26,20 @@ agents/openai.yaml
 
 `SKILL.md` 是 agent 读取的技能正文。`agents/openai.yaml` 是给 Codex 风格界面使用的元数据。
 
+Claude Code 项目编排资产放在：
+
+```text
+.claude/agents/
+.claude/workflows/
+```
+
+这些文件用于 clone 仓库后在 Claude Code 项目中直接使用。全局安装 skills 时，workflow 指导仍保留在 `SKILL.md` 正文里。
+
 ## 入口
 
 - Claude Code：打开仓库后加载 `.claude/skills/`。
 - Codex 类工具：先读 `AGENTS.md`，再加载对应 skill。
+- 奖项级 workflow 编排：使用 `docs/WORKFLOWS_zh.md`。
 - 用户一键安装：使用 `docs/INSTALL_zh.md`。
 - 整体迁移或备份：从 `mathodology-whole-project` 开始。
 - 仓库清理或策略检查：从 `mathodology-project-orientation` 开始。
@@ -92,10 +102,18 @@ keep_exact = {
     "docs/SKILLS_zh.md",
     "docs/INSTALL.md",
     "docs/INSTALL_zh.md",
+    "docs/WORKFLOWS.md",
+    "docs/WORKFLOWS_zh.md",
     "docs/BACKUP.md",
 }
 files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-bad = [f for f in files if f not in keep_exact and not f.startswith(".claude/skills/")]
+bad = [
+    f for f in files
+    if f not in keep_exact
+    and not f.startswith(".claude/skills/")
+    and not f.startswith(".claude/agents/")
+    and not f.startswith(".claude/workflows/")
+]
 if bad:
     print("\n".join(bad))
     sys.exit(1)
@@ -109,7 +127,8 @@ PY
 2. `SKILL.md` 只写可复用指导，不写过程流水账。
 3. 子系统归档细节只能作为知识保存；不要链接当前不存在的文件。
 4. 展示文案或默认提示变化时，同步更新 `agents/openai.yaml`。
-5. 提交前运行验证。
+5. Codex 编排写入 skill 正文；Claude Code 编排写入 `.claude/agents/`、`.claude/workflows/` 和 `docs/WORKFLOWS_zh.md`。
+6. 提交前运行验证。
 
 ## GitHub 发布
 
@@ -118,5 +137,6 @@ GitHub 项目应该呈现为 skills package：
 - README 描述 skills-only 项目。
 - `AGENTS.md` 是工具中立入口。
 - `.claude/skills/**` 必须提交。
+- `.claude/agents/**` 和 `.claude/workflows/**` 作为 Claude Code 项目编排资产提交。
 - `.claude/worktrees/` 和本地运行时状态保持 ignored。
 - skills 备份归档留在仓库外的 `../mathodology_skills_backups/`。

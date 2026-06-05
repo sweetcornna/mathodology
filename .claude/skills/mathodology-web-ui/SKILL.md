@@ -22,6 +22,20 @@ The former web UI presented modeling runs and artifacts through:
 - markdown, math, and code rendering
 - API clients generated or aligned from shared contracts
 
+## Workflow Adapter Role
+
+In the award-level workflow, use this skill when the submission needs reader-facing presentation quality:
+
+- design clear figure and table narratives
+- keep result panels in mind when organizing outputs
+- make progress, assumptions, and limitations visible in the paper
+- treat captions as part of the argument, not decoration
+- make final deliverables easy for a reviewer to inspect
+
+Codex agents should use this as presentation and artifact-organization guidance.
+
+Claude Code paper and packaging subagents should reference this when deciding how figures, tables, exports, and final files should be arranged for review.
+
 ## How To Maintain This Skill
 
 When updating archived UI guidance:

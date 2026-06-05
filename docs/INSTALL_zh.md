@@ -21,6 +21,8 @@ npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent co
 
 安装后重启 Codex 或 Claude Code。
 
+`skills` CLI 安装的是 skill package。若要使用 Claude Code 项目 subagents 和 workflow 模板，请 clone 本仓库，或把 `.claude/agents/` 与 `.claude/workflows/` 复制到目标项目。
+
 ## 只安装到一个 Agent
 
 只安装到 Codex：

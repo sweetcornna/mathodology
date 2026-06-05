@@ -32,6 +32,10 @@ __pycache__/
 /.claude/*
 !/.claude/skills/
 !/.claude/skills/**
+!/.claude/agents/
+!/.claude/agents/**
+!/.claude/workflows/
+!/.claude/workflows/**
 
 # Retired non-skills project trees should not be reintroduced on this branch.
 /.github/

@@ -13,9 +13,11 @@ This branch intentionally does not ship the former runnable application source. 
 ## What This Repository Contains
 
 - Claude Code project skills in `.claude/skills/<skill-name>/SKILL.md`
+- Claude Code project subagents in `.claude/agents/`
+- Claude Code workflow templates in `.claude/workflows/`
 - Codex-style metadata in each skill's `agents/openai.yaml`
 - A root `AGENTS.md` entrypoint for tools that do not auto-discover project skills
-- Skills documentation under `docs/`
+- Skills and workflow documentation under `docs/`
 - A skills-only backup script under `mathodology-whole-project`
 
 No application source, CI workflows, deployment files, generated contracts, package lockfiles, datasets, build outputs, or installer assets are kept on this branch.
@@ -34,11 +36,22 @@ Restart Codex or Claude Code after installation so the new skills are discovered
 
 See [docs/INSTALL.md](docs/INSTALL.md) for target-specific commands and verification.
 
+## Codex And Claude Code Modes
+
+Mathodology ships separate orchestration guidance for Codex and Claude Code:
+
+- Claude Code: use `.claude/workflows/mathodology-award-submission.md` with project subagents in `.claude/agents/`.
+- Codex: load `mathodology-whole-project` and run the 9-phase workflow in multi-agents mode.
+
+Both modes target national-first-prize or MCM/ICM O-prize level outputs: model alternatives, evidence-backed assumptions, reproducible experiments, polished paper, and a complete submission package.
+
+See [docs/WORKFLOWS.md](docs/WORKFLOWS.md) for the full phase model.
+
 ## Skill Index
 
 | Skill | Use When |
 |---|---|
-| [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | Backing up, transferring, restoring, or orienting on the whole skills repository |
+| [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | Backing up, transferring, restoring, orienting, or running Codex/Claude Code workflow orchestration |
 | [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | Starting work in this skills-only checkout or verifying repository boundaries |
 | [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | Maintaining archived knowledge about the former agent pipeline |
 | [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | Maintaining archived knowledge about the former gateway and API |

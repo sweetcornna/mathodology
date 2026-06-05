@@ -1,4 +1,4 @@
 interface:
   display_name: "Mathodology Project Orientation"
-  short_description: "Help with Mathodology Project Orientation tasks"
-  default_prompt: "Use $mathodology-project-orientation for the matching Mathodology skills repository task."
+  short_description: "Orient in the skills-only repository"
+  default_prompt: "Use $mathodology-project-orientation to inspect the Mathodology skills-only layout, retained files, Claude Code agents/workflows, Codex metadata, and repository boundary rules."

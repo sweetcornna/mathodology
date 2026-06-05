@@ -1,4 +1,4 @@
 interface:
   display_name: "Mathodology Gateway API"
-  short_description: "Help with Mathodology Gateway API tasks"
-  default_prompt: "Use $mathodology-gateway-api for the matching Mathodology skills repository task."
+  short_description: "Use archived gateway artifact boundaries"
+  default_prompt: "Use $mathodology-gateway-api when a Mathodology workflow needs archived gateway, API, artifact, export, submission-bundle, or reproducibility-contract reasoning."

@@ -13,6 +13,8 @@ Current work should normally edit only:
 
 - `.claude/skills/<skill-name>/SKILL.md`
 - `.claude/skills/<skill-name>/agents/openai.yaml`
+- `.claude/agents/<agent-name>.md`
+- `.claude/workflows/<workflow-name>.md`
 - `.claude/skills/mathodology-whole-project/scripts/create-source-backup.sh`
 - `AGENTS.md`
 - `README.md`
@@ -21,6 +23,8 @@ Current work should normally edit only:
 - `docs/SKILLS_zh.md`
 - `docs/INSTALL.md`
 - `docs/INSTALL_zh.md`
+- `docs/WORKFLOWS.md`
+- `docs/WORKFLOWS_zh.md`
 - `docs/BACKUP.md`
 - `.gitignore`
 
@@ -51,10 +55,18 @@ keep_exact = {
     "docs/SKILLS_zh.md",
     "docs/INSTALL.md",
     "docs/INSTALL_zh.md",
+    "docs/WORKFLOWS.md",
+    "docs/WORKFLOWS_zh.md",
     "docs/BACKUP.md",
 }
 files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-bad = [f for f in files if f not in keep_exact and not f.startswith(".claude/skills/")]
+bad = [
+    f for f in files
+    if f not in keep_exact
+    and not f.startswith(".claude/skills/")
+    and not f.startswith(".claude/agents/")
+    and not f.startswith(".claude/workflows/")
+]
 if bad:
     print("\n".join(bad))
     sys.exit(1)
@@ -74,7 +86,8 @@ Hits are acceptable only when they describe removed historical material or an ab
 
 ## Choosing Skills
 
-- Whole repository backup or transfer: use `mathodology-whole-project`.
+- Whole repository backup, transfer, or orchestration: use `mathodology-whole-project`.
 - Skill text or metadata changes: use `mathodology-skill-authoring`.
+- Award-level Codex or Claude Code phase workflow: use `docs/WORKFLOWS.md`.
 - Former subsystem knowledge: use the matching archived subsystem skill.
 - Validation and publishing checks: use `mathodology-dev-test-release`.

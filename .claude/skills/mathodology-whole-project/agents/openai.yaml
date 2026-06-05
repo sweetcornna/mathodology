@@ -1,4 +1,4 @@
 interface:
   display_name: "Mathodology Whole Project"
-  short_description: "Help with Mathodology Whole Project tasks"
-  default_prompt: "Use $mathodology-whole-project for the matching Mathodology skills repository task."
+  short_description: "Run Mathodology skills and award workflows"
+  default_prompt: "Use $mathodology-whole-project. In Codex, run the 9-phase Mathodology award workflow with parallel agents, phase synthesis, and an independent critic gate before each phase advances."

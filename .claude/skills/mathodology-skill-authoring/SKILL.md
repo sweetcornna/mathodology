@@ -18,6 +18,15 @@ agents/openai.yaml
 
 No separate product runtime skill directory is present on this branch.
 
+Claude Code orchestration assets are adjacent to skills:
+
+```text
+.claude/agents/<agent-name>.md
+.claude/workflows/<workflow-name>.md
+```
+
+Codex orchestration belongs inside `SKILL.md`, `agents/openai.yaml`, and `docs/WORKFLOWS.md`.
+
 ## Frontmatter Rules
 
 Every `SKILL.md` needs YAML frontmatter with:
@@ -45,7 +54,22 @@ For this skills-only branch:
 - Be explicit when subsystem knowledge is historical.
 - Do not link to current files that are no longer present.
 - Do not list old build or test commands as active validation gates.
-- Keep current-branch edits limited to skills, metadata, docs, and backup helper files.
+- Keep current-branch edits limited to skills, metadata, Claude Code agents/workflows, docs, and backup helper files.
+
+## Adapter Rules
+
+Claude Code adaptation:
+
+- Put reusable project subagent definitions in `.claude/agents/`.
+- Put repeatable phase workflow templates in `.claude/workflows/`.
+- Keep each subagent role narrow and gate-driven.
+- Mention which Mathodology skill the subagent should load.
+
+Codex adaptation:
+
+- Put startup prompts and multi-agents rules in `SKILL.md` and `docs/WORKFLOWS.md`.
+- Keep `agents/openai.yaml` default prompts explicit enough to trigger the right skill.
+- Phrase Codex instructions as phase tasks with synthesis and independent critic gates.
 
 ## Metadata
 

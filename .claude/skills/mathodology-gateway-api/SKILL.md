@@ -23,6 +23,19 @@ The former gateway acted as the service boundary for the product:
 - paper export and submission bundle generation
 - API contracts shared with the worker and web UI
 
+## Workflow Adapter Role
+
+In the award-level workflow, use this skill when the submission package needs service or product-style reasoning from the former gateway design:
+
+- define a clean boundary between user prompt, computation, artifacts, and final package
+- preserve event-log thinking for phase logs and reproducibility trails
+- treat exports and submission bundles as first-class deliverables
+- keep API-contract thinking when specifying output schemas for code, data, tables, figures, and paper sections
+
+Codex agents should use this as architecture guidance, not as a command to rebuild the removed gateway.
+
+Claude Code subagents should reference this only when package boundaries, artifacts, exports, or reproducibility contracts are unclear.
+
 ## How To Maintain This Skill
 
 When updating archived gateway guidance:

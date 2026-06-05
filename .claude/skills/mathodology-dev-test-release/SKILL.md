@@ -11,6 +11,20 @@ This branch is skills-only. Its active validation checks are skill, metadata, li
 
 The former application build, CI, Docker, native service, packaging, installer, and release files are not present on this branch. Treat those workflows as archived knowledge unless recovered from Git history.
 
+## Active Workflow Validation
+
+For award-level modeling workflows, this skill owns final gates rather than application builds:
+
+- phase log exists and covers Phases 0-8
+- every prompt requirement maps to a paper section or package file
+- every reported number maps to code, data, derivation, or documented manual calculation
+- final paper, editable source if required, code, data notes, figures, tables, README, AI-use statement, and checklist are present
+- no local caches, secrets, raw scratch files, or unrelated artifacts are in the final package
+
+Codex should run these gates with a dedicated critic or packaging agent.
+
+Claude Code should run `mathodology-submission-packager` and then `mathodology-critic`.
+
 ## Active Validation
 
 Validate all project skills:
@@ -58,6 +72,10 @@ files = [
     Path("README_zh.md"),
     Path("docs/SKILLS.md"),
     Path("docs/SKILLS_zh.md"),
+    Path("docs/INSTALL.md"),
+    Path("docs/INSTALL_zh.md"),
+    Path("docs/WORKFLOWS.md"),
+    Path("docs/WORKFLOWS_zh.md"),
     Path("docs/BACKUP.md"),
     Path("AGENTS.md"),
 ]
@@ -93,10 +111,20 @@ keep_exact = {
     "LICENSE",
     "docs/SKILLS.md",
     "docs/SKILLS_zh.md",
+    "docs/INSTALL.md",
+    "docs/INSTALL_zh.md",
+    "docs/WORKFLOWS.md",
+    "docs/WORKFLOWS_zh.md",
     "docs/BACKUP.md",
 }
 files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-bad = [f for f in files if f not in keep_exact and not f.startswith(".claude/skills/")]
+bad = [
+    f for f in files
+    if f not in keep_exact
+    and not f.startswith(".claude/skills/")
+    and not f.startswith(".claude/agents/")
+    and not f.startswith(".claude/workflows/")
+]
 if bad:
     print("\n".join(bad))
     sys.exit(1)

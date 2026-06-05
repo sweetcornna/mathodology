@@ -26,10 +26,20 @@ agents/openai.yaml
 
 `SKILL.md` is the agent-facing instruction body. `agents/openai.yaml` is metadata for Codex-style interfaces.
 
+Claude Code project orchestration assets live under:
+
+```text
+.claude/agents/
+.claude/workflows/
+```
+
+These files are for cloned Claude Code project usage. Installed global skills still carry the workflow instructions inside `SKILL.md`.
+
 ## Entry Points
 
 - Claude Code: open the repository and load `.claude/skills/`.
 - Codex-like tools: read `AGENTS.md`, then load the relevant skill.
+- Award-level workflow orchestration: use `docs/WORKFLOWS.md`.
 - One-command user install: use `docs/INSTALL.md`.
 - Full transfer or backup: start with `mathodology-whole-project`.
 - Repository cleanup or policy checks: start with `mathodology-project-orientation`.
@@ -92,10 +102,18 @@ keep_exact = {
     "docs/SKILLS_zh.md",
     "docs/INSTALL.md",
     "docs/INSTALL_zh.md",
+    "docs/WORKFLOWS.md",
+    "docs/WORKFLOWS_zh.md",
     "docs/BACKUP.md",
 }
 files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-bad = [f for f in files if f not in keep_exact and not f.startswith(".claude/skills/")]
+bad = [
+    f for f in files
+    if f not in keep_exact
+    and not f.startswith(".claude/skills/")
+    and not f.startswith(".claude/agents/")
+    and not f.startswith(".claude/workflows/")
+]
 if bad:
     print("\n".join(bad))
     sys.exit(1)
@@ -109,7 +127,8 @@ PY
 2. Keep `SKILL.md` scoped to reusable guidance, not a narrative changelog.
 3. Use archived subsystem details only as knowledge; do not link to missing current files.
 4. Update `agents/openai.yaml` when display text or default prompts should change.
-5. Run validation before committing.
+5. Keep Codex orchestration in skill text and Claude Code orchestration in `.claude/agents/`, `.claude/workflows/`, and `docs/WORKFLOWS.md`.
+6. Run validation before committing.
 
 ## GitHub Publishing
 
@@ -118,5 +137,6 @@ The GitHub project should present this repository as a skills package:
 - README describes the skills-only project.
 - `AGENTS.md` is the tool-neutral entrypoint.
 - `.claude/skills/**` is committed.
+- `.claude/agents/**` and `.claude/workflows/**` are committed as Claude Code project orchestration assets.
 - `.claude/worktrees/` and local runtime state remain ignored.
 - Skills backup archives stay outside the repository in `../mathodology_skills_backups/`.

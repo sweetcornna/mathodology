@@ -24,6 +24,46 @@ The former worker coordinated specialized modeling agents around a mathematical 
 
 The worker also carried knowledge about HMML-style method retrieval, MATLAB or Octave execution, web and scholarly search tools, figure generation, and runtime skills used by the Coder role.
 
+## New Orchestration Use
+
+This skill now also carries the reusable workflow pattern that replaced the removed worker source.
+
+For Claude Code:
+
+- Use `.claude/workflows/mathodology-award-submission.md`.
+- Dispatch `.claude/agents/mathodology-*.md` roles.
+- Lead owns phase gates and synthesis.
+
+For Codex:
+
+- Use multi-agents mode.
+- Dispatch separate agents for problem analysis, evidence, model design, experiments, critique, writing, and packaging.
+- Keep a phase log and run an independent critic gate before advancing.
+
+## Phase Responsibilities
+
+- Phase 0: problem analyst maps prompt, scoring, deliverables, assumptions.
+- Phase 1: evidence researcher builds source, data, and benchmark inventory.
+- Phase 2: at least two model agents propose alternatives; lead selects route with rejection reasons.
+- Phase 3: modeler writes notation, assumptions, objective, constraints, algorithms, and metrics.
+- Phase 4: coder produces reproducible computation, tables, figures, sensitivity, and robustness outputs.
+- Phase 5: modeler and paper editor translate results into prompt-level answers.
+- Phase 6: paper editor builds the paper narrative and appendix.
+- Phase 7: critic audits prompt coverage, math, evidence, reproducibility, and writing.
+- Phase 8: packager assembles final paper, source, code, data notes, README, AI-use statement, and checklist.
+
+## Prize-Level Gates
+
+Block progression if any of these are missing:
+
+- prompt requirement without an output
+- major assumption without evidence, derivation, or sensitivity check
+- selected model without rejected alternatives
+- reported number without reproducibility path
+- figure or table without interpretation
+- paper claim without support
+- final package without README and requirement-to-file checklist
+
 ## How To Maintain This Skill
 
 When updating archived pipeline guidance:

@@ -21,6 +21,8 @@ What it does:
 
 Restart Codex or Claude Code after installation.
 
+The `skills` CLI installs skill packages. For Claude Code project subagents and workflow templates, clone the repository or copy `.claude/agents/` and `.claude/workflows/` into the target project.
+
 ## Install For One Agent
 
 Codex only:

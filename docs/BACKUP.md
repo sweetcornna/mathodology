@@ -29,6 +29,8 @@ untracked-files.txt
 The archive is built from a whitelist. It includes only:
 
 - `.claude/skills/**`
+- `.claude/agents/**`
+- `.claude/workflows/**`
 - `docs/**`
 - `AGENTS.md`
 - `README.md`
@@ -85,6 +87,7 @@ Then read:
 ```text
 AGENTS.md
 .claude/skills/mathodology-whole-project/SKILL.md
+.claude/workflows/mathodology-award-submission.md
 docs/INSTALL.md
 ```
 

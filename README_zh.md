@@ -13,9 +13,11 @@ Mathodology 现在是面向 Claude Code、Codex 等 AI 编程工具的 skills-on
 ## 仓库内容
 
 - `.claude/skills/<skill-name>/SKILL.md` 中的 Claude Code 项目 skills
+- `.claude/agents/` 中的 Claude Code 项目 subagents
+- `.claude/workflows/` 中的 Claude Code workflow 模板
 - 每个 skill 自带 `agents/openai.yaml`，方便 Codex 风格工具展示和调用
 - 根目录 `AGENTS.md`，给不会自动发现 project skills 的工具使用
-- `docs/` 下的 skills 文档
+- `docs/` 下的 skills 和 workflow 文档
 - `mathodology-whole-project` skill 中的 skills-only 备份脚本
 
 这个分支不保留应用源码、CI workflow、部署文件、生成的 contracts、包锁文件、数据集、构建产物或安装器资源。
@@ -34,11 +36,22 @@ npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent co
 
 更多目标和验证方式见 [docs/INSTALL_zh.md](docs/INSTALL_zh.md)。
 
+## Codex 与 Claude Code 模式
+
+Mathodology 分别提供 Codex 和 Claude Code 的编排指导：
+
+- Claude Code：使用 `.claude/workflows/mathodology-award-submission.md`，并调用 `.claude/agents/` 中的项目 subagents。
+- Codex：加载 `mathodology-whole-project`，按多 agents 模式执行 9 个 phase。
+
+两种模式都面向国奖或 MCM/ICM O 奖级别产出：多模型备选、有证据支撑的假设、可复现实验、成熟论文、完整提交包。
+
+完整 phase 模型见 [docs/WORKFLOWS_zh.md](docs/WORKFLOWS_zh.md)。
+
 ## Skill 索引
 
 | Skill | 适用场景 |
 |---|---|
-| [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | 整个 skills 仓库的备份、迁移、恢复或整体理解 |
+| [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | 整个 skills 仓库的备份、迁移、恢复、整体理解，或 Codex/Claude Code 工作流编排 |
 | [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | 在 skills-only checkout 中开始工作，或验证仓库边界 |
 | [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | 维护原 agent pipeline 的归档知识 |
 | [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | 维护原 gateway 和 API 的归档知识 |
