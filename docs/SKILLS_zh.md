@@ -30,6 +30,7 @@ agents/openai.yaml
 
 - Claude Code：打开仓库后加载 `.claude/skills/`。
 - Codex 类工具：先读 `AGENTS.md`，再加载对应 skill。
+- 用户一键安装：使用 `docs/INSTALL_zh.md`。
 - 整体迁移或备份：从 `mathodology-whole-project` 开始。
 - 仓库清理或策略检查：从 `mathodology-project-orientation` 开始。
 - Skill 修改：从 `mathodology-skill-authoring` 开始。
@@ -89,6 +90,8 @@ keep_exact = {
     "LICENSE",
     "docs/SKILLS.md",
     "docs/SKILLS_zh.md",
+    "docs/INSTALL.md",
+    "docs/INSTALL_zh.md",
     "docs/BACKUP.md",
 }
 files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()

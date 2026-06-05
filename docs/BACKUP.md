@@ -85,6 +85,7 @@ Then read:
 ```text
 AGENTS.md
 .claude/skills/mathodology-whole-project/SKILL.md
+docs/INSTALL.md
 ```
 
 No build step is required for a skills-only restore.

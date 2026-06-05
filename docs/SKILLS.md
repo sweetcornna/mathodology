@@ -30,6 +30,7 @@ agents/openai.yaml
 
 - Claude Code: open the repository and load `.claude/skills/`.
 - Codex-like tools: read `AGENTS.md`, then load the relevant skill.
+- One-command user install: use `docs/INSTALL.md`.
 - Full transfer or backup: start with `mathodology-whole-project`.
 - Repository cleanup or policy checks: start with `mathodology-project-orientation`.
 - Skill edits: start with `mathodology-skill-authoring`.
@@ -89,6 +90,8 @@ keep_exact = {
     "LICENSE",
     "docs/SKILLS.md",
     "docs/SKILLS_zh.md",
+    "docs/INSTALL.md",
+    "docs/INSTALL_zh.md",
     "docs/BACKUP.md",
 }
 files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()

@@ -18,7 +18,7 @@ The retained repository surface is:
 - `.claude/skills/**`: project skills and Codex-style metadata.
 - `AGENTS.md`: tool-neutral entrypoint.
 - `README.md` and `README_zh.md`: public project overview.
-- `docs/SKILLS.md`, `docs/SKILLS_zh.md`, and `docs/BACKUP.md`: skill and backup documentation.
+- `docs/SKILLS.md`, `docs/SKILLS_zh.md`, `docs/INSTALL.md`, `docs/INSTALL_zh.md`, and `docs/BACKUP.md`: skill, install, and backup documentation.
 - `LICENSE` and `.gitignore`.
 
 Do not expect app source, CI workflows, deployment config, generated contracts, datasets, package manifests, lockfiles, or installers in this branch.
@@ -33,6 +33,16 @@ Load these skills as needed:
 - `mathodology-web-ui`: archived knowledge about the former Vue web UI.
 - `mathodology-dev-test-release`: skills validation and archived dev, test, deploy, packaging, and release guidance.
 - `mathodology-skill-authoring`: adding or updating project skills and metadata.
+
+## User Install
+
+For end users, prefer the mature `skills` CLI installer:
+
+```bash
+npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent codex --agent claude-code --copy --yes
+```
+
+See `docs/INSTALL.md` for target-specific variants.
 
 ## Backup Workflow
 

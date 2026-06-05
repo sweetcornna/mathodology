@@ -19,6 +19,8 @@ Current work should normally edit only:
 - `README_zh.md`
 - `docs/SKILLS.md`
 - `docs/SKILLS_zh.md`
+- `docs/INSTALL.md`
+- `docs/INSTALL_zh.md`
 - `docs/BACKUP.md`
 - `.gitignore`
 
@@ -47,6 +49,8 @@ keep_exact = {
     "LICENSE",
     "docs/SKILLS.md",
     "docs/SKILLS_zh.md",
+    "docs/INSTALL.md",
+    "docs/INSTALL_zh.md",
     "docs/BACKUP.md",
 }
 files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
