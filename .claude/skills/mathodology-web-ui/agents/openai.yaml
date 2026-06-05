@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mathodology Web UI"
+  short_description: "Web UI streaming and state guidance"
+  default_prompt: "Use $mathodology-web-ui to work on the Vue web app and run-state UI."

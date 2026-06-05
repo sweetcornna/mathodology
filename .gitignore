@@ -29,6 +29,8 @@ Cargo.lock.bak
 *.sqlite*
 /runs/
 dump.rdb
+# Native deploy runtime state (PIDs + logs from scripts/deploy-local.sh)
+/.run/
 
 # Editor / OS
 .DS_Store
@@ -47,8 +49,10 @@ packages/py-contracts/src/mm_contracts/generated.py
 # Local caches
 .cache/
 
-# Claude Code runtime state (editor scheduler, local-only)
-/.claude/
+# Claude Code runtime state stays local, but project skills are source files.
+/.claude/*
+!/.claude/skills/
+!/.claude/skills/**
 config/providers.toml.bak
 data/mcm/repos/
 data/mcm/logs/

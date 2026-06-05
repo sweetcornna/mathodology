@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mathodology Gateway API"
+  short_description: "Gateway API and export guidance"
+  default_prompt: "Use $mathodology-gateway-api to modify gateway routes, exports, or LLM routing."
