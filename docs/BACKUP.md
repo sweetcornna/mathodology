@@ -1,6 +1,6 @@
 # Backup and Restore
 
-The skills project includes a source-level backup script:
+The skills repository includes a skills-only backup script:
 
 ```bash
 bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
@@ -9,7 +9,7 @@ bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
 By default it writes to:
 
 ```text
-../math_agent_backups/<timestamp>/
+../mathodology_skills_backups/<timestamp>/
 ```
 
 ## Backup Contents
@@ -17,7 +17,7 @@ By default it writes to:
 Each backup directory contains:
 
 ```text
-math_agent-source-<timestamp>.tar.gz
+mathodology-skills-<timestamp>.tar.gz
 SHA256SUMS
 archive-files.txt
 source-files.nul
@@ -26,47 +26,48 @@ uncommitted-diff.patch
 untracked-files.txt
 ```
 
-The archive is built from:
+The archive is built from a whitelist. It includes only:
 
-```bash
-git ls-files --cached --others --exclude-standard
-```
+- `.claude/skills/**`
+- `docs/**`
+- `AGENTS.md`
+- `README.md`
+- `README_zh.md`
+- `LICENSE`
+- `.gitignore`
 
-That means it includes tracked files and untracked non-ignored source files, including new `.claude/skills` files before they are committed.
+This keeps old local source remnants out of the skills backup.
 
 ## Exclusions
 
-Ignored local state is excluded, including:
+The archive does not include:
 
 - `.git/`
-- `.env`
-- `target/`
-- `.venv/`
-- `node_modules/`
-- `apps/web/dist/`
-- `runs/`
-- `.run/`
+- `.env` or local secret files
+- application source trees
+- CI, deployment, installer, or package-manager files
+- build outputs and dependency directories
+- local run artifacts
 - `.claude/worktrees/`
-- local database and Redis dump files
 
 ## Verify a Backup
 
 ```bash
-cd ../math_agent_backups/<timestamp>
+cd ../mathodology_skills_backups/<timestamp>
 shasum -a 256 -c SHA256SUMS
-tar -tzf math_agent-source-<timestamp>.tar.gz | head
+tar -tzf mathodology-skills-<timestamp>.tar.gz | head
 ```
 
 Check that the skills entrypoints exist:
 
 ```bash
-tar -tzf math_agent-source-<timestamp>.tar.gz | rg '^(AGENTS.md|\\.claude/skills/mathodology-whole-project/SKILL.md)$'
+tar -tzf mathodology-skills-<timestamp>.tar.gz | rg '^(AGENTS.md|\\.claude/skills/mathodology-whole-project/SKILL.md)$'
 ```
 
-Check that generated or secret state is absent:
+Check that old application paths are absent:
 
 ```bash
-tar -tzf math_agent-source-<timestamp>.tar.gz | rg '^(\\.git/|target/|node_modules/|\\.venv/|runs/|\\.run/|\\.env$|\\.claude/worktrees/)'
+tar -tzf mathodology-skills-<timestamp>.tar.gz | rg '^(\\.git/|apps/|crates/|packages/|scripts/|config/|installer/|tests/|data/|\\.github/|node_modules/|target/|\\.venv/|\\.env$|\\.claude/worktrees/)'
 ```
 
 The last command should produce no matches.
@@ -74,10 +75,9 @@ The last command should produce no matches.
 ## Restore
 
 ```bash
-mkdir -p /tmp/mathodology-restore
-tar -xzf ../math_agent_backups/<timestamp>/math_agent-source-<timestamp>.tar.gz -C /tmp/mathodology-restore
-cd /tmp/mathodology-restore
-git status --short --branch
+mkdir -p /tmp/mathodology-skills-restore
+tar -xzf ../mathodology_skills_backups/<timestamp>/mathodology-skills-<timestamp>.tar.gz -C /tmp/mathodology-skills-restore
+cd /tmp/mathodology-skills-restore
 ```
 
 Then read:
@@ -87,4 +87,4 @@ AGENTS.md
 .claude/skills/mathodology-whole-project/SKILL.md
 ```
 
-For a runnable development environment, follow the commands in `mathodology-dev-test-release`. For a skills-only transfer, no build step is required.
+No build step is required for a skills-only restore.

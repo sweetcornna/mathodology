@@ -1,3 +1,0 @@
-gateway: cargo watch -x 'run -p gateway'
-worker:  cd apps/agent-worker && uv run python -m agent_worker
-web:     pnpm --filter web dev

@@ -1,4 +1,4 @@
 interface:
   display_name: "Mathodology Dev Test Release"
-  short_description: "Dev, test, deploy, release guidance"
-  default_prompt: "Use $mathodology-dev-test-release to choose setup, test, deploy, or release commands."
+  short_description: "Help with Mathodology Dev Test Release tasks"
+  default_prompt: "Use $mathodology-dev-test-release for the matching Mathodology skills repository task."

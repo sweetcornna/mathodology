@@ -1,4 +1,4 @@
 interface:
   display_name: "Mathodology Project Orientation"
-  short_description: "Repo map and change guidance"
-  default_prompt: "Use $mathodology-project-orientation to orient in this repository before making changes."
+  short_description: "Help with Mathodology Project Orientation tasks"
+  default_prompt: "Use $mathodology-project-orientation for the matching Mathodology skills repository task."

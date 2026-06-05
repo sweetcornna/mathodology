@@ -1,79 +1,76 @@
 ---
 name: mathodology-project-orientation
-description: Use when starting non-trivial work in Mathodology, locating code, planning changes, choosing tests, or handling generated files, monorepo boundaries, and dirty worktrees.
+description: Use when starting work in the Mathodology skills-only repository, checking retained files, or deciding whether a change belongs on this branch.
 ---
 
 # Mathodology Project Orientation
 
-## Start Here
+## Repository Contract
 
-Run these checks before changing files:
+This branch is a skills-only GitHub tree. Treat it as an AI-coding knowledge pack, not as the original runnable Mathodology application.
 
-```bash
-git status --short --branch
-rg --files
-```
+Current work should normally edit only:
 
-Assume the worktree may contain user changes. Do not revert unrelated files. Use focused reads before editing; prefer `rg` for search.
+- `.claude/skills/<skill-name>/SKILL.md`
+- `.claude/skills/<skill-name>/agents/openai.yaml`
+- `.claude/skills/mathodology-whole-project/scripts/create-source-backup.sh`
+- `AGENTS.md`
+- `README.md`
+- `README_zh.md`
+- `docs/SKILLS.md`
+- `docs/SKILLS_zh.md`
+- `docs/BACKUP.md`
+- `.gitignore`
 
-## Repository Map
+`LICENSE` is retained but should not change unless the license changes.
 
-- `crates/gateway/`: Rust Axum gateway, REST routes, WebSocket streaming, auth, LLM provider routing, exports, submission bundles, SQLx migrations.
-- `apps/agent-worker/`: Python worker, five-agent pipeline, prompts, Jupyter and MATLAB execution, web search tools, HMML method library, runtime skill loader.
-- `apps/web/`: Vue 3 + Pinia + Vite UI, API clients, WebSocket replay, markdown/math/code rendering, export panels, run dashboard.
-- `packages/contracts/`: OpenAPI and event schemas. Treat as source of truth for generated clients.
-- `packages/py-contracts/` and `packages/ts-contracts/`: generated/stubbed contract packages consumed by worker, gateway tests, and web.
-- `docs/skills/`: product runtime skills loaded by the worker's Coder agent. These are not the same as project AI coding skills.
-- `.claude/skills/`: project AI coding skills for Claude Code, Codex-like tools, and other Agent Skills consumers.
-- `docs/superpowers/`: design and implementation plans used by prior agent work.
-- `scripts/`, `Dockerfile.*`, `docker-compose*.yml`, `installer/`, `config/`: install, deployment, packaging, and service supervision.
-- `runs/`, `target/`, `.venv/`, `node_modules/`, `.run/`: generated local state. Do not commit.
+## What Is Absent
 
-## Change Boundaries
+The current GitHub tree should not contain application source, generated clients, CI, deployment, package-manager, installer, data, or test trees.
 
-- Gateway API behavior usually touches `crates/gateway`, `packages/contracts/openapi.yaml`, generated contract packages, and web API callers together.
-- Worker output schema changes usually start in `packages/contracts/openapi.yaml` or `packages/py-contracts/src/mm_contracts/agent_io.py`, then flow into worker tests and web types.
-- Prompt or pipeline behavior changes belong near `apps/agent-worker/src/agent_worker/prompts/`, `agents/`, `pipeline.py`, and targeted tests under `apps/agent-worker/tests/`.
-- UI changes should stay in `apps/web/src/` and use generated types from `@mathodology/contracts`.
-- Deployment changes should check both Docker and native scripts when user-facing behavior overlaps.
+If a task requires historical implementation detail, use Git history or another branch in a separate worktree. Do not add those files back to this branch as part of ordinary skills maintenance.
 
-## Generated Files
+## Boundary Check
 
-- `packages/py-contracts/src/mm_contracts/generated.py` is generated and ignored by `.gitignore`; avoid hand editing unless the task is specifically about generation stubs.
-- `packages/ts-contracts/src/generated.ts` is generated but checked in. If OpenAPI changes, run `just gen-ts` or `just gen`.
-- `apps/web/dist/`, `target/`, `.venv/`, and `node_modules/` are build outputs.
-
-## Commands
-
-Bootstrap:
+Before publishing cleanup or skill maintenance, verify tracked files:
 
 ```bash
-just bootstrap
+python3 - <<'PY'
+import subprocess
+import sys
+
+keep_exact = {
+    ".gitignore",
+    "AGENTS.md",
+    "README.md",
+    "README_zh.md",
+    "LICENSE",
+    "docs/SKILLS.md",
+    "docs/SKILLS_zh.md",
+    "docs/BACKUP.md",
+}
+files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
+bad = [f for f in files if f not in keep_exact and not f.startswith(".claude/skills/")]
+if bad:
+    print("\n".join(bad))
+    sys.exit(1)
+print(f"tracked whitelist ok: {len(files)} files")
+PY
 ```
 
-Run the app:
+## Text Check
+
+Search for stale current-path claims before committing:
 
 ```bash
-just infra-up
-just dev
+rg -n "apps/|crates/|packages/|docs/skills|Dockerfile|docker-compose|just |cargo|pnpm|uv run|\\.github|installer" README.md README_zh.md AGENTS.md docs .claude/skills
 ```
 
-Focused checks:
+Hits are acceptable only when they describe removed historical material or an absence check. They must not instruct agents to edit or run missing current files.
 
-```bash
-cargo test --workspace
-uv run pytest apps/agent-worker -q
-pnpm --filter web typecheck
-pnpm --filter web build
-```
+## Choosing Skills
 
-`just test` and `just lint` are convenient, but some subcommands are intentionally `|| true`; use direct commands when a gate must be authoritative.
-
-## Which Skill Next
-
-- Whole-project backup or transfer: use `mathodology-whole-project`.
-- Worker agents or runtime skills: use `mathodology-agent-pipeline`.
-- Gateway routes, exports, or LLM proxy: use `mathodology-gateway-api`.
-- Web UI, stores, or streaming: use `mathodology-web-ui`.
-- CI, deploy, installer, or release: use `mathodology-dev-test-release`.
-- Creating or revising skills: use `mathodology-skill-authoring`.
+- Whole repository backup or transfer: use `mathodology-whole-project`.
+- Skill text or metadata changes: use `mathodology-skill-authoring`.
+- Former subsystem knowledge: use the matching archived subsystem skill.
+- Validation and publishing checks: use `mathodology-dev-test-release`.

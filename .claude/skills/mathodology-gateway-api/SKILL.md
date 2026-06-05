@@ -1,128 +1,47 @@
 ---
 name: mathodology-gateway-api
-description: Use when changing Mathodology's Rust gateway, REST or WebSocket routes, auth, Redis/Postgres state, LLM routing, OpenAPI contracts, paper export, submission bundles, or gateway tests.
+description: Use when maintaining archived knowledge about Mathodology's former gateway, API routes, auth, state, LLM routing, exports, submission bundles, or contracts.
 ---
 
-# Mathodology Gateway API
+# Mathodology Gateway API Archive
 
-## Core Responsibilities
+## Scope
 
-The gateway is the Rust Axum service in `crates/gateway/`. It owns:
+This skill preserves architectural knowledge about the former Mathodology gateway and public API surface.
 
-- Run creation, listing, state, cancellation, and audit persistence.
-- WebSocket event replay for live runs.
-- Dev-token auth.
-- Redis Streams job dispatch and event fanout.
-- Postgres state and SQLx migrations.
-- LLM provider routing and streaming proxy behavior.
-- Paper export and competition submission bundles.
-- Serving run artifacts such as paper markdown and figures.
+The current GitHub branch does not contain the gateway source, contracts, migrations, tests, or generated clients. Use this skill for archived guidance and reconstruction planning, not for editing or compiling a gateway in this checkout.
 
-## Main Files
+## Archived Concepts
 
-- `crates/gateway/src/app.rs`: router assembly and middleware.
-- `crates/gateway/src/state.rs`: shared application state.
-- `crates/gateway/src/config.rs`: gateway config.
-- `crates/gateway/src/auth.rs`: dev-token auth.
-- `crates/gateway/src/dispatch.rs`: job dispatch to Redis.
-- `crates/gateway/src/routes/`: route handlers.
-- `crates/gateway/src/llm/`: provider routing, canonical request/response mapping, cost handling, streaming.
-- `crates/gateway/templates/`: LaTeX templates for exports.
-- `crates/gateway/migrations/`: SQLx migrations.
-- `crates/gateway/tests/`: Rust integration tests.
-- `packages/contracts/openapi.yaml`: API contract.
+The former gateway acted as the service boundary for the product:
 
-## Route Ownership
+- request intake for modeling runs
+- run status, event streaming, and artifact access
+- authentication for development and hosted usage
+- persistence through application state and backing stores
+- LLM provider routing, streaming, fallback, and cost accounting
+- paper export and submission bundle generation
+- API contracts shared with the worker and web UI
 
-Use `packages/contracts/openapi.yaml` to understand public behavior, then inspect the route:
+## How To Maintain This Skill
 
-- `/runs`: `routes/runs.rs`
-- `/ws/runs/{run_id}`: `routes/ws_run.rs`
-- `/runs/{run_id}/export/{format}`: `routes/export.rs`
-- `/runs/{run_id}/submission`: `routes/submission.rs`
-- `/runs/{run_id}/figures/{path}`: `routes/figures.rs`
-- `/runs/{run_id}/cancel`: `routes/runs.rs` or nearby route modules
-- `/llm/chat/completions`: `routes/llm.rs` and `llm/`
+When updating archived gateway guidance:
 
-Find all callers before changing a route:
+1. Mark implementation details as historical unless verified from Git history.
+2. Prefer behavior and contract concepts over missing source paths.
+3. Do not add build, test, migration, or contract-generation commands as current validation.
+4. If exact route behavior is needed, recover it from an older commit in a separate worktree.
+5. Keep cross-boundary notes aligned with the pipeline and web UI archive skills.
 
-```bash
-rg -n "/runs|/ws/runs|/export|/submission|/figures|/llm/chat" apps packages crates
-```
+## Useful Questions
 
-## State and Security Rules
+Use this skill for questions like:
 
-- Auth uses `DEV_AUTH_TOKEN`; frontend embeds the token at build time for deployed single-tenant use.
-- Run artifact paths must stay inside `RUNS_DIR`; use existing path resolution helpers for user-controlled paths.
-- Export and submission routes must reject traversal and cap archive sizes.
-- Migrations are forward-only. Add new migrations with `just migrate-add <name>`.
-- Redis is an event bus; Postgres and run artifacts are durable state.
+- What responsibilities did the former gateway own?
+- How did gateway concepts connect worker runs, web streaming, exports, and LLM providers?
+- What should be preserved before reconstructing API contracts?
+- Which historical areas need Git-history inspection before implementation work?
 
-## LLM Routing
+## Current-Branch Rule
 
-Provider logic lives under `crates/gateway/src/llm/`:
-
-- `canonical.rs`: normalized request and message fields.
-- `router.rs`: provider/model selection.
-- `providers/anthropic.rs`: Anthropic native mapping.
-- `providers/openai_compat.rs`: OpenAI-compatible providers and proxies.
-- `stream.rs`: streaming translation.
-- `cost.rs`: cost accounting.
-- `cache.rs`: prompt caching helpers.
-
-When changing routing, run targeted tests first:
-
-```bash
-cargo test -p gateway router_fallback
-cargo test -p gateway anthropic_stream
-cargo test -p gateway llm_stream
-cargo test -p gateway stream_cost_on_error
-```
-
-## Export and Submission Bundles
-
-Export code must keep these invariants:
-
-- `paper.meta.json` is the source of truth for title, abstract, references, figures, and competition type.
-- PDF export uses LaTeX templates and Tectonic.
-- DOCX export uses Pandoc when available.
-- CUMCM anonymous artifacts must not leak team identity in filenames, metadata, or support archives.
-- Submission ZIPs have explicit file count and byte caps.
-
-Focused tests:
-
-```bash
-cargo test -p gateway export_paper
-cargo test -p gateway submission_bundle
-cargo test -p gateway figures_serve
-```
-
-## Contract Updates
-
-When route shape changes:
-
-1. Update `packages/contracts/openapi.yaml`.
-2. Regenerate clients with `just gen`.
-3. Check Python and TypeScript consumers.
-4. Run drift and focused tests.
-
-Useful commands:
-
-```bash
-just gen
-cargo test --workspace
-pnpm --filter web typecheck
-uv run pytest apps/agent-worker -q
-```
-
-## Gateway Verification
-
-For broad gateway changes:
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --no-deps -- -D warnings
-cargo test --workspace
-```
-
-If a test requires Postgres or Redis, mirror `.github/workflows/ci.yml`: `DATABASE_URL`, `REDIS_URL`, and `DEV_AUTH_TOKEN` must be set, and migrations should run first.
+Any current-branch edit should be limited to skills or documentation. Do not add gateway source, contracts, migrations, generated clients, service config, or tests back to this branch unless the user explicitly changes the repository strategy.

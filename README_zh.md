@@ -6,33 +6,31 @@
 ![format](https://img.shields.io/badge/format-Agent%20Skills-black)
 ![tools](https://img.shields.io/badge/tools-Claude%20Code%20%7C%20Codex-blue)
 
-Mathodology 现在被整理成一个面向 Claude Code、Codex 等 AI 编程工具的项目级 skills 仓库。
+Mathodology 现在是面向 Claude Code、Codex 等 AI 编程工具的 skills-only 仓库。
 
-原 Mathodology 源码仍保留在仓库里，作为 skills 的知识基底。公开入口变为 `.claude/skills/` 下的技能集，`AGENTS.md` 则给不会自动发现 Claude project skills 的工具使用。
+这个分支刻意不再发布原来的可运行应用源码。GitHub 仓库现在只保留项目级 skills、skill 元数据、轻量文档、备份脚本和许可证。
 
-## 这个仓库是什么
+## 仓库内容
 
-这是一个自包含的 Mathodology AI 编程知识包：
-
-- `.claude/skills/<skill-name>/SKILL.md` 中的 Claude Code 项目技能
+- `.claude/skills/<skill-name>/SKILL.md` 中的 Claude Code 项目 skills
 - 每个 skill 自带 `agents/openai.yaml`，方便 Codex 风格工具展示和调用
-- 根目录 `AGENTS.md` 告诉 AI 编程工具应该加载哪个 skill
-- 源码级备份脚本，方便把整个项目作为 skills bundle 迁移
-- 原 Rust/Python/Vue Mathodology 代码库作为 skills 的参考材料
+- 根目录 `AGENTS.md`，给不会自动发现 project skills 的工具使用
+- `docs/` 下的 skills 文档
+- `mathodology-whole-project` skill 中的 skills-only 备份脚本
 
-这个分支不再主要作为可运行的数学建模应用来发布。先用 skills；只有任务需要实现细节时，再深入源码。
+这个分支不保留应用源码、CI workflow、部署文件、生成的 contracts、包锁文件、数据集、构建产物或安装器资源。
 
 ## Skill 索引
 
 | Skill | 适用场景 |
 |---|---|
-| [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | 整项目备份、迁移、恢复，或把项目作为 skills 包整体理解 |
-| [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | 开始仓库工作、定位代码、选择测试、处理生成文件 |
-| [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | Python worker、agents、prompts、Coder 执行、HMML、MATLAB、搜索、critic、runtime skills |
-| [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | Rust gateway、路由、认证、Redis/Postgres、LLM 路由、导出、提交包 |
-| [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | Vue UI、Pinia stores、API clients、WebSocket streaming、Markdown/数学渲染、前端验证 |
-| [`mathodology-dev-test-release`](.claude/skills/mathodology-dev-test-release/SKILL.md) | bootstrap、测试、CI 对齐、contracts 生成、部署、打包、release |
-| [`mathodology-skill-authoring`](.claude/skills/mathodology-skill-authoring/SKILL.md) | 新增、更新、验证或 review 项目 skills 与 runtime Coder skills |
+| [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | 整个 skills 仓库的备份、迁移、恢复或整体理解 |
+| [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | 在 skills-only checkout 中开始工作，或验证仓库边界 |
+| [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | 维护原 agent pipeline 的归档知识 |
+| [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | 维护原 gateway 和 API 的归档知识 |
+| [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | 维护原 Web UI 的归档知识 |
+| [`mathodology-dev-test-release`](.claude/skills/mathodology-dev-test-release/SKILL.md) | 验证 skills 仓库，或保留 dev、test、release 归档指导 |
+| [`mathodology-skill-authoring`](.claude/skills/mathodology-skill-authoring/SKILL.md) | 新增、更新、验证或 review 项目 skills |
 
 ## 快速开始
 
@@ -43,7 +41,7 @@ git clone https://github.com/sweetcornna/mathodology.git
 cd mathodology
 ```
 
-Claude Code 打开本仓库后，可从这里发现项目技能：
+Claude Code 打开本仓库后，从这里加载 skills：
 
 ```text
 .claude/skills/
@@ -55,11 +53,11 @@ Codex 或其他 AI 编程工具从这里开始：
 AGENTS.md
 ```
 
-然后按任务加载 `mathodology-whole-project` 或更具体的子系统 skill。
+然后按任务加载 `mathodology-whole-project` 或更具体的 skill。
 
 ## 备份与迁移
 
-创建源码级 skills 备份：
+创建 skills-only 备份：
 
 ```bash
 bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
@@ -68,30 +66,12 @@ bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
 默认备份到仓库外：
 
 ```text
-../math_agent_backups/<timestamp>/math_agent-source-<timestamp>.tar.gz
+../mathodology_skills_backups/<timestamp>/mathodology-skills-<timestamp>.tar.gz
 ```
 
-归档包含 tracked 文件和未被 ignore 的 untracked 源文件；排除 `.git/`、`.env`、`target/`、`.venv/`、`node_modules/`、`runs/`、`.run/` 和 Claude runtime worktrees。
+归档使用 skills 白名单，只包含当前保留的 skills 仓库文件。它会排除 `.git/`、secret、构建产物、运行时状态，以及本地可能残留的旧应用目录。
 
 恢复细节见 [docs/BACKUP.md](docs/BACKUP.md)。
-
-## Skill 编写规则
-
-项目级 skills 放在：
-
-```text
-.claude/skills/<skill-name>/SKILL.md
-```
-
-每个项目 skill 还包含：
-
-```text
-.claude/skills/<skill-name>/agents/openai.yaml
-```
-
-Mathodology worker 的 runtime skills 是另一套系统，放在 `docs/skills/`，由原 Python worker 的 Coder agent 运行时加载。不要混淆这两套 skill。
-
-完整布局和验证流程见 [docs/SKILLS_zh.md](docs/SKILLS_zh.md)。
 
 ## 验证
 
@@ -116,23 +96,17 @@ for d in sorted(p for p in root.iterdir() if p.is_dir()):
     text = (d / "SKILL.md").read_text(encoding="utf-8")
     frontmatter = yaml.safe_load(re.match(r"^---\n(.*?)\n---\n", text, re.S).group(1))
     assert frontmatter["name"] == d.name
+    assert frontmatter["description"].startswith("Use when")
     assert (d / "agents" / "openai.yaml").exists()
 print("skills ok")
 PY
 ```
 
-## 仓库地图
+## 仓库策略
 
-原源码仍作为上下文保留：
+保持这个分支只服务 skills。除非明确改变仓库策略，不要加回应用源码树、生成客户端、CI workflow、Docker 文件、安装器、数据集或构建产物。
 
-- `crates/gateway/`：Rust gateway 和 API 实现
-- `apps/agent-worker/`：Python worker 与 agent pipeline
-- `apps/web/`：Vue web app
-- `packages/contracts/`：OpenAPI 和事件 contracts
-- `docs/skills/`：原 worker 运行时使用的 runtime skills
-- `.claude/skills/`：AI 编程工具使用的项目 skills
-
-先读 skills，再按需读源码。skills 已经编码了 AI 编程 agent 最常用的边界、命令和验证路径。
+如果需要历史应用实现，可以从 Git 历史恢复；它不是当前 GitHub tree 的一部分。
 
 ## 许可证
 

@@ -1,8 +1,8 @@
 # Mathodology Skills 项目
 
-本文说明本仓库如何作为 AI 编程 skills 项目组织。
+本仓库是 Mathodology 的 skills-only GitHub tree，不是可运行应用 checkout。
 
-## 项目级 Skills
+## 保留布局
 
 项目级 skills 放在 `.claude/skills/`：
 
@@ -28,28 +28,21 @@ agents/openai.yaml
 
 ## 入口
 
-- Claude Code：打开仓库后使用 `.claude/skills/`。
+- Claude Code：打开仓库后加载 `.claude/skills/`。
 - Codex 类工具：先读 `AGENTS.md`，再加载对应 skill。
 - 整体迁移或备份：从 `mathodology-whole-project` 开始。
-- 新开发任务：从 `mathodology-project-orientation` 开始，再加载子系统 skill。
+- 仓库清理或策略检查：从 `mathodology-project-orientation` 开始。
+- Skill 修改：从 `mathodology-skill-authoring` 开始。
 
-## Runtime Skills 是另一套系统
+## 不再存在的内容
 
-`docs/skills/` 不是项目级 skill 目录。它包含原 Mathodology worker 的 Coder agent 在运行时读取的 runtime skills：
+旧应用 tree 已从这个分支删除。不要期待当前文件中存在原 gateway、worker、Web UI、生成 contracts、runtime skills、部署、CI、数据集或安装器。
 
-```text
-docs/skills/chart_catalog/SKILL.md
-docs/skills/evidence_mining/SKILL.md
-docs/skills/matlab/SKILL.md -> ../../matlab.md
-```
-
-这些 runtime skills 可能使用 `when_to_use`、`allowed-tools`、`arguments`、`context` 等字段，因为它们由 `apps/agent-worker/src/agent_worker/skills/loader.py` 解析。
-
-不要把 runtime skills 移到 `.claude/skills/`，也不要把项目级 skills 移到 `docs/skills/`。
+子系统 skills 现在保存归档设计知识。它们不应该要求 agent 运行旧构建命令，也不应该要求编辑已经不存在的源码路径。
 
 ## 验证
 
-验证项目级 skill frontmatter：
+验证项目 skill frontmatter：
 
 ```bash
 for d in .claude/skills/*; do
@@ -57,7 +50,7 @@ for d in .claude/skills/*; do
 done
 ```
 
-验证项目级 skill 元数据：
+验证项目 skill 元数据：
 
 ```bash
 python3 - <<'PY'
@@ -66,7 +59,9 @@ import re
 import yaml
 
 root = Path(".claude/skills")
-for d in sorted(p for p in root.iterdir() if p.is_dir()):
+skills = sorted(p for p in root.iterdir() if p.is_dir())
+assert skills, "no skills found"
+for d in skills:
     text = (d / "SKILL.md").read_text(encoding="utf-8")
     match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
     assert match, d
@@ -79,27 +74,46 @@ print("skills ok")
 PY
 ```
 
-验证 runtime skill loader：
+验证只跟踪 skills 仓库文件：
 
 ```bash
-uv run pytest apps/agent-worker/tests/test_skill_registry.py -q
-uv run pytest apps/agent-worker/tests/test_skill_tool.py -q
+python3 - <<'PY'
+import subprocess
+import sys
+
+keep_exact = {
+    ".gitignore",
+    "AGENTS.md",
+    "README.md",
+    "README_zh.md",
+    "LICENSE",
+    "docs/SKILLS.md",
+    "docs/SKILLS_zh.md",
+    "docs/BACKUP.md",
+}
+files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
+bad = [f for f in files if f not in keep_exact and not f.startswith(".claude/skills/")]
+if bad:
+    print("\n".join(bad))
+    sys.exit(1)
+print(f"tracked whitelist ok: {len(files)} files")
+PY
 ```
 
 ## 更新 Skill
 
-1. 先确认改动属于 `.claude/skills/` 还是 `docs/skills/`。
-2. frontmatter 保持简短，聚焦触发条件。
-3. `SKILL.md` 保持单一职责；尽量链接已有源码，不复制大段代码。
-4. 项目级 skill 的展示文案变化时，同步更新 `agents/openai.yaml`。
+1. frontmatter 保持简短，聚焦触发条件。
+2. `SKILL.md` 只写可复用指导，不写过程流水账。
+3. 子系统归档细节只能作为知识保存；不要链接当前不存在的文件。
+4. 展示文案或默认提示变化时，同步更新 `agents/openai.yaml`。
 5. 提交前运行验证。
 
 ## GitHub 发布
 
 GitHub 项目应该呈现为 skills package：
 
-- README 描述 skills 项目，而不是旧的可运行应用。
+- README 描述 skills-only 项目。
 - `AGENTS.md` 是工具中立入口。
 - `.claude/skills/**` 必须提交。
-- `.claude/worktrees/` 等运行时状态仍保持 ignored。
-- 源码备份归档留在仓库外的 `../math_agent_backups/`。
+- `.claude/worktrees/` 和本地运行时状态保持 ignored。
+- skills 备份归档留在仓库外的 `../mathodology_skills_backups/`。

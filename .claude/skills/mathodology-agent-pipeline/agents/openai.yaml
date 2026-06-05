@@ -1,4 +1,4 @@
 interface:
   display_name: "Mathodology Agent Pipeline"
-  short_description: "Worker pipeline and agent guidance"
-  default_prompt: "Use $mathodology-agent-pipeline to change the worker agent pipeline safely."
+  short_description: "Help with Mathodology Agent Pipeline tasks"
+  default_prompt: "Use $mathodology-agent-pipeline for the matching Mathodology skills repository task."

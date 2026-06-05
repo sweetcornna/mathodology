@@ -1,128 +1,101 @@
 ---
 name: mathodology-skill-authoring
-description: Use when adding, updating, validating, or reviewing Mathodology SKILL.md files for Claude Code, Codex-compatible Agent Skills, or the product's internal Coder runtime skills.
+description: Use when adding, updating, validating, or reviewing Mathodology project skills, SKILL.md files, or agents/openai.yaml metadata.
 ---
 
 # Mathodology Skill Authoring
 
-## Two Skill Audiences
+## Scope
 
-Mathodology has two different skill systems:
+This repository currently has one skill system: project skills under `.claude/skills/`.
 
-1. Project AI coding skills in `.claude/skills/<name>/SKILL.md`.
-   These help Claude Code, Codex-like agents, and other Agent Skills consumers work on this repository.
-2. Product runtime skills in `docs/skills/<name>/SKILL.md`.
-   These are loaded by Mathodology's own Python worker through `apps/agent-worker/src/agent_worker/skills/loader.py` and used by the Coder agent during mathematical modeling runs.
-
-Do not move or merge the two systems. They have different audiences and frontmatter expectations.
-
-## Project Skill Rules
-
-Use this layout:
+Each skill directory contains:
 
 ```text
-.claude/skills/<skill-name>/
-├── SKILL.md
-└── agents/
-    └── openai.yaml
+SKILL.md
+agents/openai.yaml
 ```
 
-Frontmatter should be minimal and Agent Skills compatible:
+No separate product runtime skill directory is present on this branch.
+
+## Frontmatter Rules
+
+Every `SKILL.md` needs YAML frontmatter with:
 
 ```yaml
 ---
-name: skill-name
-description: Use when the agent is doing a specific kind of Mathodology work.
+name: mathodology-example
+description: Use when ...
 ---
 ```
 
 Rules:
 
-- Directory name and `name` must match.
-- `name` uses lowercase letters, digits, and hyphens only.
-- `description` should start with `Use when...` and list trigger conditions, not a full workflow summary.
-- Keep `SKILL.md` under 500 lines.
-- Put details in referenced files only when the skill would otherwise become large.
-- Do not add README, changelog, or installation guide files inside a skill.
-- If the skill should be visible in Codex-style UI, add `agents/openai.yaml`.
+- `name` must match the directory name.
+- `description` must start with `Use when`.
+- Keep descriptions trigger-focused; do not summarize the whole workflow.
+- Keep frontmatter concise.
 
-## OpenAI Metadata
+## Body Rules
 
-Generate metadata with:
+Skills should be reusable process guidance, not a record of one editing session.
 
-```bash
-python /Users/cornna/.codex/skills/.system/skill-creator/scripts/generate_openai_yaml.py \
-  .claude/skills/<skill-name> \
-  --interface display_name="Human Name" \
-  --interface short_description="25 to 64 character UI summary" \
-  --interface default_prompt="Use $skill-name to ..."
-```
+For this skills-only branch:
 
-Check `agents/openai.yaml` after generation. Strings should be quoted, and `default_prompt` must explicitly mention `$skill-name`.
+- Be explicit when subsystem knowledge is historical.
+- Do not link to current files that are no longer present.
+- Do not list old build or test commands as active validation gates.
+- Keep current-branch edits limited to skills, metadata, docs, and backup helper files.
 
-## Runtime Coder Skill Rules
+## Metadata
 
-Runtime skills live under `docs/skills/` and may use extra fields parsed by the worker:
+Each project skill should have `agents/openai.yaml` with:
 
 ```yaml
----
-name: chart_catalog
-description: Short runtime discovery description.
-when_to_use:
-  - "trigger text for the Coder agent"
-allowed-tools:
-  - run_python
-context: inline
----
+interface:
+  display_name: "Readable Name"
+  short_description: "Short UI label"
+  default_prompt: "Use $skill-name ..."
 ```
 
-The loader accepts:
-
-- `name`
-- `description`
-- `when_to_use`
-- `allowed-tools` or `allowed_tools`
-- `arguments`
-- `context`
-
-Runtime skill bodies are loaded through the `get_skill` tool in Coder turns. Keep descriptions short because discovery text enters the prompt before the body.
-
-Current runtime skills:
-
-- `docs/skills/chart_catalog/SKILL.md`
-- `docs/skills/evidence_mining/SKILL.md`
-- `docs/skills/matlab/SKILL.md`, a symlink to `docs/matlab.md`
-
-The MATLAB symlink pattern is intentional: it exposes existing documentation without duplicating it.
+The default prompt must mention the matching `$skill-name`.
 
 ## Validation
 
-Project skill frontmatter:
+Run skill frontmatter validation:
 
 ```bash
-python /Users/cornna/.codex/skills/.system/skill-creator/scripts/quick_validate.py .claude/skills/<skill-name>
+for d in .claude/skills/*; do
+  python3 /Users/cornna/.codex/skills/.system/skill-creator/scripts/quick_validate.py "$d"
+done
 ```
 
-Runtime skill loader tests:
+Run metadata consistency:
 
 ```bash
-uv run pytest apps/agent-worker/tests/test_skill_registry.py -q
-uv run pytest apps/agent-worker/tests/test_skill_tool.py -q
-```
+python3 - <<'PY'
+from pathlib import Path
+import re
+import yaml
 
-Repository-wide skill search:
-
-```bash
-rg -n "name:|description:|when_to_use|allowed-tools|get_skill|docs/skills|\\.claude/skills" .claude/skills docs/skills docs/matlab.md apps/agent-worker/src/agent_worker/skills
+root = Path(".claude/skills")
+for d in sorted(p for p in root.iterdir() if p.is_dir()):
+    text = (d / "SKILL.md").read_text(encoding="utf-8")
+    match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+    assert match, d
+    frontmatter = yaml.safe_load(match.group(1))
+    assert frontmatter["name"] == d.name, d
+    assert frontmatter["description"].startswith("Use when"), d
+    metadata = yaml.safe_load((d / "agents" / "openai.yaml").read_text(encoding="utf-8"))
+    assert f"${d.name}" in metadata["interface"]["default_prompt"], d
+print("skills metadata ok")
+PY
 ```
 
 ## Update Checklist
 
-Before finishing a skill change:
-
-1. Confirm the skill belongs to the right audience: `.claude/skills` for coding agents, `docs/skills` for product runtime.
-2. Confirm frontmatter parses as YAML.
-3. Confirm `name` matches the directory or runtime registry name.
-4. Confirm the description contains trigger terms an agent would search for.
-5. Confirm `SKILL.md` references any bundled files with relative paths.
-6. Run the focused validator or runtime loader tests.
+1. Pick the narrowest skill that owns the behavior.
+2. Edit `SKILL.md`.
+3. Update `agents/openai.yaml` if display text or default prompt should change.
+4. Run validation.
+5. Check that no non-skills files were added back to the repository.

@@ -1,4 +1,4 @@
 interface:
   display_name: "Mathodology Skill Authoring"
-  short_description: "Skill authoring and validation guidance"
-  default_prompt: "Use $mathodology-skill-authoring to add or revise Mathodology SKILL.md files."
+  short_description: "Help with Mathodology Skill Authoring tasks"
+  default_prompt: "Use $mathodology-skill-authoring for the matching Mathodology skills repository task."

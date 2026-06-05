@@ -6,33 +6,31 @@
 ![format](https://img.shields.io/badge/format-Agent%20Skills-black)
 ![tools](https://img.shields.io/badge/tools-Claude%20Code%20%7C%20Codex-blue)
 
-Mathodology is now packaged as a project-level skills repository for AI coding tools such as Claude Code, Codex, and other Agent Skills-compatible agents.
+Mathodology is now a skills-only repository for AI coding tools such as Claude Code, Codex, and other Agent Skills-compatible agents.
 
-The original Mathodology source tree remains in this repository as the knowledge substrate. The public entrypoint is the skill set under `.claude/skills/`, with `AGENTS.md` acting as the bridge for tools that do not auto-discover Claude project skills.
+This branch intentionally does not ship the former runnable application source. The GitHub repository now contains only project skills, skill metadata, lightweight documentation, a backup helper, and the license.
 
-## What This Repository Is
-
-This repository is a self-contained AI coding knowledge pack for the Mathodology codebase:
+## What This Repository Contains
 
 - Claude Code project skills in `.claude/skills/<skill-name>/SKILL.md`
 - Codex-style metadata in each skill's `agents/openai.yaml`
-- A root `AGENTS.md` that tells AI coding tools which skill to load
-- Source-level backup tooling for transferring the project as a skills bundle
-- The original Rust/Python/Vue Mathodology codebase as reference material for the skills
+- A root `AGENTS.md` entrypoint for tools that do not auto-discover project skills
+- Skills documentation under `docs/`
+- A skills-only backup script under `mathodology-whole-project`
 
-It is not published primarily as a runnable math-modeling app from this branch anymore. Use the skills first; inspect the source only when a task requires implementation detail.
+No application source, CI workflows, deployment files, generated contracts, package lockfiles, datasets, build outputs, or installer assets are kept on this branch.
 
 ## Skill Index
 
 | Skill | Use When |
 |---|---|
-| [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | Backing up, transferring, restoring, or orienting on the whole project as a skills package |
-| [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | Starting repository work, locating code, choosing tests, and handling generated files |
-| [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | Working on the Python worker, agents, prompts, Coder execution, HMML, MATLAB, search, critic, or runtime skills |
-| [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | Working on the Rust gateway, routes, auth, Redis/Postgres state, LLM routing, exports, or submission bundles |
-| [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | Working on the Vue UI, Pinia stores, API clients, WebSocket streaming, markdown/math rendering, or frontend checks |
-| [`mathodology-dev-test-release`](.claude/skills/mathodology-dev-test-release/SKILL.md) | Bootstrapping, testing, matching CI, regenerating contracts, deploying, packaging, or releasing |
-| [`mathodology-skill-authoring`](.claude/skills/mathodology-skill-authoring/SKILL.md) | Adding, updating, validating, or reviewing project skills and runtime Coder skills |
+| [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | Backing up, transferring, restoring, or orienting on the whole skills repository |
+| [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | Starting work in this skills-only checkout or verifying repository boundaries |
+| [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | Maintaining archived knowledge about the former agent pipeline |
+| [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | Maintaining archived knowledge about the former gateway and API |
+| [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | Maintaining archived knowledge about the former web UI |
+| [`mathodology-dev-test-release`](.claude/skills/mathodology-dev-test-release/SKILL.md) | Validating the skills repository or preserving archived dev, test, and release guidance |
+| [`mathodology-skill-authoring`](.claude/skills/mathodology-skill-authoring/SKILL.md) | Adding, updating, validating, or reviewing project skills |
 
 ## Quick Start
 
@@ -43,7 +41,7 @@ git clone https://github.com/sweetcornna/mathodology.git
 cd mathodology
 ```
 
-For Claude Code, open this repository. Claude Code can discover project skills from:
+For Claude Code, open this repository and load skills from:
 
 ```text
 .claude/skills/
@@ -55,11 +53,11 @@ For Codex or other AI coding tools, start from:
 AGENTS.md
 ```
 
-Then load `mathodology-whole-project` for full-project context, or load the most specific subsystem skill for the task.
+Then load `mathodology-whole-project` for full-project context, or load the most specific skill for the task.
 
 ## Backup and Transfer
 
-Create a source-level skills backup:
+Create a skills-only backup:
 
 ```bash
 bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
@@ -68,30 +66,12 @@ bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
 The backup is written outside the repository by default:
 
 ```text
-../math_agent_backups/<timestamp>/math_agent-source-<timestamp>.tar.gz
+../mathodology_skills_backups/<timestamp>/mathodology-skills-<timestamp>.tar.gz
 ```
 
-The archive includes tracked files plus untracked non-ignored source files. It excludes `.git/`, `.env`, `target/`, `.venv/`, `node_modules/`, `runs/`, `.run/`, and Claude runtime worktrees.
+The archive uses a skills whitelist, so it includes only the retained skills repository files. It excludes `.git/`, secrets, build outputs, runtime state, and any old application directories that may still exist locally.
 
 See [docs/BACKUP.md](docs/BACKUP.md) for restore details.
-
-## Skill Authoring Rules
-
-Project skills live here:
-
-```text
-.claude/skills/<skill-name>/SKILL.md
-```
-
-Each project skill also has:
-
-```text
-.claude/skills/<skill-name>/agents/openai.yaml
-```
-
-Runtime skills for the Mathodology worker are different. They live under `docs/skills/` and are loaded by the original Python worker's Coder agent. Do not merge the two skill systems.
-
-See [docs/SKILLS.md](docs/SKILLS.md) for the full layout and validation workflow.
 
 ## Validation
 
@@ -116,23 +96,17 @@ for d in sorted(p for p in root.iterdir() if p.is_dir()):
     text = (d / "SKILL.md").read_text(encoding="utf-8")
     frontmatter = yaml.safe_load(re.match(r"^---\n(.*?)\n---\n", text, re.S).group(1))
     assert frontmatter["name"] == d.name
+    assert frontmatter["description"].startswith("Use when")
     assert (d / "agents" / "openai.yaml").exists()
 print("skills ok")
 PY
 ```
 
-## Repository Map
+## Repository Policy
 
-The original source tree is still available for context:
+Keep this branch focused on skills. Do not add back app source trees, generated clients, CI workflows, Docker files, installers, datasets, or build outputs unless the repository strategy changes explicitly.
 
-- `crates/gateway/`: Rust gateway and API implementation
-- `apps/agent-worker/`: Python worker and agent pipeline
-- `apps/web/`: Vue web app
-- `packages/contracts/`: OpenAPI and event contracts
-- `docs/skills/`: runtime skills used by the original worker
-- `.claude/skills/`: project skills for AI coding tools
-
-Use skills before deep source reads. They encode the repository boundaries, commands, and verification paths that AI coding agents need most often.
+Historical application implementation can be recovered from Git history if needed; it is not part of the current GitHub tree.
 
 ## License
 

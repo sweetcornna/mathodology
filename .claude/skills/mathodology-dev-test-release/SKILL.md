@@ -1,175 +1,129 @@
 ---
 name: mathodology-dev-test-release
-description: Use when bootstrapping Mathodology, running tests, matching CI, changing dependencies, regenerating contracts, deploying Docker or native stacks, or editing release and installer workflows.
+description: Use when validating the Mathodology skills-only repository or preserving archived knowledge about the former development, testing, deployment, packaging, and release workflows.
 ---
 
-# Mathodology Dev, Test, and Release
+# Mathodology Dev Test Release Archive
 
-## Bootstrap
+## Scope
 
-From the repo root:
+This branch is skills-only. Its active validation checks are skill, metadata, link, backup, and tracked-file whitelist checks.
 
-```bash
-just bootstrap
-```
+The former application build, CI, Docker, native service, packaging, installer, and release files are not present on this branch. Treat those workflows as archived knowledge unless recovered from Git history.
 
-This creates `.env` if missing, fetches Rust dependencies, syncs Python with `uv`, and installs Node packages with `pnpm`.
+## Active Validation
 
-Infrastructure for local development:
+Validate all project skills:
 
 ```bash
-just infra-up
-just migrate
+for d in .claude/skills/*; do
+  python3 /Users/cornna/.codex/skills/.system/skill-creator/scripts/quick_validate.py "$d"
+done
 ```
 
-Run services:
+Validate metadata:
 
 ```bash
-just dev
-just dev-gateway
-just dev-worker
-just dev-web
+python3 - <<'PY'
+from pathlib import Path
+import re
+import yaml
+
+root = Path(".claude/skills")
+skills = sorted(p for p in root.iterdir() if p.is_dir())
+assert skills, "no skills found"
+for d in skills:
+    text = (d / "SKILL.md").read_text(encoding="utf-8")
+    match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+    assert match, d
+    frontmatter = yaml.safe_load(match.group(1))
+    assert frontmatter["name"] == d.name, d
+    assert frontmatter["description"].startswith("Use when"), d
+    metadata = yaml.safe_load((d / "agents" / "openai.yaml").read_text(encoding="utf-8"))
+    assert f"${d.name}" in metadata["interface"]["default_prompt"], d
+print("skills metadata ok")
+PY
 ```
 
-## Environment
-
-Important defaults and variables:
-
-- `DATABASE_URL`: Postgres URL used by gateway and SQLx.
-- `REDIS_URL`: Redis URL for jobs and event streams.
-- `DEV_AUTH_TOKEN`: bearer token required by authenticated API routes.
-- `RUNS_DIR`: artifact root for notebooks, papers, figures, and metadata.
-- `GATEWAY_HTTP`: worker-to-gateway URL.
-- LLM keys: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `MOONSHOT_API_KEY`, or compatible provider settings.
-- Search keys and toggles: `TAVILY_API_KEY`, `OPEN_WEBSEARCH_DISABLED`, `OPENALEX_DISABLED`, `CROSSREF_DISABLED`, `MM_POLITE_MAILTO`.
-
-Never commit `.env`, run artifacts, `.run/`, `target/`, `.venv/`, `node_modules/`, or `apps/web/dist/`.
-
-## Authoritative Checks
-
-Prefer direct commands over aggregate recipes when the result must be trusted:
+Validate local markdown links:
 
 ```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --no-deps -- -D warnings
-cargo test --workspace
-uv run ruff check .
-uv run pytest apps/agent-worker -q
-pnpm --filter web typecheck
-pnpm --filter web build
+python3 - <<'PY'
+from pathlib import Path
+import re
+import sys
+
+files = [
+    Path("README.md"),
+    Path("README_zh.md"),
+    Path("docs/SKILLS.md"),
+    Path("docs/SKILLS_zh.md"),
+    Path("docs/BACKUP.md"),
+    Path("AGENTS.md"),
+]
+errors = []
+for f in files:
+    text = f.read_text(encoding="utf-8")
+    for m in re.finditer(r"\[[^\]]+\]\(([^)]+)\)", text):
+        target = m.group(1)
+        if target.startswith(("http://", "https://", "#", "mailto:")):
+            continue
+        path = target.split("#", 1)[0]
+        if path and not (f.parent / path).exists():
+            errors.append(f"{f}: missing link {target}")
+if errors:
+    print("\n".join(errors))
+    sys.exit(1)
+print("markdown local links ok")
+PY
 ```
 
-`just test` and `just lint` are convenient but include `|| true` for some Python or frontend subcommands. Use direct commands for final verification.
-
-## Focused Checks
-
-Use focused tests while iterating:
+Validate tracked files:
 
 ```bash
-cargo test -p gateway <test_name_or_filter>
-uv run pytest apps/agent-worker/tests/test_<area>.py -q
-pnpm --filter web typecheck
+python3 - <<'PY'
+import subprocess
+import sys
+
+keep_exact = {
+    ".gitignore",
+    "AGENTS.md",
+    "README.md",
+    "README_zh.md",
+    "LICENSE",
+    "docs/SKILLS.md",
+    "docs/SKILLS_zh.md",
+    "docs/BACKUP.md",
+}
+files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
+bad = [f for f in files if f not in keep_exact and not f.startswith(".claude/skills/")]
+if bad:
+    print("\n".join(bad))
+    sys.exit(1)
+print(f"tracked whitelist ok: {len(files)} files")
+PY
 ```
 
-Run broad checks only when the change touches shared contracts, public behavior, deployment, or cross-subsystem flow.
+## Backup Check
 
-## Contracts and Codegen
-
-Source contract:
-
-```text
-packages/contracts/openapi.yaml
-```
-
-Regenerate:
+Create and verify a skills-only backup:
 
 ```bash
-just gen
-just gen-py
-just gen-ts
+bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
 ```
 
-After contract changes, check:
+Then check the printed backup directory:
 
 ```bash
-git diff -- packages/contracts packages/py-contracts packages/ts-contracts
-uv run pytest apps/agent-worker -q
-pnpm --filter web typecheck
-cargo test --workspace
+shasum -a 256 -c SHA256SUMS
+tar -tzf mathodology-skills-<timestamp>.tar.gz | rg '^(AGENTS.md|\\.claude/skills/)'
+tar -tzf mathodology-skills-<timestamp>.tar.gz | rg '^(apps/|crates/|packages/|scripts/|config/|installer/|tests/|data/|\\.github/)'
 ```
 
-## Docker Deployment
+The last command should produce no matches.
 
-One-command deployment:
+## Archived Dev And Release Knowledge
 
-```bash
-./scripts/deploy.sh
-```
+The former project used a multi-language application stack with service builds, contract generation, tests, deployment files, and release packaging. Those files were removed from the current branch.
 
-Useful variants:
-
-```bash
-./scripts/deploy.sh --build
-./scripts/deploy.sh --update
-./scripts/deploy.sh --down
-./scripts/deploy.sh --logs
-```
-
-Compose files:
-
-- `docker-compose.prod.yml`: base production stack.
-- `docker-compose.images.yml`: prebuilt gateway and worker image overlay.
-- `Dockerfile.gateway`, `Dockerfile.worker`, `Dockerfile.web`: service images.
-
-Security rule: while `DEV_AUTH_TOKEN` is the insecure default, deployment scripts should keep the UI loopback-bound unless the user explicitly changes the token and exposes it.
-
-## Native Deployment
-
-Native one-command deployment:
-
-```bash
-./scripts/deploy-local.sh
-```
-
-Useful variants:
-
-```bash
-./scripts/deploy-local.sh --status
-./scripts/deploy-local.sh --logs
-./scripts/deploy-local.sh --down
-./scripts/deploy-local.sh --restart
-```
-
-Runtime state belongs under `.run/` and must stay ignored.
-
-Service configs:
-
-- `config/systemd/`: Linux systemd units and installer.
-- `config/launchd/`: macOS launchd plists and installer.
-- `config/windows/`: Windows service scripts.
-
-## Release
-
-Release workflow:
-
-```text
-.github/workflows/release.yml
-```
-
-It builds web assets, gateway binaries, Docker images, Debian packages, macOS packages, Windows installers, and release artifacts. Packaging is best-effort in some jobs; inspect `continue-on-error` before treating a missing artifact as unexpected.
-
-Before editing release logic, check:
-
-```bash
-rg -n "gateway|worker|web-dist|docker|pkg|deb|msi|artifact|version" .github/workflows installer Dockerfile.* scripts
-```
-
-## Smoke Test
-
-End-to-end smoke script:
-
-```bash
-bash scripts/smoke_e2e.sh
-```
-
-Use it after changes that affect run creation, worker dispatch, artifact generation, or gateway/web integration.
+If the user needs to rebuild or audit those workflows, first recover the relevant historical tree in a separate branch or worktree. Do not treat old commands as valid gates in the skills-only checkout.

@@ -1,4 +1,4 @@
 interface:
   display_name: "Mathodology Whole Project"
-  short_description: "Whole-project backup and skill routing"
-  default_prompt: "Use $mathodology-whole-project to back up or transfer the full Mathodology project as skills."
+  short_description: "Help with Mathodology Whole Project tasks"
+  default_prompt: "Use $mathodology-whole-project for the matching Mathodology skills repository task."

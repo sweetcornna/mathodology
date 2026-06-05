@@ -1,61 +1,55 @@
-# Rust
-/target/
-**/*.rs.bk
-Cargo.lock.bak
+# Local editor and OS state
+.DS_Store
+.idea/
+.vscode/
 
-# Python
+# Env and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Runtime and cache state
+.cache/
+.run/
+runs/
+*.db
+*.sqlite*
+dump.rdb
+
+# Dependency and build outputs
+node_modules/
+target/
 .venv/
-**/__pycache__/
-**/*.pyc
-**/*.pyo
+dist/
+__pycache__/
+*.pyc
 .ruff_cache/
 .mypy_cache/
 .pytest_cache/
-**/.ipynb_checkpoints/
 
-# Node / pnpm
-**/node_modules/
-**/dist/
-**/.turbo/
-.pnpm-store/
-
-# Env / secrets
-.env
-.env.*
-!.env.example
-
-# Local data
-*.db
-*.sqlite*
-/runs/
-dump.rdb
-# Native deploy runtime state (PIDs + logs from scripts/deploy-local.sh)
-/.run/
-
-# Editor / OS
-.DS_Store
-.idea/
-.vscode/*
-!.vscode/settings.json
-!.vscode/extensions.json
-
-# Generated (py-contracts/generated.py is checked in as a stub; TS stub
-# is checked in too so clean checkouts typecheck before `just gen-ts`)
-packages/py-contracts/src/mm_contracts/generated.py
-
-# Docker volumes
-/docker-data/
-
-# Local caches
-.cache/
-
-# Claude Code runtime state stays local, but project skills are source files.
+# Claude runtime state stays local, but project skills are source files.
 /.claude/*
 !/.claude/skills/
 !/.claude/skills/**
-config/providers.toml.bak
-data/mcm/repos/
-data/mcm/logs/
-data/mcm/index/
-data/mcm/scripts/__pycache__/
-data/cumcm/repos/
+
+# Retired non-skills project trees should not be reintroduced on this branch.
+/.github/
+/apps/
+/crates/
+/packages/
+/scripts/
+/config/
+/installer/
+/tests/
+/data/
+/Dockerfile*
+/docker-compose*.yml
+/Cargo.lock
+/Cargo.toml
+/package.json
+/pnpm-lock.yaml
+/pnpm-workspace.yaml
+/pyproject.toml
+/uv.lock
+/justfile

@@ -7,10 +7,10 @@ if [[ -z "$repo_root" ]]; then
 fi
 repo_root="$(cd "$repo_root" && pwd)"
 
-out_root="${2:-"$repo_root/../math_agent_backups"}"
+out_root="${2:-"$repo_root/../mathodology_skills_backups"}"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 backup_dir="$out_root/$timestamp"
-archive_name="math_agent-source-$timestamp.tar.gz"
+archive_name="mathodology-skills-$timestamp.tar.gz"
 archive_path="$backup_dir/$archive_name"
 
 mkdir -p "$backup_dir"
@@ -23,9 +23,13 @@ git -C "$repo_root" ls-files --others --exclude-standard > "$backup_dir/untracke
   cd "$repo_root"
   git ls-files -z --cached --others --exclude-standard |
     while IFS= read -r -d '' path; do
-      if [[ -e "$path" ]]; then
-        printf '%s\0' "$path"
-      fi
+      case "$path" in
+        .claude/skills/*|docs/*|AGENTS.md|README.md|README_zh.md|LICENSE|.gitignore)
+          if [[ -e "$path" ]]; then
+            printf '%s\0' "$path"
+          fi
+          ;;
+      esac
     done
 ) > "$backup_dir/source-files.nul"
 

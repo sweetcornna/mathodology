@@ -1,26 +1,38 @@
 ---
 name: mathodology-whole-project
-description: Use when backing up, transferring, restoring, archiving, or fully orienting on the entire Mathodology project as a project-level skill set.
+description: Use when backing up, transferring, restoring, archiving, or fully orienting on the Mathodology skills-only repository.
 ---
 
 # Mathodology Whole Project
 
 ## Purpose
 
-This is the top-level project skill. Use it when the user wants the whole Mathodology repository to exist as an AI-coding-tool knowledge pack, or when making a source backup that can be restored elsewhere.
+This is the top-level project skill for the current Mathodology GitHub tree.
 
-It does not replace subsystem skills. It routes work to them and preserves the project as a clean source archive.
+The repository is intentionally skills-only. It preserves Mathodology as an AI-coding knowledge pack, not as a runnable app checkout.
+
+## Current Shape
+
+The retained repository surface is:
+
+- `.claude/skills/**`: project skills and Codex-style metadata.
+- `AGENTS.md`: tool-neutral entrypoint.
+- `README.md` and `README_zh.md`: public project overview.
+- `docs/SKILLS.md`, `docs/SKILLS_zh.md`, and `docs/BACKUP.md`: skill and backup documentation.
+- `LICENSE` and `.gitignore`.
+
+Do not expect app source, CI workflows, deployment config, generated contracts, datasets, package manifests, lockfiles, or installers in this branch.
 
 ## Skill Set
 
 Load these skills as needed:
 
-- `mathodology-project-orientation`: repository map, generated files, change boundaries, common commands.
-- `mathodology-agent-pipeline`: Python worker, agents, prompts, Coder execution, HMML, MATLAB, runtime `docs/skills`.
-- `mathodology-gateway-api`: Rust gateway, routes, auth, Redis/Postgres, LLM routing, exports, submission bundles.
-- `mathodology-web-ui`: Vue app, Pinia stores, API clients, WebSocket streaming, markdown/math rendering.
-- `mathodology-dev-test-release`: bootstrap, tests, CI parity, Docker/native deployment, packaging, release.
-- `mathodology-skill-authoring`: adding or updating project skills and runtime Coder skills.
+- `mathodology-project-orientation`: current layout, retained files, deletion policy, and repository boundary checks.
+- `mathodology-agent-pipeline`: archived knowledge about the former Python agent pipeline.
+- `mathodology-gateway-api`: archived knowledge about the former Rust gateway and API.
+- `mathodology-web-ui`: archived knowledge about the former Vue web UI.
+- `mathodology-dev-test-release`: skills validation and archived dev, test, deploy, packaging, and release guidance.
+- `mathodology-skill-authoring`: adding or updating project skills and metadata.
 
 ## Backup Workflow
 
@@ -33,8 +45,8 @@ bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
 The script creates a timestamped backup directory outside the repo by default:
 
 ```text
-../math_agent_backups/<timestamp>/
-├── math_agent-source-<timestamp>.tar.gz
+../mathodology_skills_backups/<timestamp>/
+├── mathodology-skills-<timestamp>.tar.gz
 ├── SHA256SUMS
 ├── archive-files.txt
 ├── source-files.nul
@@ -43,33 +55,27 @@ The script creates a timestamped backup directory outside the repo by default:
 └── untracked-files.txt
 ```
 
-The archive includes tracked files and untracked non-ignored files. That captures current project skills and working-tree source changes while excluding ignored secrets, build outputs, caches, vendored dependencies, local run artifacts, and Claude runtime state.
+The archive is whitelist-based. It includes only the retained skills repository files, even if old application directories still exist locally.
 
 ## Restore Orientation
 
 After extracting a backup:
 
 ```bash
-tar -xzf math_agent-source-<timestamp>.tar.gz -C <restore-dir>
+tar -xzf mathodology-skills-<timestamp>.tar.gz -C <restore-dir>
 cd <restore-dir>
-git status --short --branch
 ```
 
 Then read `AGENTS.md` and load `mathodology-project-orientation` before making edits.
 
-## What Not To Archive
+## Deletion Policy
 
-Do not intentionally include:
+Do not reintroduce non-skills files on this branch:
 
-- `.git/`
-- `.env` or local secret files
-- `target/`
-- `.venv/`
-- `node_modules/`
-- `apps/web/dist/`
-- `runs/`
-- `.run/`
-- `.claude/worktrees/`
-- local database, Redis dump, or Docker volume state
+- app source directories
+- generated clients or contracts
+- CI workflows
+- Docker, service, deployment, or installer files
+- datasets, run artifacts, package lockfiles, or build outputs
 
-If the user needs a production data backup, use deployment docs and database/run-artifact backup commands instead of this source-skill backup.
+If historical application code is needed, inspect Git history in a separate branch or worktree instead of adding it back to `main`.
