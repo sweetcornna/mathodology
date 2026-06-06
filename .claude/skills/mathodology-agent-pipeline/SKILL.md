@@ -57,9 +57,9 @@ For all other ambiguity, record the assumption in the phase log and proceed. If 
 - Phase 1: evidence researcher builds source ledger, data dictionary, proxy logic, benchmark inventory, citation plan, and evidence gaps; critic checks traceability and proxy defensibility.
 - Phase 2: at least two model agents propose alternatives; lead compares at least three routes and selects one with rejection reasons; critic checks route fit, novelty, time feasibility, and absence of generic method stacking.
 - Phase 3: modeler writes notation, assumptions, units, objectives, constraints, algorithms, pseudocode, validation metrics, baseline, ablation, sensitivity, and robustness plan; critic checks implementability and mathematical coherence.
-- Phase 4: coder produces reproducible computation, environment notes, raw outputs, tables, figures, baseline, ablations, sensitivity, robustness outputs, and run logs; critic checks number traceability and no cherry-picking.
-- Phase 5: modeler and paper editor translate results into prompt-level answers, captions, recommendations, limitations, uncertainty notes, and claim-source links; critic checks answer coverage and support.
-- Phase 6: paper editor builds summary, coherent paper narrative, references, appendix, and AI-use statement when required; critic checks summary quality, paper coherence, notation, citations, and page/format risk.
+- Phase 4: coder produces reproducible computation, environment notes, raw outputs, tables, figures, baseline, ablations, sensitivity, robustness outputs, and run logs; the figure/table set must cover model structure, primary results, sensitivity, robustness, decision tradeoffs, and final recommendations; critic checks number traceability, source data, density, and no cherry-picking.
+- Phase 5: modeler and paper editor translate results into prompt-level answers, captions, recommendations, limitations, uncertainty notes, claim-source links, and a figure/table coverage map; critic checks answer coverage, support, and whether visual and tabular evidence is sufficient for a top-tier paper.
+- Phase 6: paper editor builds summary, coherent paper narrative, references, appendix, AI-use statement when required, and final figure/table placement; critic checks summary quality, paper coherence, notation, citations, page/format risk, and whether results feel substantive rather than sparse.
 - Phase 7: critic audits prompt coverage, math, evidence, reproducibility, writing, formatting, originality, and final scoring risk; lead reruns specialists until no blocker or high issue remains.
 - Phase 8: packager assembles final paper, source, code, data notes, figures, tables, README, AI-use statement, and checklist; critic checks compliance, anonymity, size/page limits, secrets, scratch artifacts, and submit-readiness.
 
@@ -90,10 +90,32 @@ Block progression if any of these are missing:
 - selected model without rejected alternatives
 - reported number without reproducibility path
 - figure or table without interpretation
+- sparse result presentation: for a paper-first contest, the final draft must contain a purposeful figure/table system, not only a few isolated visuals
+- missing visual/tabular coverage for model architecture, primary comparison, sensitivity, robustness or uncertainty, scenario or policy tradeoff, and final decision summary, unless the contest format explicitly prevents it
+- figure/table count inflated with decorative, duplicate, or unsupported artifacts
+- figure-generation defects such as overlapping labels, clipped axes, unreadable text, duplicate caption prefixes, orphaned figures, or tables that wrap incoherently in the rendered PDF
 - paper claim without support
 - final package without README and requirement-to-file checklist
 - phase artifact without independent critic review
 - blocker or high-severity critic issue without a fix
+
+## Figure And Table Density Standard
+
+For MCM/ICM O-prize, CUMCM national-first-prize, and comparable paper-first contests, treat visual and tabular density as a scoring gate, not cosmetic polish.
+
+Minimum expected coverage before Phase 6 passes:
+
+- one model-architecture diagram or algorithm flowchart
+- one compact data, assumption, or parameter table
+- one baseline or route-comparison figure/table
+- one sensitivity figure or tornado/heatmap-style diagnostic
+- one robustness, uncertainty, or stress-test figure/table
+- one scenario, policy, cost, environmental, or implementation tradeoff figure/table when the problem is decision-facing
+- one final decision dashboard or prompt-by-prompt answer table
+
+These are role requirements, not a fixed count. A short sprint may merge roles into fewer artifacts; a full MCM/ICM or national contest paper should usually exceed this minimum while staying inside the page limit. Do not add filler figures. Every visual must carry a result that a judge can use to understand, verify, or compare the solution.
+
+For the full generation and verification contract, use `docs/WORKFLOWS.md` / `docs/WORKFLOWS_zh.md` section "Figure And Table Generation Specification". The key operational rule is: generate from source data, render the final PDF, create a figure/page contact sheet, visually inspect it, and block any phase with overlap, clipping, illegible text, duplicated captions, or unsupported filler visuals.
 
 ## How To Maintain This Skill
 
