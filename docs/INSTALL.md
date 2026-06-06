@@ -7,7 +7,7 @@ Mathodology uses the open `skills` CLI from `vercel-labs/skills` as its installe
 Run this from any directory:
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent codex --agent claude-code --copy --yes
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
 ```
 
 What it does:
@@ -23,18 +23,26 @@ Restart Codex or Claude Code after installation.
 
 The `skills` CLI installs skill packages. For Claude Code project subagents and workflow templates, clone the repository or copy `.claude/agents/` and `.claude/workflows/` into the target project.
 
+CLI help:
+
+```bash
+npx -y skills@latest --help
+```
+
+Do not use `skills add <repo> --help` as a help command. Current `skills` CLI versions can interpret that form as an install command and create project-local `.agents/` and `skills-lock.json` files.
+
 ## Update Installed Skills
 
 Update only Mathodology skills:
 
 ```bash
-npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 Full one-command updater from a cloned Mathodology checkout:
 
 ```bash
-git pull --ff-only && npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 Use the full updater when you rely on `.claude/agents/` or `.claude/workflows/`, because those project-level files live in the checkout rather than inside the global skill packages.
@@ -42,7 +50,7 @@ Use the full updater when you rely on `.claude/agents/` or `.claude/workflows/`,
 Update all globally installed skills:
 
 ```bash
-npx -y skills@latest update -g -y
+npx -y skills@latest update --global --yes
 ```
 
 Restart Codex or Claude Code after updating.
@@ -60,13 +68,13 @@ Then copy `.claude/agents/` and `.claude/workflows/` into any target project tha
 Codex only:
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent codex --copy --yes
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex
 ```
 
 Claude Code only:
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent claude-code --copy --yes
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent claude-code
 ```
 
 ## Install For All Supported Agents
@@ -74,7 +82,7 @@ npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent cl
 Use this only if you want the skills installed across every supported agent directory on the machine:
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent '*' --copy --yes
+npx -y skills@latest add sweetcornna/mathodology --global --copy --all
 ```
 
 ## List Skills Without Installing
@@ -110,8 +118,8 @@ ls ~/.claude/skills | rg '^mathodology-'
 If a skill already exists and update is not enough, remove it before reinstalling:
 
 ```bash
-npx -y skills@latest remove --global --agent codex mathodology-whole-project --yes
-npx -y skills@latest add sweetcornna/mathodology --skill mathodology-whole-project --global --agent codex --copy --yes
+npx -y skills@latest remove --global --yes --skill mathodology-whole-project --agent codex
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill mathodology-whole-project --agent codex
 ```
 
 ## Requirements

@@ -7,7 +7,7 @@ Mathodology 使用 `vercel-labs/skills` 提供的开放 `skills` CLI 作为安�
 在任意目录运行：
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent codex --agent claude-code --copy --yes
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
 ```
 
 这条命令会：
@@ -23,18 +23,26 @@ npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent co
 
 `skills` CLI 安装的是 skill package。若要使用 Claude Code 项目 subagents 和 workflow 模板，请 clone 本仓库，或把 `.claude/agents/` 与 `.claude/workflows/` 复制到目标项目。
 
+查看 CLI 帮助：
+
+```bash
+npx -y skills@latest --help
+```
+
+不要把 `skills add <repo> --help` 当成帮助命令使用。当前 `skills` CLI 版本可能会把这种形式当成安装命令，并生成项目本地 `.agents/` 和 `skills-lock.json` 文件。
+
 ## 更新已安装 Skills
 
 只更新 Mathodology skills：
 
 ```bash
-npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 在 Mathodology clone checkout 中使用的完整一键更新器：
 
 ```bash
-git pull --ff-only && npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 如果你依赖 `.claude/agents/` 或 `.claude/workflows/`，请使用完整一键更新器，因为这些项目级文件在 checkout 中，不在全局 skill package 内。
@@ -42,7 +50,7 @@ git pull --ff-only && npx -y skills@latest update -g -y mathodology-whole-projec
 更新所有全局安装的 skills：
 
 ```bash
-npx -y skills@latest update -g -y
+npx -y skills@latest update --global --yes
 ```
 
 更新后重启 Codex 或 Claude Code。
@@ -60,13 +68,13 @@ git pull --ff-only
 只安装到 Codex：
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent codex --copy --yes
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex
 ```
 
 只安装到 Claude Code：
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent claude-code --copy --yes
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent claude-code
 ```
 
 ## 安装到所有支持的 Agent
@@ -74,7 +82,7 @@ npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent cl
 只有在你希望把 skills 安装到本机所有支持的 agent 目录时才使用：
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent '*' --copy --yes
+npx -y skills@latest add sweetcornna/mathodology --global --copy --all
 ```
 
 ## 只列出 Skills，不安装
@@ -110,8 +118,8 @@ ls ~/.claude/skills | rg '^mathodology-'
 如果目标 skill 已经存在且 update 不够用，先删除再重新安装：
 
 ```bash
-npx -y skills@latest remove --global --agent codex mathodology-whole-project --yes
-npx -y skills@latest add sweetcornna/mathodology --skill mathodology-whole-project --global --agent codex --copy --yes
+npx -y skills@latest remove --global --yes --skill mathodology-whole-project --agent codex
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill mathodology-whole-project --agent codex
 ```
 
 ## 要求

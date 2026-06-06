@@ -27,24 +27,24 @@ No application source, CI workflows, deployment files, generated contracts, pack
 Install all Mathodology skills globally for Codex and Claude Code:
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent codex --agent claude-code --copy --yes
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
 ```
 
 Update installed Mathodology skills:
 
 ```bash
-npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 If you use this repository checkout for Claude Code project subagents and workflow templates, run the full one-command updater from the checkout:
 
 ```bash
-git pull --ff-only && npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 This uses the open `skills` CLI from `vercel-labs/skills`, which installs Agent Skills from GitHub into the right agent directories.
 
-Restart Codex or Claude Code after installation or update so the new skills, subagents, and workflow templates are discovered.
+Restart Codex or Claude Code after installation or update so the new skills, subagents, and workflow templates are discovered. Use `npx -y skills@latest --help` for CLI help; avoid `skills add <repo> --help`, because current CLI versions may treat that as an install command.
 
 See [docs/INSTALL.md](docs/INSTALL.md) for target-specific commands and verification.
 

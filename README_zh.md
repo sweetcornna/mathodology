@@ -27,24 +27,24 @@ Mathodology 现在是面向 Claude Code、Codex 等 AI 编程工具的 skills-on
 一条命令把全部 Mathodology skills 全局安装到 Codex 和 Claude Code：
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent codex --agent claude-code --copy --yes
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
 ```
 
 一条命令更新已安装的 Mathodology skills：
 
 ```bash
-npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 如果你用本仓库 checkout 来使用 Claude Code 项目 subagents 和 workflow 模板，请在 checkout 里运行完整一键更新器：
 
 ```bash
-git pull --ff-only && npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 这条命令使用 `vercel-labs/skills` 提供的开放 `skills` CLI，从 GitHub 安装 Agent Skills 到对应 agent 的 skills 目录。
 
-安装或更新后重启 Codex 或 Claude Code，让新 skills、subagents 和 workflow 模板被发现。
+安装或更新后重启 Codex 或 Claude Code，让新 skills、subagents 和 workflow 模板被发现。查看 CLI 帮助请用 `npx -y skills@latest --help`；不要使用 `skills add <repo> --help`，当前 CLI 版本可能会把它当成安装命令执行。
 
 更多目标和验证方式见 [docs/INSTALL_zh.md](docs/INSTALL_zh.md)。
 

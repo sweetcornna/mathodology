@@ -13,6 +13,8 @@
 .cache/
 .run/
 runs/
+.agents/
+skills-lock.json
 *.db
 *.sqlite*
 dump.rdb
