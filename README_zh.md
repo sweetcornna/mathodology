@@ -36,9 +36,15 @@ npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent co
 npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
+如果你用本仓库 checkout 来使用 Claude Code 项目 subagents 和 workflow 模板，请在 checkout 里运行完整一键更新器：
+
+```bash
+git pull --ff-only && npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+```
+
 这条命令使用 `vercel-labs/skills` 提供的开放 `skills` CLI，从 GitHub 安装 Agent Skills 到对应 agent 的 skills 目录。
 
-安装或更新后重启 Codex 或 Claude Code，让新 skills 被发现。
+安装或更新后重启 Codex 或 Claude Code，让新 skills、subagents 和 workflow 模板被发现。
 
 更多目标和验证方式见 [docs/INSTALL_zh.md](docs/INSTALL_zh.md)。
 
@@ -47,9 +53,10 @@ npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pi
 Mathodology 分别提供 Codex 和 Claude Code 的编排指导：
 
 - Claude Code：使用 `.claude/workflows/mathodology-award-submission.md`，并调用 `.claude/agents/` 中的项目 subagents。
+- Claude Code 竞赛类型适配：M3、HiMCM/MidMCM、IMMC/IM2C、leaderboard/data-science、运筹/政策/商业案例和短时冲刺赛使用 `.claude/workflows/mathodology-contest-variants.md`。
 - Codex：加载 `mathodology-whole-project`，按多 agents 模式执行 9 个 phase。
 
-两种模式都面向国奖或 MCM/ICM O 奖级别产出：多模型备选、有证据支撑的假设、可复现实验、成熟论文、完整提交包。
+两种模式都面向国奖或 MCM/ICM O 奖级别产出：多模型备选、有证据支撑的假设、可复现实验、成熟论文、完整提交包。类型适配器会把这些 gate 调整到论文优先、代码优先、冲刺型、中学生型和政策/商业案例型竞赛。
 
 完整 phase 模型见 [docs/WORKFLOWS_zh.md](docs/WORKFLOWS_zh.md)。
 

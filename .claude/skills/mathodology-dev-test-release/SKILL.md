@@ -18,6 +18,10 @@ For award-level modeling workflows, this skill owns final gates rather than appl
 - phase log exists and covers Phases 0-8
 - every prompt requirement maps to a paper section or package file
 - every reported number maps to code, data, derivation, or documented manual calculation
+- every phase has specialist handoffs, lead synthesis, and an independent critic gate
+- all blocker and high-severity critic findings are fixed before final packaging
+- model selection considers at least three routes with rejection reasons for alternatives
+- sensitivity or robustness evidence exists for important assumptions and key results
 - final paper, editable source if required, code, data notes, figures, tables, README, AI-use statement, and checklist are present
 - no local caches, secrets, raw scratch files, or unrelated artifacts are in the final package
 

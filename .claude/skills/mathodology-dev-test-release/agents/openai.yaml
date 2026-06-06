@@ -1,4 +1,4 @@
 interface:
   display_name: "Mathodology Dev Test Release"
   short_description: "Validate skills and final packages"
-  default_prompt: "Use $mathodology-dev-test-release to validate the skills repository or gate a Mathodology final submission package with reproducibility, completeness, and no-extra-artifact checks."
+  default_prompt: "Use $mathodology-dev-test-release to validate the skills repository or gate a Mathodology final submission package with phase handoffs, independent critic gates, reproducibility, completeness, and no-extra-artifact checks."

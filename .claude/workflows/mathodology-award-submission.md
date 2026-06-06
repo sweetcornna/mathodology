@@ -11,6 +11,52 @@ Use this workflow in Claude Code for national-first-prize or MCM/ICM O-prize lev
 5. End every phase with a lead synthesis and critic gate.
 6. Do not proceed past a gate with unresolved critical risks.
 
+## Universal Artifact Contract
+
+Every specialist subagent must end with:
+
+```text
+Agent handoff:
+- Phase:
+- Agent:
+- Files or artifacts produced:
+- Decisions made:
+- Assumptions introduced:
+- Evidence used:
+- Commands or computations run:
+- Known weaknesses:
+- Questions for lead or user:
+- Critic focus requested:
+```
+
+The lead merges handoffs into the phase log. The critic reviews the phase log plus source artifacts and assigns `blocker`, `high`, `medium`, or `low` severity. Any `blocker` or `high` issue stops the workflow. `medium` issues need an owner, fix plan, or explicit risk acceptance.
+
+## Award-Level Gate Rules
+
+Use these gates to target MCM/ICM Outstanding and CUMCM national-first-prize quality:
+
+- No generic method stacking: every method must solve a specific prompt requirement.
+- No untraceable numbers: every number must map to code, data, derivation, citation, or documented manual calculation.
+- No unsupported assumptions: each major assumption needs evidence, derivation, or sensitivity analysis.
+- No single-route modeling: at least three model routes must be considered before selection.
+- No unaudited artifact: each phase output must pass an independent critic gate before reuse.
+- No paper-only polish: computation, source tracing, and reproducibility must be strong enough for reviewer spot checks.
+- No hidden compliance risk: page, size, anonymity, AI-use, citation, and final package rules are gate items, not final chores.
+
+## Phase Review Matrix
+
+| Phase | Specialist focus | Critic focus |
+|---|---|---|
+| 0 | Atomic requirement map, deliverables, scoring hypothesis, official constraints, ambiguity register | Every prompt clause has an output; only material blockers are sent to the user |
+| 1 | Source ledger, data dictionary, proxy logic, benchmark methods, citation plan | Claims and model inputs are traceable or explicitly assumed with sensitivity plans |
+| 2 | Three or more model routes, tradeoff table, selected route, rejected alternatives, failure modes | Selection fits scoring, data, time, interpretability, and novelty without method stacking |
+| 3 | Notation, assumptions, units, objectives, constraints, algorithms, validation metrics | Coder can implement without inventing math; assumptions and equations survive adversarial review |
+| 4 | Reproducible code, raw outputs, tables, figures, baseline, ablation, sensitivity, robustness | Reported values regenerate or trace; figures have source data; no cherry-picking |
+| 5 | Prompt-by-prompt interpretation, captions, recommendations, limitations, uncertainty | Each conclusion is supported and answers a prompt task |
+| 6 | Summary, coherent paper draft, references, appendix, AI-use statement when needed | Summary is result-first; narrative is coherent; citations, notation, figures, and tasks align |
+| 7 | Independent audits and ranked fix list | No unresolved high-severity risk remains |
+| 8 | Final PDF/source/code/data notes/README/checklist package | Package is compliant, anonymous when required, clean of secrets and scratch artifacts |
+
 ## Phase 0: Intake And Scoring
 
 Agents: `mathodology-lead`, `mathodology-problem-analyst`, `mathodology-critic`.
@@ -23,7 +69,7 @@ Deliver:
 - task dependency graph
 - ambiguity and assumption register
 
-Gate: every prompt requirement maps to a planned output.
+Critic gate: every prompt requirement maps to a planned output, official constraints are separated from assumptions, and only contest-critical ambiguities block user progress.
 
 ## Phase 1: Evidence And Data
 
@@ -37,7 +83,7 @@ Deliver:
 - domain constraints
 - citation notes
 
-Gate: every planned model input has data, proxy logic, or an explicit assumption.
+Critic gate: every planned model input has data, proxy logic, or an explicit assumption with a sensitivity or robustness plan.
 
 ## Phase 2: Candidate Model Routes
 
@@ -50,7 +96,7 @@ Deliver:
 - selected route with rejection reasons for alternatives
 - expected failure modes
 
-Gate: selected route fits the problem, available data, time budget, and scoring criteria.
+Critic gate: selected route fits the problem, data, time budget, scoring criteria, interpretability, and novelty; rejected alternatives have concrete reasons.
 
 ## Phase 3: Mathematical Specification
 
@@ -66,7 +112,7 @@ Deliver:
 - validation metrics
 - experiment plan
 
-Gate: coder can implement from the specification without inventing missing math.
+Critic gate: coder can implement from the specification without inventing missing math; notation, units, assumptions, objectives, and validation metrics are internally consistent.
 
 ## Phase 4: Computation And Experiments
 
@@ -80,7 +126,7 @@ Deliver:
 - figures
 - baseline, ablation, sensitivity, and robustness results
 
-Gate: reported numerical results are reproducible and logged.
+Critic gate: reported numerical results are reproducible and logged; each figure/table has source data and no result is cherry-picked without disclosure.
 
 ## Phase 5: Interpretation
 
@@ -93,7 +139,7 @@ Deliver:
 - practical recommendations
 - limitations and uncertainty notes
 
-Gate: every result answers a prompt question and is supported by a figure, table, derivation, or source.
+Critic gate: every result answers a prompt question and is supported by a figure, table, derivation, source, or explicit assumption; limitations do not negate the recommendation.
 
 ## Phase 6: Paper Draft
 
@@ -108,7 +154,7 @@ Deliver:
 - references
 - appendix material
 
-Gate: draft tells one coherent solution story and contains no orphan results.
+Critic gate: draft tells one coherent solution story, contains no orphan results, and passes summary, notation, figure, citation, and requirement-coverage checks.
 
 ## Phase 7: Independent Review
 
@@ -122,7 +168,7 @@ Deliver:
 - writing and scoring audit
 - fix list ranked by severity
 
-Gate: no unresolved high-severity issue remains.
+Critic gate: no unresolved blocker or high-severity issue remains; every medium issue has an owner, fix, or explicit risk acceptance.
 
 ## Phase 8: Final Package
 
@@ -139,4 +185,4 @@ Deliver:
 - AI-use statement if required
 - final checklist
 
-Gate: package can be submitted by a user who has not seen the working session.
+Critic gate: package can be submitted by a user who has not seen the working session and passes contest format, anonymity, size, AI-use, citation, no-secret, and requirement-to-file checks.

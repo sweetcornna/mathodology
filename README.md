@@ -36,9 +36,15 @@ Update installed Mathodology skills:
 npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
+If you use this repository checkout for Claude Code project subagents and workflow templates, run the full one-command updater from the checkout:
+
+```bash
+git pull --ff-only && npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+```
+
 This uses the open `skills` CLI from `vercel-labs/skills`, which installs Agent Skills from GitHub into the right agent directories.
 
-Restart Codex or Claude Code after installation or update so the new skills are discovered.
+Restart Codex or Claude Code after installation or update so the new skills, subagents, and workflow templates are discovered.
 
 See [docs/INSTALL.md](docs/INSTALL.md) for target-specific commands and verification.
 
@@ -47,9 +53,10 @@ See [docs/INSTALL.md](docs/INSTALL.md) for target-specific commands and verifica
 Mathodology ships separate orchestration guidance for Codex and Claude Code:
 
 - Claude Code: use `.claude/workflows/mathodology-award-submission.md` with project subagents in `.claude/agents/`.
+- Claude Code contest variants: use `.claude/workflows/mathodology-contest-variants.md` for M3, HiMCM/MidMCM, IMMC/IM2C, leaderboard/data-science, operations/policy/business-case, and short-sprint contests.
 - Codex: load `mathodology-whole-project` and run the 9-phase workflow in multi-agents mode.
 
-Both modes target national-first-prize or MCM/ICM O-prize level outputs: model alternatives, evidence-backed assumptions, reproducible experiments, polished paper, and a complete submission package.
+Both modes target national-first-prize or MCM/ICM O-prize level outputs: model alternatives, evidence-backed assumptions, reproducible experiments, polished paper, and a complete submission package. The workflow adapters tune those gates for paper-first, code-first, sprint, school-age, and policy/business-case contests.
 
 See [docs/WORKFLOWS.md](docs/WORKFLOWS.md) for the full phase model.
 

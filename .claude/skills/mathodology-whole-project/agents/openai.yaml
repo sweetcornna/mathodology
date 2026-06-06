@@ -1,4 +1,4 @@
 interface:
   display_name: "Mathodology Whole Project"
   short_description: "Run Mathodology skills and award workflows"
-  default_prompt: "Use $mathodology-whole-project. In Codex, run the 9-phase Mathodology award workflow with parallel agents, phase synthesis, and an independent critic gate before each phase advances."
+  default_prompt: "Use $mathodology-whole-project. In Codex, classify the contest type in Phase 0, apply the matching Mathodology workflow adapter, then run the 9-phase award workflow with parallel agents, specialist handoffs, phase synthesis, independent critic gates, and resumable phase logs. Target MCM/ICM Outstanding, CUMCM national-first-prize, or the equivalent top tier for the selected contest."

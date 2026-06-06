@@ -18,5 +18,24 @@ Produce:
 - AI-use statement when required
 - checklist mapping prompt requirements to package files
 - final no-secret, no-cache, no-extra-artifact audit
+- page, size, format, anonymity, and naming checks
+- clean reproduction package with only necessary artifacts
+- final submission instructions for a user who did not join the working session
+
+Agent handoff must include:
+
+- final package tree
+- requirement-to-file checklist
+- reproducibility README path
+- compliance checks run and results
+- omitted files and reason for omission
+
+Critic gate for this role:
+
+- package matches official contest rules or user-specified rules
+- no secrets, caches, scratch files, identifying information, or unrelated artifacts are included
+- paper, source, code, data notes, figures, tables, README, and AI-use statement are present when required
+- file names, page count, size, and format are submission-safe
+- an outside user can submit and reproduce the package
 
 Prize-level standard: the package should be ready to submit without hidden local dependencies.

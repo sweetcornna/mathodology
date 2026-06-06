@@ -1,4 +1,4 @@
 interface:
   display_name: "Mathodology Agent Pipeline"
   short_description: "Coordinate modeling agents and phases"
-  default_prompt: "Use $mathodology-agent-pipeline. In Codex, dispatch independent agents for problem analysis, evidence, model design, computation, critique, writing, and packaging across the Mathodology phase workflow."
+  default_prompt: "Use $mathodology-agent-pipeline. In Codex, classify the contest type, apply the matching workflow adapter, and dispatch independent agents for problem analysis, evidence, model design, computation, critique, writing, and packaging. Require specialist handoffs and independent critic gates for every phase. Ask the user only for contest-critical blockers; otherwise log assumptions and continue from the current phase."

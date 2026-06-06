@@ -7,6 +7,21 @@ Mathodology 支持两种编排模式：
 
 两种模式都以国奖或 MCM/ICM O 奖级别为目标：题目覆盖完整、数学模型可辩护、计算可复现、论文表达成熟、提交包完整。
 
+## 外部质量信号
+
+用这些信号校准工作流。它们不是固定模板，而是要转成 gate 的规则和评审预期。
+
+- COMAP MCM/ICM 说明：Summary Sheet 是第一页且权重很高；解答以单个 PDF 提交；当前规则使用 25 页 solution 限制；参考文献、附录、代码和题目特别要求都计入 solution 页数；使用 AI 时必须披露并按要求附 AI 使用报告；匿名和来源引用是硬要求。来源：`https://www.contest.comap.com/undergraduate/contests/mcm/instructions.php`。
+- COMAP 评奖描述：Meritorious 及以上要求模型、分析、结论和表达清晰、有支撑、组织良好；Finalist 不只是满足题目要求，还要逻辑完整、易读、全面；Outstanding 是建模、求解、分析和表达整体最强的论文。来源：`https://www.contest.comap.com/undergraduate/contests/mcm/instructions.php`。
+- COMAP 写作指导：高水平论文通常在 summary、问题分析、变量与假设、模型设计、测试、误差分析、敏感性或稳定性、优缺点、明确结论和来源记录上明显更强。来源：`https://www.contest.comap.com/undergraduate/contests/mcm/instructions.php`。
+- 国赛格式和评阅规则：论文和支撑材料分开处理；可运行源程序和支撑材料必须与论文相符；全国奖评阅使用独立评委和相似度查验；申报全国一等奖的论文会面对更严格的独立评阅。来源：`https://www.mcm.edu.cn/upload_cn/node/775/cQMeL0YY905244c8bd4b9af832f1699446d8385e.pdf`，`https://www.mcm.edu.cn/html_cn/node/b1f48689659f0660e80a2d6279d7b37d.html`。
+- 国赛评阅要点示例：强论文应针对具体问题自主建模、体现创新、得到真实有效结果；弱论文常见问题是堆砌通用方法、简单复制算法、形式好看但内容空；有条件时应验证程序和结果。来源：`https://aimg8.dlssyht.cn/u/2179378/ueditor/file/1090/2179378/1663049277111493.pdf`。
+- 公开优秀论文范例常见结构：摘要、问题分析、假设、数据预处理、分任务模型、结果分析、敏感性或鲁棒性、优缺点、结论、附录。把它当覆盖清单，不要机械套模板。参考范例：`https://reformship.github.io/pages/3competition/4mcm/MCM%20Outstanding/2024/F/2413565.pdf`，`https://explcre.github.io/files/mcm.pdf`。
+- M3 Challenge 规则：团队在连续 14 小时窗口内完成，提交单个 PDF，图表、代码和其他图形都嵌入 PDF，正文建议控制在 20 页左右，第一页是 summary，并且 final-event validation 和 technical computing award 是额外评分面。来源：`https://m3challenge.siam.org/the-challenge/rules-and-guidelines/`，`https://m3challenge.siam.org/wp-content/uploads/01-M3_Official_Rules_and_Guidelines.pdf`。
+- IMMC 规则：团队在选定的连续 5 天内工作，提交 PDF 解答，summary 在第一页，不接收非纸面软件材料，并要求模型测试、敏感性、误差分析、优缺点，以及用文字或图说明算法。来源：`https://www.immchallenge.org/Pages/Rules.html`。
+- HiMCM/MidMCM 规则：团队在较长比赛窗口内二选一解题，提交英文 PDF，保持匿名，记录外部来源，使用 AI 工具时在正文和单独 AI 使用报告中披露。来源：`https://himcm.org.cn/instructions/`。
+- 数据科学 leaderboard 竞赛不是论文优先。竞赛页、规则、数据说明、指标定义、sample submission、公榜/私榜切分和官方提交机制是硬约束。Kaggle 类竞赛中，官方 CLI 和 notebook 流程支持下载竞赛数据、生成提交文件和检查提交状态。来源：`https://github.com/Kaggle/kaggle-cli/blob/main/docs/README.md`。
+
 ## 共享 Phase 模型
 
 | Phase | 目标 | 主要产出 | 验收门槛 |
@@ -20,6 +35,78 @@ Mathodology 支持两种编排模式：
 | 6. 论文初稿 | 形成完整论文 | 摘要、方法、结果、参考文献、附录 | 没有孤立结果或无支撑论断 |
 | 7. 独立审稿 | 删除可修缺陷 | 题目、数学、证据、复现、写作审计 | 无高严重度未解决问题 |
 | 8. 最终提交 | 组装提交包 | 论文、源码、代码、数据说明、README、AI 使用说明、清单 | 用户可直接提交 |
+
+## 细化 Phase-Agent-Critic 矩阵
+
+每个 phase 都有三层：专家产出、lead 综合、独立 critic gate。不能只凭专家产出进入下一 phase。
+
+| Phase | 主 agent | 专家产出契约 | Critic gate |
+|---|---|---|---|
+| 0. 题目与评分 | lead, problem analyst, critic | 建立原子化需求映射、提交物清单、官方格式约束、评分假设、依赖图、歧义登记、竞赛关键问题。 | 每个题目语句都有负责人和输出路径；官方约束与假设分离；只把实质阻塞问题问用户。 |
+| 1. 证据与数据 | evidence researcher, problem analyst, critic | 产出来源台账、链接或文件路径、可信度说明、抽取摘要、数据字典、代理数据逻辑、引用计划和证据缺口。 | 每个重要常数、数据集、benchmark 或领域判断都可追踪，或被标为假设并有敏感性检查计划。 |
+| 2. 候选模型路线 | 至少两个 modeler, evidence researcher, critic | 至少三条路线，包含输入、方程或算法族、输出、优缺点、实现成本、数据匹配度和失败模式。 | 选中路线必须能解释评分、数据、时间、可解释性和创新性；被拒路线有具体理由；禁止通用方法堆砌。 |
+| 3. 数学规格 | modeler, coder, critic | 写清符号、假设、量纲或单位、目标函数、约束、算法、伪代码、验证指标、baseline、ablation、敏感性和鲁棒性计划。 | coder 不需要临时发明数学；方程量纲一致；假设可测试或有证据；验证设计能暴露弱结论。 |
+| 4. 实验计算 | coder, modeler, critic | 产出可复现脚本或 notebook、随机种子、环境说明、原始输出、整理表格、图、baseline、ablation、敏感性、鲁棒性和运行日志。 | 论文数字可重新生成或手工追踪；图有源数据；失败也被记录；不接受挑一次最好结果。 |
+| 5. 解释结果 | modeler, evidence researcher, paper editor, critic | 把结果转成逐问回答、图表标题、建议、局限、不确定性说明和 claim-source 链接。 | 每个结果都回答题目任务；每个论断都有数据、推导、图表、引用或明确假设支撑；局限不推翻主结论。 |
+| 6. 论文初稿 | paper editor, modeler, coder, critic | 完成摘要、引言、假设、方法、结果、敏感性、优缺点、结论、参考文献、附录和必要的 AI 使用说明。 | 摘要说明方法和最重要结论；论文不是实验流水账；符号、图注、引用和需求覆盖一致。 |
+| 7. 独立审稿 | critic, lead, 相关专家 rerun | 分别审计题目覆盖、数学有效性、证据、复现、写作、格式、原创性和最终评分风险。 | 无 blocker/high 问题；每个 medium 问题已修复或有明确接受理由；critic 不能是原产出 agent。 |
+| 8. 最终提交 | submission packager, paper editor, critic | 组装最终 PDF、必要的可编辑源文件、代码、数据或来源说明、图表、复现 README、AI 使用报告和 requirement-to-file 清单。 | 提交包符合规则、必要时匿名、无密钥和草稿文件、满足大小和页数限制，且未参与工作的人也能提交。 |
+
+## Agent Handoff 契约
+
+每个专家回复末尾都要带 handoff block，便于 lead 和 critic 不重读完整历史也能审查：
+
+```text
+Agent handoff:
+- Phase:
+- Agent:
+- Files or artifacts produced:
+- Decisions made:
+- Assumptions introduced:
+- Evidence used:
+- Commands or computations run:
+- Known weaknesses:
+- Questions for lead or user:
+- Critic focus requested:
+```
+
+## Critic Gate 协议
+
+每个 critic gate 必须独立、对抗，并且能链接证据。
+
+- critic 阅读 phase handoff、源产物和 lead synthesis。
+- critic 标注严重度：`blocker`、`high`、`medium`、`low`。
+- `blocker` 或 `high` 问题阻止进入下一 phase。
+- `medium` 问题需要负责人、修复计划，或在 phase log 中明确接受风险。
+- 只有不会影响评分、正确性、复现或提交合法性的 `low` 问题才可排队。
+- 任一产物缺少来源、计算路径或负责假设时，本 phase 不能通过。
+- lead 必须记录 critic 发现和修复后才能推进。
+
+## 竞赛类型工作流适配器
+
+9-phase 模型是默认流程。Phase 0 结束前，lead 必须判断竞赛类型并套用一个适配器。如果竞赛官方规则和适配器冲突，以官方规则为准。
+
+| 类型 | 适用场景 | 工作流重点 | 额外 critic gate |
+|---|---|---|---|
+| MCM/ICM O 奖 | COMAP 本科组 MCM/ICM，英文论文，4 天左右开放题 | 25 页 solution 纪律、summary-first 叙事、AI 使用透明、来源引用、逐问覆盖 | summary 不是套话；AI 使用报告和引用合规；无身份泄露；页数取舍保护结果和结论 |
+| CUMCM 国一 | 全国大学生数学建模竞赛或类似“论文 + 支撑材料”提交 | 中文摘要和论文格式、论文与支撑材料一致、代码可运行、附录文件列表、匿名、查重风险 | 论文 PDF 与支撑包一致；代码能复现关键结果；无队伍/学校/赛区身份；支撑包不含无关文件 |
+| HiMCM/MidMCM | 高中 COMAP 风格长窗口竞赛 | 更强脚手架、可读英文表达、选题支持、模型复杂度保守、AI 使用披露 | 模型能被高中团队诚实解释；最终 PDF 英文、匿名、可读；外部来源和 AI 使用披露完整 |
+| IMMC / IM2C | 中学生国际 5 天建模挑战 | 本地语言到英文的翻译风险、不提交软件包、论文简洁、用文字/图解释算法、顾问和表格截止时间 | 翻译没有改进或改变原作；没有代码文件也能理解算法和测试；控制号和页眉正确 |
+| M3 Challenge | 14 小时冲刺，单 PDF 提交，可能争取 MATLAB technical computing award | 严格时间盒、快速可行 baseline、简洁首页 summary、嵌入代码/图表、validation presentation 准备 | 单 PDF 满足大小/页数建议；technical computing 体现洞察而不是堆代码；最终结果能回答现场验证问题 |
+| 数据科学 leaderboard | Kaggle、DrivenData、天池或企业指标型竞赛 | 指标对齐、防 leakage、训练/验证切分、公榜/私榜风险、可复现 pipeline、提交文件 schema | 验证指标贴近官方指标；无 test/public leaderboard leakage；提交 schema 匹配 sample；明确管理私榜过拟合风险 |
+| 运筹/政策/商业案例赛 | 商业、物流、能源、金融、公共政策或咨询式建模 | stakeholder framing、决策变量、约束、场景分析、可执行建议、成本和可行性 | 建议能落地；约束贴近现实；场景和敏感性覆盖决策风险；假设能被 stakeholder 接受 |
+| 短时冲刺/校内邀请赛 | 6-24 小时本地赛、训练赛或轻格式规则 | 速度、baseline-first、选择性证据、简单鲁棒模型、清晰叙事、快速提交包审计 | 早期已有完整可提交答案；不过度复杂化；最终答案优先正确性和清晰度 |
+
+### 适配器分派规则
+
+- Phase 0 必须记录 `contest_type`、官方规则来源、deadline、语言、文件限制、身份规则、代码政策、AI 使用政策和最终提交清单。
+- 只有无法安全推断竞赛类型、官方规则、deadline 或提交格式时，lead 才问用户。
+- 每个 phase 的 critic gate 都必须包含对应适配器的额外 gate。
+- 如果是论文优先型竞赛，paper editor 和 critic 要更早加入，从 Phase 2 或 Phase 3 开始。
+- 如果是代码/leaderboard 优先型竞赛，coder 和 critic 要更早加入，从 Phase 1 开始；paper editor 可延后到解释阶段。
+- 如果是 sprint 型竞赛，每个 phase 先交付最小可行产物，有余力再增强。
+- 如果是中学生或翻译敏感竞赛，paper editor 必须检查可读性、词汇复杂度，以及团队是否能诚实答辩。
+- 如果有 interview、presentation 或 validation round，Phase 8 增加 defense brief，列出可能评委问题、回答要点和产物引用。
 
 ## Claude Code Workflow 模式
 
@@ -61,7 +148,7 @@ Subagents：
 启动提示：
 
 ```text
-Use $mathodology-whole-project. Run the Mathodology 9-phase award submission workflow in Codex multi-agents mode. For each phase, dispatch independent agents for analysis, modeling, evidence, coding, critique, and writing where applicable; synthesize their output; then run the phase gate before continuing.
+Use $mathodology-whole-project. Run the Mathodology 9-phase award submission workflow in Codex multi-agents mode. Work phase by phase: dispatch independent agents for analysis, modeling, evidence, coding, critique, and writing where applicable; synthesize their output; run the phase gate; then continue automatically. Pause to ask the user only for contest-critical details that would change requirements, data access, model choice, compute budget, or final submission constraints. For ordinary ambiguity, make a conservative assumption, record it in the phase log, and keep going.
 ```
 
 Codex agent 角色：
@@ -74,6 +161,37 @@ Codex agent 角色：
 - Critic agent
 - 论文写作 agent
 - 提交打包 agent
+
+### Codex 确认与连续执行
+
+Codex 不一定能在一次回复里完成全部 9 个 phase。把流程设计为可恢复的连续执行，而不是一次性输出：
+
+- 保留 phase log，记录当前 phase、已通过 gate、假设、未解决风险、产物路径和下一步动作。
+- 如果一次回复到达边界，先完成当前综合或 gate，明确写出继续状态；用户说继续后，从这个状态恢复。
+- 除非用户新信息推翻前面结论，不要重跑已完成 phase。
+- gate 通过且没有竞赛关键问题阻塞时，自动进入下一 phase。
+- 在回复边界必须停止时，用这个格式收尾：
+
+```text
+Continuation state:
+- Current phase:
+- Completed gates:
+- Blocking user question, if any:
+- Assumptions to carry forward:
+- Artifact paths:
+- Next action:
+- Suggested prompt: Continue from the current continuation state and run the next Mathodology phase gate.
+```
+
+只有当答案会实质改变以下内容时，才向用户提问：
+
+- 官方竞赛要求、提交格式、页数限制、AI 使用规则或截止时间
+- 私有文件、数据集、付费来源、凭据或外部服务访问
+- 多条可行模型路线之间的选择，且路线会带来不同评分或可行性风险
+- 计算量、运行时间、语言、工具或复现约束
+- 无法安全推断的最终结论、建议或提交包决策
+
+非关键歧义采用最稳妥、可辩护的默认假设，写入 phase log 后继续执行。必须问用户时，问题要紧凑说明当前 phase、为什么重要、推荐默认值，以及常见答案的后果。用户回答后，从当前 phase log 恢复，不要重新执行已完成工作。
 
 Codex 执行规则：
 

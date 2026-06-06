@@ -31,6 +31,14 @@ npx -y skills@latest add sweetcornna/mathodology --skill '*' --global --agent co
 npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
+在 Mathodology clone checkout 中使用的完整一键更新器：
+
+```bash
+git pull --ff-only && npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+```
+
+如果你依赖 `.claude/agents/` 或 `.claude/workflows/`，请使用完整一键更新器，因为这些项目级文件在 checkout 中，不在全局 skill package 内。
+
 更新所有全局安装的 skills：
 
 ```bash
@@ -39,7 +47,7 @@ npx -y skills@latest update -g -y
 
 更新后重启 Codex 或 Claude Code。
 
-如果你 clone 了本仓库来使用 Claude Code 项目 subagents 和 workflow 模板，用下面命令更新 checkout：
+如果你 clone 了本仓库来使用 Claude Code 项目 subagents 和 workflow 模板，上面的完整一键更新器已经会刷新 checkout。只更新 checkout 时运行：
 
 ```bash
 git pull --ff-only

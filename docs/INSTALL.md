@@ -31,6 +31,14 @@ Update only Mathodology skills:
 npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
+Full one-command updater from a cloned Mathodology checkout:
+
+```bash
+git pull --ff-only && npx -y skills@latest update -g -y mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+```
+
+Use the full updater when you rely on `.claude/agents/` or `.claude/workflows/`, because those project-level files live in the checkout rather than inside the global skill packages.
+
 Update all globally installed skills:
 
 ```bash
@@ -39,7 +47,7 @@ npx -y skills@latest update -g -y
 
 Restart Codex or Claude Code after updating.
 
-If you cloned this repository to use Claude Code project subagents and workflow templates, update the checkout with:
+If you cloned this repository to use Claude Code project subagents and workflow templates, the full updater above already refreshes the checkout. To update only the checkout, run:
 
 ```bash
 git pull --ff-only

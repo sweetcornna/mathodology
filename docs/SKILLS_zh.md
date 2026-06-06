@@ -35,11 +35,17 @@ Claude Code 项目编排资产放在：
 
 这些文件用于 clone 仓库后在 Claude Code 项目中直接使用。全局安装 skills 时，workflow 指导仍保留在 `SKILL.md` 正文里。
 
+当前 workflow 模板：
+
+- `.claude/workflows/mathodology-award-submission.md`：默认奖项级 9-phase 数模 workflow。
+- `.claude/workflows/mathodology-contest-variants.md`：M3、HiMCM/MidMCM、IMMC/IM2C、leaderboard/data-science、运筹/政策/商业案例和短时冲刺赛适配器。
+
 ## 入口
 
 - Claude Code：打开仓库后加载 `.claude/skills/`。
 - Codex 类工具：先读 `AGENTS.md`，再加载对应 skill。
 - 奖项级 workflow 编排：使用 `docs/WORKFLOWS_zh.md`。
+- 竞赛类型 workflow 适配：使用 `docs/WORKFLOWS_zh.md` 和 `.claude/workflows/mathodology-contest-variants.md`。
 - 用户一键安装：使用 `docs/INSTALL_zh.md`。
 - 整体迁移或备份：从 `mathodology-whole-project` 开始。
 - 仓库清理或策略检查：从 `mathodology-project-orientation` 开始。

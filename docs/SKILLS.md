@@ -35,11 +35,17 @@ Claude Code project orchestration assets live under:
 
 These files are for cloned Claude Code project usage. Installed global skills still carry the workflow instructions inside `SKILL.md`.
 
+Current workflow templates:
+
+- `.claude/workflows/mathodology-award-submission.md`: default award-level 9-phase modeling workflow.
+- `.claude/workflows/mathodology-contest-variants.md`: adapters for M3, HiMCM/MidMCM, IMMC/IM2C, leaderboard/data-science, operations/policy/business-case, and short-sprint contests.
+
 ## Entry Points
 
 - Claude Code: open the repository and load `.claude/skills/`.
 - Codex-like tools: read `AGENTS.md`, then load the relevant skill.
 - Award-level workflow orchestration: use `docs/WORKFLOWS.md`.
+- Contest-type workflow variants: use `docs/WORKFLOWS.md` and `.claude/workflows/mathodology-contest-variants.md`.
 - One-command user install: use `docs/INSTALL.md`.
 - Full transfer or backup: start with `mathodology-whole-project`.
 - Repository cleanup or policy checks: start with `mathodology-project-orientation`.
