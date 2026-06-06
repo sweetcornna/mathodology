@@ -225,7 +225,10 @@ python3 <make_contact_sheet_or_equivalent>.py
 (cd paper && pandoc solution.md --pdf-engine=tectonic -o solution.pdf)
 pdfinfo paper/solution.pdf
 pdftoppm -png -r 110 paper/solution.pdf /tmp/solution-page
-pdftotext paper/solution.pdf - | rg "Figure [0-9]+: Figure|Table [0-9]+: Table"
+if pdftotext paper/solution.pdf - | rg -q "Figure [0-9]+: Figure|Table [0-9]+: Table"; then
+  echo "发现重复 caption 前缀" >&2
+  exit 1
+fi
 ```
 
 具体命令可随环境调整，但证据必须包含：

@@ -225,7 +225,10 @@ python3 <make_contact_sheet_or_equivalent>.py
 (cd paper && pandoc solution.md --pdf-engine=tectonic -o solution.pdf)
 pdfinfo paper/solution.pdf
 pdftoppm -png -r 110 paper/solution.pdf /tmp/solution-page
-pdftotext paper/solution.pdf - | rg "Figure [0-9]+: Figure|Table [0-9]+: Table"
+if pdftotext paper/solution.pdf - | rg -q "Figure [0-9]+: Figure|Table [0-9]+: Table"; then
+  echo "duplicated caption prefix found" >&2
+  exit 1
+fi
 ```
 
 The exact commands may differ by environment, but the evidence must include:
