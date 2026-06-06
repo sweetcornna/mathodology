@@ -48,7 +48,7 @@ Choose the orchestration mode from the agent environment:
 Codex start prompt:
 
 ```text
-Use $mathodology-whole-project. Run the Mathodology 9-phase award submission workflow in Codex multi-agents mode. Work phase by phase: dispatch independent agents for analysis, modeling, evidence, coding, critique, and writing where applicable; synthesize their output; run the phase gate; then continue automatically. Pause to ask the user only for contest-critical details that would change requirements, data access, model choice, compute budget, or final submission constraints. For ordinary ambiguity, make a conservative assumption, record it in the phase log, and keep going.
+Use $mathodology-whole-project. Run the Mathodology 9-phase award submission workflow in Codex multi-agents mode. Work phase by phase: dispatch independent agents for analysis, modeling, evidence, coding, critique, and writing where applicable; synthesize their output; require result-density maps, figure/table sufficiency gates, and rendered-PDF figure QA; run the phase gate; then continue automatically. Pause to ask the user only for contest-critical details that would change requirements, data access, model choice, compute budget, or final submission constraints. For ordinary ambiguity, make a conservative assumption, record it in the phase log, and keep going.
 ```
 
 ## Codex Resumable Execution
@@ -129,6 +129,7 @@ Codex and Claude Code runs must preserve these guarantees:
 - Every reported number maps to code, data, derivation, citation, or documented manual calculation.
 - Every major assumption maps to evidence, derivation, or sensitivity analysis.
 - At least three model routes are considered before the final route is selected.
+- Paper-first contest drafts must include enough purposeful figures and tables to inspect model structure, primary comparisons, sensitivity, robustness or uncertainty, decision tradeoffs, and final recommendations; sparse, filler, overlapping, clipped, unreadable, or orphaned visuals fail the critic gate.
 - The final paper is checked against prompt coverage, math validity, evidence, reproducibility, writing, formatting, originality, and submission compliance.
 
 Use `docs/WORKFLOWS.md` as the source of truth for the detailed phase-agent-critic matrix.

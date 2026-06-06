@@ -42,6 +42,9 @@ Use these gates to target MCM/ICM Outstanding and CUMCM national-first-prize qua
 - No unaudited artifact: each phase output must pass an independent critic gate before reuse.
 - No paper-only polish: computation, source tracing, and reproducibility must be strong enough for reviewer spot checks.
 - No hidden compliance risk: page, size, anonymity, AI-use, citation, and final package rules are gate items, not final chores.
+- No sparse result presentation: paper-first contests need a purposeful figure/table system that covers model structure, key comparisons, sensitivity, robustness or uncertainty, decision tradeoffs, and final recommendations.
+- No filler visuals: extra figures or tables count only when they are reproducible, interpreted, non-duplicative, and tied to a prompt-level conclusion.
+- No chart rendering bugs: overlapping labels, clipped axes, unreadable text, duplicated caption prefixes, orphaned figures, and incoherent table wrapping are gate failures in the rendered PDF, not cosmetic nits.
 
 ## Phase Review Matrix
 
@@ -51,9 +54,9 @@ Use these gates to target MCM/ICM Outstanding and CUMCM national-first-prize qua
 | 1 | Source ledger, data dictionary, proxy logic, benchmark methods, citation plan | Claims and model inputs are traceable or explicitly assumed with sensitivity plans |
 | 2 | Three or more model routes, tradeoff table, selected route, rejected alternatives, failure modes | Selection fits scoring, data, time, interpretability, and novelty without method stacking |
 | 3 | Notation, assumptions, units, objectives, constraints, algorithms, validation metrics | Coder can implement without inventing math; assumptions and equations survive adversarial review |
-| 4 | Reproducible code, raw outputs, tables, figures, baseline, ablation, sensitivity, robustness | Reported values regenerate or trace; figures have source data; no cherry-picking |
-| 5 | Prompt-by-prompt interpretation, captions, recommendations, limitations, uncertainty | Each conclusion is supported and answers a prompt task |
-| 6 | Summary, coherent paper draft, references, appendix, AI-use statement when needed | Summary is result-first; narrative is coherent; citations, notation, figures, and tasks align |
+| 4 | Reproducible code, raw outputs, tables, figures, baseline, ablation, sensitivity, robustness, result-density map, figure contact sheet | Reported values regenerate or trace; figures have source data; no cherry-picking; figure/table coverage is not sparse; no obvious generated chart defects |
+| 5 | Prompt-by-prompt interpretation, captions, recommendations, limitations, uncertainty, figure/table coverage map | Each conclusion is supported, visual or tabular where useful, and answers a prompt task |
+| 6 | Summary, coherent paper draft, references, appendix, AI-use statement when needed, final figure/table placement, rendered-PDF QA | Summary is result-first; narrative is coherent; citations, notation, figures, tables, and tasks align; rendered figures/tables are readable |
 | 7 | Independent audits and ranked fix list | No unresolved high-severity risk remains |
 | 8 | Final PDF/source/code/data notes/README/checklist package | Package is compliant, anonymous when required, clean of secrets and scratch artifacts |
 
@@ -125,8 +128,10 @@ Deliver:
 - tables
 - figures
 - baseline, ablation, sensitivity, and robustness results
+- result-density map covering model architecture, assumptions or parameters, primary comparison, sensitivity, robustness or uncertainty, decision tradeoffs, and final recommendation dashboard
+- figure/table inventory and a contact sheet or equivalent visual QA artifact
 
-Critic gate: reported numerical results are reproducible and logged; each figure/table has source data and no result is cherry-picked without disclosure.
+Critic gate: reported numerical results are reproducible and logged; each figure/table has source data and no result is cherry-picked without disclosure; a paper-first run fails if the figure/table set is too sparse or if generated visuals show overlap, clipping, unreadable labels, or filler content.
 
 ## Phase 5: Interpretation
 
@@ -138,8 +143,9 @@ Deliver:
 - figure and table captions
 - practical recommendations
 - limitations and uncertainty notes
+- claim-to-figure/table map for the most important conclusions
 
-Critic gate: every result answers a prompt question and is supported by a figure, table, derivation, source, or explicit assumption; limitations do not negate the recommendation.
+Critic gate: every result answers a prompt question and is supported by a figure, table, derivation, source, or explicit assumption; major conclusions are not text-only when a visual or table would make the comparison inspectable; limitations do not negate the recommendation.
 
 ## Phase 6: Paper Draft
 
@@ -153,8 +159,9 @@ Deliver:
 - figures and tables
 - references
 - appendix material
+- rendered-PDF QA evidence for figure/table placement and caption correctness
 
-Critic gate: draft tells one coherent solution story, contains no orphan results, and passes summary, notation, figure, citation, and requirement-coverage checks.
+Critic gate: draft tells one coherent solution story, contains no orphan results, and passes summary, notation, figure/table density, caption, citation, rendered-PDF readability, and requirement-coverage checks.
 
 ## Phase 7: Independent Review
 

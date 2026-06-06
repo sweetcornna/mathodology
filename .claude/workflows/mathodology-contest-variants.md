@@ -19,6 +19,7 @@ Lead emphasis:
 
 - protect the 25-page solution budget
 - force a result-first summary sheet
+- require enough purposeful figures and tables to make the model, comparisons, sensitivity, robustness, and recommendations inspectable
 - require AI-use disclosure and citation discipline
 - keep source, model, experiment, and paper work synchronized
 
@@ -29,6 +30,7 @@ Critic gate:
 - every outside source and AI use is disclosed
 - references, appendix, code, and problem-specific requirements fit the official page policy
 - paper does not overrun the page limit by hiding essentials in appendices
+- figure/table coverage is substantive without becoming filler or crowding out explanation
 
 ## Adapter: CUMCM National-First-Prize
 
@@ -39,6 +41,7 @@ Lead emphasis:
 - separate paper PDF from support archive
 - maintain an appendix file list
 - keep runnable code and data provenance aligned with paper claims
+- require a dense but readable figure/table system for model structure, result comparison, sensitivity, robustness, and final recommendations
 - check anonymity and similarity-risk language early
 
 Critic gate:
@@ -48,6 +51,7 @@ Critic gate:
 - no school, region, advisor, or team identity appears in prohibited locations
 - support archive contains no secrets, scratch files, caches, or unrelated material
 - core results survive spot reproduction
+- figure/table inventory in the support archive matches the paper and source code
 
 ## Adapter: HiMCM / MidMCM
 
@@ -151,6 +155,7 @@ Lead emphasis:
 - define stakeholders and decision horizon
 - separate objectives, constraints, decisions, and uncertainties
 - produce actionable recommendations, not only fitted models
+- use decision dashboards, scenario tables, and tradeoff figures to make recommendations reviewable
 - quantify cost, feasibility, risk, and implementation tradeoffs
 
 Critic gate:

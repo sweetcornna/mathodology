@@ -30,9 +30,9 @@ Mathodology 支持两种编排模式：
 | 1. 证据与数据 | 给问题建立依据 | 来源清单、数据计划、benchmark、引用笔记 | 每个模型输入都有数据、代理逻辑或假设 |
 | 2. 候选模型 | 先比较路线再定型 | 三条模型路线、取舍表、最终路线 | 路线匹配数据、时间、评分和题目 |
 | 3. 数学规格 | 让模型可执行 | 符号、假设、目标、约束、算法、指标 | coder 不需要临时发明数学 |
-| 4. 实验计算 | 生成可复现结果 | 代码、原始输出、表格、图、敏感性、鲁棒性 | 论文中的数字可复现 |
-| 5. 解释结果 | 把结果接回题目 | 结论、图表说明、建议、局限 | 每个结果回答题目问题 |
-| 6. 论文初稿 | 形成完整论文 | 摘要、方法、结果、参考文献、附录 | 没有孤立结果或无支撑论断 |
+| 4. 实验计算 | 生成可复现结果 | 代码、原始输出、表格、图、敏感性、鲁棒性、结果密度映射 | 论文中的数字可复现，核心结果有图表支撑 |
+| 5. 解释结果 | 把结果接回题目 | 结论、图表说明、建议、局限、图表覆盖映射 | 每个结果回答题目问题 |
+| 6. 论文初稿 | 形成完整论文 | 摘要、方法、结果、图表、参考文献、附录 | 没有孤立结果、稀疏结果区或无支撑论断 |
 | 7. 独立审稿 | 删除可修缺陷 | 题目、数学、证据、复现、写作审计 | 无高严重度未解决问题 |
 | 8. 最终提交 | 组装提交包 | 论文、源码、代码、数据说明、README、AI 使用说明、清单 | 用户可直接提交 |
 
@@ -46,9 +46,9 @@ Mathodology 支持两种编排模式：
 | 1. 证据与数据 | evidence researcher, problem analyst, critic | 产出来源台账、链接或文件路径、可信度说明、抽取摘要、数据字典、代理数据逻辑、引用计划和证据缺口。 | 每个重要常数、数据集、benchmark 或领域判断都可追踪，或被标为假设并有敏感性检查计划。 |
 | 2. 候选模型路线 | 至少两个 modeler, evidence researcher, critic | 至少三条路线，包含输入、方程或算法族、输出、优缺点、实现成本、数据匹配度和失败模式。 | 选中路线必须能解释评分、数据、时间、可解释性和创新性；被拒路线有具体理由；禁止通用方法堆砌。 |
 | 3. 数学规格 | modeler, coder, critic | 写清符号、假设、量纲或单位、目标函数、约束、算法、伪代码、验证指标、baseline、ablation、敏感性和鲁棒性计划。 | coder 不需要临时发明数学；方程量纲一致；假设可测试或有证据；验证设计能暴露弱结论。 |
-| 4. 实验计算 | coder, modeler, critic | 产出可复现脚本或 notebook、随机种子、环境说明、原始输出、整理表格、图、baseline、ablation、敏感性、鲁棒性和运行日志。 | 论文数字可重新生成或手工追踪；图有源数据；失败也被记录；不接受挑一次最好结果。 |
-| 5. 解释结果 | modeler, evidence researcher, paper editor, critic | 把结果转成逐问回答、图表标题、建议、局限、不确定性说明和 claim-source 链接。 | 每个结果都回答题目任务；每个论断都有数据、推导、图表、引用或明确假设支撑；局限不推翻主结论。 |
-| 6. 论文初稿 | paper editor, modeler, coder, critic | 完成摘要、引言、假设、方法、结果、敏感性、优缺点、结论、参考文献、附录和必要的 AI 使用说明。 | 摘要说明方法和最重要结论；论文不是实验流水账；符号、图注、引用和需求覆盖一致。 |
+| 4. 实验计算 | coder, modeler, critic | 产出可复现脚本或 notebook、随机种子、环境说明、原始输出、整理表格、图、baseline、ablation、敏感性、鲁棒性、运行日志，以及覆盖模型结构、核心比较、敏感性、鲁棒性、权衡和建议的结果密度映射。 | 论文数字可重新生成或手工追踪；图有源数据；失败也被记录；不接受挑一次最好结果；图表稀疏或装饰性图表不能通过。 |
+| 5. 解释结果 | modeler, evidence researcher, paper editor, critic | 把结果转成逐问回答、图表标题、建议、局限、不确定性说明、claim-source 链接，以及说明每个主要结论由哪张图或表支撑的覆盖映射。 | 每个结果都回答题目任务；每个论断都有数据、推导、图表、引用或明确假设支撑；局限不推翻主结论；重要结论不能只停留在文字断言。 |
+| 6. 论文初稿 | paper editor, modeler, coder, critic | 完成摘要、引言、假设、方法、结果、敏感性、优缺点、结论、参考文献、必要的 AI 使用说明，以及页数约束内的最终图表布局。 | 摘要说明方法和最重要结论；论文不是实验流水账；符号、图注、引用、图表密度和需求覆盖一致。 |
 | 7. 独立审稿 | critic, lead, 相关专家 rerun | 分别审计题目覆盖、数学有效性、证据、复现、写作、格式、原创性和最终评分风险。 | 无 blocker/high 问题；每个 medium 问题已修复或有明确接受理由；critic 不能是原产出 agent。 |
 | 8. 最终提交 | submission packager, paper editor, critic | 组装最终 PDF、必要的可编辑源文件、代码、数据或来源说明、图表、复现 README、AI 使用报告和 requirement-to-file 清单。 | 提交包符合规则、必要时匿名、无密钥和草稿文件、满足大小和页数限制，且未参与工作的人也能提交。 |
 
@@ -81,6 +81,181 @@ Agent handoff:
 - 只有不会影响评分、正确性、复现或提交合法性的 `low` 问题才可排队。
 - 任一产物缺少来源、计算路径或负责假设时，本 phase 不能通过。
 - lead 必须记录 critic 发现和修复后才能推进。
+
+## 图表充足性 Gate
+
+对 MCM/ICM O 奖、CUMCM 国一和类似论文优先竞赛，图表密度是 gate 项，不是最后美化。只有少数孤立图的论文，即使公式看起来合理，也应在 Phase 6 或 Phase 7 失败。
+
+最终初稿通过前，图表系统至少应覆盖这些角色：
+
+- 模型架构、算法流程或系统结构
+- 数据、参数、假设或符号摘要
+- baseline、模型路线或场景比较
+- 敏感性分析
+- 鲁棒性、不确定性、压力测试或误差分析
+- 面向决策的权衡，例如成本、时间、环境影响、风险、实施路径或政策可行性
+- 最终建议或逐问回答 dashboard
+
+这些是最低覆盖角色，不是死板数量。一个强图可以同时承担多个角色，但填充式、重复式、装饰式或无支撑图表不计数。每张图和每个表都必须有源数据或计算路径，图注要写出结论，正文要解释它如何改变答案。
+
+## 图表生成规范
+
+本规范参考竞赛规则、公开 O 奖产物和绘图库真实行为：
+
+- COMAP 要求解答以一个 PDF 提交，PDF 中包含文字、figures、charts 和支撑材料；所有图像、图、照片、表和绘图，要么由队伍创建，要么在提交文件中就地引用来源。来源：`https://www.contest.comap.com/undergraduate/contests/mcm/instructions.php`。
+- COMAP 强调 summary、组织结构、关键语句和主要结果会影响评委阅读路径。图表系统必须服务这个阅读路径，不能只是装饰。来源：`https://www.contest.comap.com/undergraduate/contests/mcm/instructions.php`。
+- 公开 O 奖仓库通常把论文源码、图表资源、代码和表格放在一起；例如 2024 ICM E 题 Outstanding/INFORMS 仓库包含完整论文、源码和 `paper_source_24/figure` 目录，LaTeX 源码中的图表也嵌入对应论证段落。来源：`https://github.com/ydchen0806/24ICM_E_O_Award_Paper_code`。
+- Matplotlib 的 constrained layout 可以减少刻度、图例、colorbar 等重叠，但官方文档也说明其他 artist 仍可能被裁切或重叠，所以 annotation、自定义文字和复杂图必须单独检查。来源：`https://matplotlib.org/stable/users/explain/axes/constrainedlayout_guide.html`，`https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.annotate.html`。
+- Matplotlib 的 bar label 文档说明标签可能需要调整坐标轴范围；真实 GitHub issue 也展示了 bar label 在常见变换下发生重叠的情况。来源：`https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.bar_label.html`，`https://github.com/matplotlib/matplotlib/issues/22414`。
+- Seaborn 文档提供 style/context/font scale 控制。即使用纯 Matplotlib，也要采用这种显式样式管理思路。来源：`https://seaborn.pydata.org/tutorial/aesthetics.html`。
+
+### 产物契约
+
+每张图和每个表必须包含：
+
+- 稳定文件路径、确定性生成命令、源数据路径
+- 明确证据角色：模型结构、数据、假设、baseline、敏感性、鲁棒性、不确定性、权衡、决策、memo 或附录
+- 论文位置，以及它支撑的精确结论
+- 能写出 takeaway 的 caption，而不只是图表类型
+- 每个定量轴或表格列都有单位
+- 有意义的有效数字，不能伪装精度
+- 如果数值来自代理、假设、模拟或外部来源，必须注明
+
+coder 在 Phase 5 前必须产出图表 inventory。packager 必须把 inventory 写入最终 checklist 或 README。
+
+### 设计规则
+
+默认遵守以下规则，除非竞赛或期刊格式另有要求：
+
+- 折线图、流程图、网络图、地图和密集标签图优先输出矢量格式 `.pdf` 或 `.svg`。仅在管线要求时使用 `.png`；草稿至少 180 dpi，最终至少 300 dpi。
+- 多面板图使用 `layout="constrained"` 或显式 `GridSpec` 间距。含长标签、colorbar、legend、annotation 或 suptitle 的图，不能只依赖 `tight_layout()`。
+- 图宽应匹配论文位置。常规全宽图约 6.5-7.2 英寸；多面板 dashboard 可到 7.2-9.0 英寸，但嵌入 PDF 后文字和 caption 必须可读。
+- 最终 PDF 中的刻度、图例、节点标签、热力图单元格和注释通常不小于 8 pt。
+- 图内 title 只放短描述；claim 放在 caption 和正文。避免 `Figure 2: Figure 2.` 这种重复。
+- 长类别标签应换行、缩写并在表注解释，或改用横向条形图。除非没有更好方案，避免超过 30 度的斜刻度。
+- 使用色盲友好 palette。顺序值用 sequential palette，正负偏差用 diverging palette，类别用 categorical palette，避免 rainbow。
+- 重要区别不能只靠颜色表达；需要加 marker、线型、hatching、直接标签或表格数值。
+- 只给关键点直接标注。如果每个点都要识别，改用表格、小多图或编号 legend。
+- 只有当数量级差异本身是结论时才用 log/symlog，并在 caption 中说明。
+
+### 图型规则
+
+网络图、流程图和架构图：
+
+- 节点文字和边标签必须是不同 artist，并放在不同坐标。
+- 边标签放在边的中点附近，使用白色或浅色背景，不能压在节点文字上。
+- 箭头不得穿过节点标签，除非语义必要且仍清晰。
+- 节点必须足够容纳标签；否则节点编号，旁边给 legend 表。
+
+条形图和柱状图：
+
+- 长场景名使用横向条形图。
+- 只有在不碰撞柱、坐标轴或边界时才添加数值标签。
+- 标签在柱外时，标注后把坐标轴范围扩大 5-10%。
+- 值相差超过一个数量级时，考虑 log/symlog、插图，或“表格 + 图”，不能让小柱消失。
+
+折线图：
+
+- 坐标轴必须有单位和场景含义。
+- 尽量在右端直接标线名；否则把 legend 放在图外或空白区域。
+- 当折线支撑不确定性下的建议时，必须展示置信区间、场景范围或敏感性带。
+
+热力图和矩阵：
+
+- 必须有带单位的 colorbar。
+- 单元格文字颜色根据背景亮度选择，不能固定黑字或白字。
+- 矩阵规模必须能在正文读清；大矩阵放附录表或支撑材料。
+
+散点、Pareto 和权衡图：
+
+- 明确说明每个轴是越小越好还是越大越好。
+- 只标注 baseline、被选方案、dominated 点或 frontier 上需要论证的点。
+- marker 大小和颜色必须有 legend 或说明，不能让气泡大小暗示未解释的值。
+
+表格：
+
+- 精确值用表格，趋势和结构用图。
+- 使用 booktabs 风格或同等清晰边线；除矩阵外避免满格线。
+- 表头尽量短，把解释放入表注。
+- 统一舍入，不展示超过模型和数据支撑的位数。
+- 宽表或换行混乱的表应拆分；旋转表只能作为最后方案。
+
+### 生成代码规则
+
+图表生成代码必须：
+
+- 定义可复用 style 常量：字体、颜色、线宽、marker、DPI
+- 模拟类图表设置随机种子
+- 每张图保存前或同时写出源 CSV/JSON 数据
+- 保存后关闭 figure，避免隐藏状态污染
+- 有结构化数据时不要手写字符串解析
+- 除非明确记录，不要把多个文字对象放在同一坐标
+- 导出能适配 PDF 的白底或透明背景
+- 从干净 package root 可一键重生所有图表
+
+Matplotlib 额外规则：
+
+- 优先 `fig, ax = plt.subplots(..., layout="constrained")` 或 `fig = plt.figure(layout="constrained")`
+- annotation 必须显式设置 `xy`、`xytext`、`textcoords` 和 `bbox`；不能把节点坐标同时当节点标签和边标签
+- `bar_label` 或手动 bar label 后，必须调整 `xlim`/`ylim` 让标签可见
+- 热力图单元格文字颜色要根据数值归一化后选择
+- 长类别名用 `textwrap.fill` 或横向条形图
+- 保存后检查真实导出图，不要只看 notebook 预览
+
+### PDF 嵌入规则
+
+paper editor 必须检查最终渲染 PDF，而不仅是 Markdown/LaTeX 源码：
+
+- 图应出现在引入它的段落附近，除非明确是附录图
+- 图不能被裁切、空白、像素化或不合理拆页
+- 图或表内部无文字重叠
+- 坐标轴、刻度、图例、colorbar、表头和 caption 不被裁切
+- caption 不重复、不与图内 title 冲突
+- 每张图和表都在附近正文中被解释
+- 图表放置后仍满足页数限制
+
+### 自动和视觉验证
+
+Phase 6 或 Phase 8 通过前，必须执行图表 QA：
+
+```bash
+python3 <experiment_script>.py
+find outputs/figures -type f \( -name '*.png' -o -name '*.pdf' -o -name '*.svg' \) | sort
+python3 <make_contact_sheet_or_equivalent>.py
+(cd paper && pandoc solution.md --pdf-engine=tectonic -o solution.pdf)
+pdfinfo paper/solution.pdf
+pdftoppm -png -r 110 paper/solution.pdf /tmp/solution-page
+if pdftotext paper/solution.pdf - | rg -q "Figure [0-9]+: Figure|Table [0-9]+: Table"; then
+  echo "发现重复 caption 前缀" >&2
+  exit 1
+fi
+```
+
+具体命令可随环境调整，但证据必须包含：
+
+- 生成图数量和表数量
+- 全部图的 contact sheet 或单图截图
+- 渲染后 PDF 页数
+- PDF 页面截图或 contact sheet
+- caption 前缀重复检查
+- 最终包 checksum 或干净重建证明
+
+critic 必须目检 contact sheet，并至少检查含密集图表的页面。自动检查不能替代目检，因为 layout engine 可能给出数学上合法但阅读上失败的结果。
+
+### 失败条件
+
+出现以下任一项即阻断 phase：
+
+- 节点标签、边标签、数据标签或 annotation 重叠
+- 最终 PDF 中文字过小无法阅读
+- 图为空白、被裁切、像素化或有过多无效空白
+- 图题、caption 和正文重复但没有解释
+- 坐标轴缺单位或尺度误导
+- 编码数值缺 legend 或 colorbar
+- 图漂移到远离相关段落的位置，形成孤立图堆
+- 表格换行混乱或溢出页面
+- 图只是凑数量，不支撑任何结论
+- 代码不能从提交包数据重生图表
 
 ## 竞赛类型工作流适配器
 
@@ -148,7 +323,7 @@ Subagents：
 启动提示：
 
 ```text
-Use $mathodology-whole-project. Run the Mathodology 9-phase award submission workflow in Codex multi-agents mode. Work phase by phase: dispatch independent agents for analysis, modeling, evidence, coding, critique, and writing where applicable; synthesize their output; run the phase gate; then continue automatically. Pause to ask the user only for contest-critical details that would change requirements, data access, model choice, compute budget, or final submission constraints. For ordinary ambiguity, make a conservative assumption, record it in the phase log, and keep going.
+Use $mathodology-whole-project. Run the Mathodology 9-phase award submission workflow in Codex multi-agents mode. Work phase by phase: dispatch independent agents for analysis, modeling, evidence, coding, critique, and writing where applicable; synthesize their output; require result-density maps, figure/table sufficiency gates, and rendered-PDF figure QA; run the phase gate; then continue automatically. Pause to ask the user only for contest-critical details that would change requirements, data access, model choice, compute budget, or final submission constraints. For ordinary ambiguity, make a conservative assumption, record it in the phase log, and keep going.
 ```
 
 Codex agent 角色：
@@ -225,6 +400,7 @@ Codex 执行规则：
 - 假设有证据支撑
 - 计算可复现
 - 有敏感性或鲁棒性分析
+- 有足够的有效图表，让模型结构、比较、敏感性、鲁棒性、权衡和最终建议可被评委快速检查
 - 逐问覆盖题目
 - 论文叙事成熟
 - 经过独立 critic 审稿
