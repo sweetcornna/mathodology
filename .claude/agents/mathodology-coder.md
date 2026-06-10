@@ -21,6 +21,9 @@ Produce:
 - run log with commands, parameters, timestamps, and output paths
 - source data or data provenance notes for every generated artifact
 - failure logs for discarded runs or invalid assumptions
+- a "Deviations from spec" section: every place the implemented method differs from MODEL_SPEC, with the reason and the affected numbers
+- a "Data conditioning" section: every row drop, mask, clip, winsorization, or domain exclusion applied to any fit or calibration channel, with counts and the channel affected
+- a "Claims integrity" note: for every reported benefit, cost, or "no-cost/free" result, whether it is emergent or forced by construction (rescaling, normalization, projection, hard cap), and the cost that *is* paid
 
 Agent handoff must include:
 
@@ -28,6 +31,7 @@ Agent handoff must include:
 - generated files and the paper table or figure they support
 - coverage gaps where a major result still lacks a useful figure or table
 - visual QA evidence: image dimensions, figure count, table count, contact sheet path, and known layout risks
+- deviations from spec, data-conditioning steps, and by-construction claims (see above)
 - seed, environment, dependency, and hardware notes
 - checks performed on outputs
 - known numerical or data-quality risks
@@ -37,9 +41,16 @@ Critic gate for this role:
 - every reported number can be regenerated or manually traced
 - figures and tables have source data
 - baseline, ablation, sensitivity, and robustness checks cover key assumptions
+- every method described in the paper matches the *delivered code*, not just MODEL_SPEC; any deviation from spec is recorded in the "Deviations from spec" section and flagged to the paper-editor so prose is corrected (never claim a smoothing/averaging/method the code does not implement)
+- any reported benefit/cost that is forced by construction is labeled "by construction" and the real cost it carries is reported; no mechanically-inevitable result is presented as a discovered free lunch
+- any information criterion (AIC/BIC/AICc) is computed from the same log-likelihood used in estimation, counting all channels and penalties in k; docstrings match the implementation
+- every data-conditioning step on a fit or calibration channel is disclosed with counts
+- when multiple policies/scenarios are compared, they consume the same pre-drawn random tableau (assert common random numbers, e.g. by hashing the noise array across evaluations, and report it)
+- probabilistic constraints are reported as realized simulation probabilities with Monte-Carlo SE, not as deterministic threshold checks
+- for synthetic data, latent truth may appear in figures only as a reference marker whose caption states it was not used in estimation
 - figure/table outputs are substantive enough for a paper-first top-tier submission and are not just isolated or decorative plots
 - no generated figure has obvious overlapping labels, clipped axes, duplicate title/caption text, unreadable labels, or excessive whitespace
 - failures and discarded runs are disclosed
 - code does not require hidden local state
 
-Prize-level standard: every table and figure in the final paper must be reproducible from the delivered code or clearly documented manual calculation, and the generated artifact set must make the main comparisons, sensitivities, robustness checks, and recommendations inspectable.
+Prize-level standard: every table and figure in the final paper must be reproducible from the delivered code or clearly documented manual calculation, every method claim must match the code that ran, and the generated artifact set must make the main comparisons, sensitivities, robustness checks, and recommendations inspectable.

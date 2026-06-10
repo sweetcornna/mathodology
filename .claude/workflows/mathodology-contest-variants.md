@@ -9,7 +9,9 @@ Use this workflow in Claude Code when the user names a specific mathematical mod
 3. In Phase 0, classify the contest type and record official rules, deadline, language, file limits, identity policy, code policy, AI-use policy, and final package requirements.
 4. Apply exactly one primary adapter. Add secondary gates only when the official rules require them.
 5. Keep the universal `Agent handoff` and independent `mathodology-critic` gate from `mathodology-award-submission.md`.
-6. If official contest rules conflict with this workflow, official rules win.
+6. Keep the universal award gates from `mathodology-award-submission.md` for any top-tier target, regardless of adapter: the innovation ledger (at least one genuine modeling contribution or an explicit award-ceiling risk), the named-mechanism scope ledger (no silently descoped prompt mechanism), the headline-robustness stress test, recommendation consistency, paper-vs-code conformance, and the Phase 7 award-tier judge-panel scorecard. Adapters below add contest-specific emphasis; they do not relax these.
+7. If the contest type is not listed below, classify it with the Unlisted-Contest Classifier at the end of this file and synthesize the closest adapter rather than defaulting to MCM.
+8. If official contest rules conflict with this workflow, official rules win.
 
 ## Adapter: MCM/ICM O-Prize
 
@@ -22,6 +24,8 @@ Lead emphasis:
 - require enough purposeful figures and tables to make the model, comparisons, sensitivity, robustness, and recommendations inspectable
 - require AI-use disclosure and citation discipline
 - keep source, model, experiment, and paper work synchronized
+- for MCM A/B/C (continuous, discrete, data insights): C rewards a defensible data pipeline, leakage control, and honest uncertainty over model exoticism; A/B reward an original modeling mechanism and clean sensitivity
+- for ICM D/E/F (operations/network, sustainability, policy): judges reward genuine interdisciplinarity, a defensible metric/index construction, stakeholder framing, and decision-usefulness; a purely technical model with no policy translation caps the award
 
 Critic gate:
 
@@ -31,6 +35,7 @@ Critic gate:
 - references, appendix, code, and problem-specific requirements fit the official page policy
 - paper does not overrun the page limit by hiding essentials in appendices
 - figure/table coverage is substantive without becoming filler or crowding out explanation
+- for ICM problems, any constructed index/metric is justified, its sensitivity to weights is shown, and the recommendation is translated for the named stakeholder
 
 ## Adapter: CUMCM National-First-Prize
 
@@ -184,6 +189,92 @@ Critic gate:
 - final paper or report is internally consistent
 - no optional improvement blocks a valid submission
 - final package can be exported and submitted within the remaining time
+
+## Adapter: 研究生数学建模竞赛 / 华为杯 (China Postgraduate Mathematical Contest in Modeling)
+
+Use for the China Postgraduate Mathematical Contest in Modeling ("华为杯", graduate-level) and
+similar graduate contests with longer windows (typically four days), real industry/scientific
+data, and an open-ended brief.
+
+Lead emphasis:
+
+- the problems are harder, more open, and often backed by real, messy data — engage the actual
+  data and its imperfections, do not retreat to a clean toy model
+- depth over breadth: graduate judges reward a deep, correct treatment of the hard core over a
+  broad shallow sweep of every sub-question
+- the innovation ledger matters more here than in undergraduate contests — a graduate 一等奖
+  expects a non-obvious modeling or algorithmic contribution, not a textbook pipeline
+- keep a complete, runnable code + data-provenance appendix; results must survive reproduction
+- manage the multi-day window with a working baseline early, then deepen
+
+Critic gate:
+
+- the hard core of the problem is solved deeply and correctly, not skimmed
+- real data is engaged honestly (missingness, noise, scale) with disclosed conditioning
+- at least one genuine modeling/algorithmic contribution is present and defended
+- results are reproducible from the delivered code and data notes
+- paper, code, and appendix agree on files, methods, figures, and numbers
+- anonymity, format, and submission-system requirements match the official rules
+
+## Adapter: APMCM 亚太地区大学生数学建模竞赛 (Asia-Pacific)
+
+Use for the Asia and Pacific Mathematical Contest in Modeling (English or Chinese track).
+
+Lead emphasis:
+
+- COMAP-style judging expectations on a shorter window: result-first summary, clean figures,
+  defensible model, honest sensitivity
+- confirm the submission language and template from the official rules; keep the paper anonymous
+- a purposeful but not bloated figure/table system; protect readability over volume
+
+Critic gate:
+
+- summary is result-first and standalone
+- model is defensible and specific to the prompt, with at least one non-generic move
+- sensitivity/robustness present; recommendations follow from results
+- language, template, anonymity, and file rules match the official APMCM policy
+
+## Adapter: MathorCup / themed domestic cup (电工杯, 数维杯, 深圳杯, 小美赛, and similar)
+
+Use for MathorCup and other domestic themed or sponsor-run cups with paper-plus-code submission
+and a 一/二/三等奖 structure.
+
+Lead emphasis:
+
+- read the specific cup's rules each time — page policy, support-material policy, anonymity, and
+  template vary by cup and by year
+- match the depth to the window: secure one complete, defensible solution, then add a focused
+  contribution rather than over-engineering
+- keep code runnable and figures readable; many of these cups weight presentation heavily
+- for theme-sponsored cups (energy, finance, transport), translate results into the sponsor's
+  decision language
+
+Critic gate:
+
+- every required question has at least one defensible answer before refinement
+- the paper is internally consistent and the recommendation is unified across summary, body, memo
+- code and data provenance align with the paper's claims
+- format, anonymity, and support-archive rules match that specific cup's official document
+- presentation quality (figures, tables, layout) is competition-grade for a presentation-weighted cup
+
+## Unlisted-Contest Classifier
+
+When the contest is not one of the adapters above, do not default to MCM. In Phase 0, classify
+it along these axes and synthesize the closest adapter, recording the choice in the variant
+handoff:
+
+- deliverable: single self-contained paper PDF, or paper plus support/code archive, or a
+  metric-scored submission file?
+- judging surface: human-judged narrative quality, or an automatic leaderboard metric, or both?
+- window: hours (sprint), days (standard), or a week-plus (graduate/open)?
+- level: secondary school, undergraduate, graduate, or open/professional?
+- language and identity policy, page/size limits, code policy, AI-use policy.
+- domain framing: pure modeling, data-science/ML, operations/policy/business, or interdisciplinary?
+
+Map each axis to the nearest adapter's emphasis (e.g. leaderboard → Data-Science Leaderboard
+adapter; week-plus graduate → 研究生/华为杯 adapter; hours → Short Sprint adapter; policy framing
+→ Operations/Policy/Business adapter) and combine their lead emphases and critic gates. Keep all
+universal award gates. State explicitly which existing adapter(s) you synthesized from and why.
 
 ## Variant Handoff
 

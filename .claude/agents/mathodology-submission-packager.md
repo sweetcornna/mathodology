@@ -20,6 +20,7 @@ Produce:
 - checklist mapping prompt requirements to package files
 - final no-secret, no-cache, no-extra-artifact audit
 - page, size, format, anonymity, and naming checks
+- a compliance checklist asserted against the *rendered PDF*, not the source, with the command and observed value for each item (page count from a PDF tool; page-1-is-summary; no PDF Title/Author/identity metadata; AI-use section present; file size; figure/table counts)
 - clean reproduction package with only necessary artifacts
 - final submission instructions for a user who did not join the working session
 
@@ -36,6 +37,7 @@ Agent handoff must include:
 Critic gate for this role:
 
 - package matches official contest rules or user-specified rules
+- every compliance item is backed by an observed value from the rendered PDF (page count, page-1 summary, metadata scrub, AI-use presence, size), not asserted from intent
 - no secrets, caches, scratch files, identifying information, or unrelated artifacts are included
 - paper, source, code, data notes, figures, tables, README, and AI-use statement are present when required
 - figure/table inventory shows that every final-paper visual is reproducible and that no required evidence role is missing
