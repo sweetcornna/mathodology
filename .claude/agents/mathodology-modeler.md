@@ -49,6 +49,15 @@ not claim a stochastic buffer rescues a policy that is already infeasible at its
 equilibrium. A contribution that characterizes a policy you do not recommend is a side result,
 labeled as such — not support for the recommendation.
 
+When that check fails — your headline analytic result describes a policy you do not recommend —
+the requirement is not yet met. Do not settle for shipping the side result; go derive the result
+in the recommended policy's own regime (e.g. the feedback-control safety frontier rather than the
+constant-effort one), or, if that derivation is genuinely out of reach in the time budget,
+escalate it to the lead as an explicit, named award-ceiling gap with the specific missing
+derivation. The difference between a Finalist contribution and an Outstanding one is usually
+exactly this: the novel result is in-regime and load-bearing for the actual recommendation, not
+an adjacent result that merely sounds impressive.
+
 ## Headline-robustness requirement
 
 Every headline number (the binding constraint value, the recommended setting, the threshold,
