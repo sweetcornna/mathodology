@@ -36,29 +36,37 @@ The lead merges handoffs into the phase log. The critic reviews the phase log pl
 Use these gates to target MCM/ICM Outstanding and CUMCM national-first-prize quality:
 
 - No generic method stacking: every method must solve a specific prompt requirement.
+- No textbook-only modeling: competent application of standard tools tops out at Meritorious / 国二. At least one genuine modeling contribution (a non-obvious mechanism, an analytic result, a non-obvious synthesis, a harder-than-asked extension, or a sharper validation/robustness argument) must be named, justified, and defended; a run that cannot offer one must raise an explicit award-ceiling risk rather than disguise textbook work as a contribution. For synthetic-data problems, "recovers/matches the data-generating family" is forbidden as the headline contribution or selection rationale.
+- No silent descoping: every phenomenon the prompt names explicitly must be modeled or carry a justified, flagged descope decision; quietly folding a named mechanism into a coarser proxy is a scoring risk, not a simplification.
 - No untraceable numbers: every number must map to code, data, derivation, citation, or documented manual calculation.
+- No fragile headline: every headline number — especially a binding constraint met within its Monte-Carlo / numeric error of its threshold — must be stress-tested against the parameters that control it, including the least well-recovered ones.
 - No unsupported assumptions: each major assumption needs evidence, derivation, or sensitivity analysis.
-- No single-route modeling: at least three model routes must be considered before selection.
+- No single-route modeling: at least three model routes must be considered before selection, and model-structure selection must rest on model-agnostic grounds (information criteria on the fitted likelihood, parsimony, out-of-sample skill, interpretability).
+- No definitional free lunch: a benefit or cost that is forced by construction (rescaling, normalization, hard cap) must be labeled "by construction" and its real cost reported, never presented as a discovered result.
+- No paper-vs-code drift: every method described in the paper must match the delivered code, not merely the spec; implementation deviations from the spec are recorded and the prose corrected.
+- No divergent recommendation: the recommended decision and all its numeric settings must be identical across the summary sheet, every in-text recommendation, the memo, and the conclusion.
+- No unverified citation specifics: a citation may print page/volume/edition numbers only when verification is confirmed against the primary publisher record.
 - No unaudited artifact: each phase output must pass an independent critic gate before reuse.
-- No paper-only polish: computation, source tracing, and reproducibility must be strong enough for reviewer spot checks.
-- No hidden compliance risk: page, size, anonymity, AI-use, citation, and final package rules are gate items, not final chores.
+- No paper-only polish: computation, source tracing, and reproducibility must be strong enough for reviewer spot checks; compared policies/scenarios share common random numbers and probabilistic constraints are reported as realized simulation probabilities with Monte-Carlo SE.
+- No hidden compliance risk: page, size, anonymity, AI-use, citation, and final package rules are gate items checked against the rendered PDF, not final chores.
 - No sparse result presentation: paper-first contests need a purposeful figure/table system that covers model structure, key comparisons, sensitivity, robustness or uncertainty, decision tradeoffs, and final recommendations.
-- No filler visuals: extra figures or tables count only when they are reproducible, interpreted, non-duplicative, and tied to a prompt-level conclusion.
-- No chart rendering bugs: overlapping labels, clipped axes, unreadable text, duplicated caption prefixes, orphaned figures, and incoherent table wrapping are gate failures in the rendered PDF, not cosmetic nits.
+- No filler visuals and no wasted pages: extra figures or tables count only when they are reproducible, interpreted, non-duplicative, and tied to a prompt-level conclusion; no full page may reprint a table already shown and no near-empty low-information panel may occupy space a denser figure would use.
+- No chart rendering bugs: overlapping labels, clipped axes, unreadable text, legend or annotation boxes covering bars/points/lines, duplicated caption prefixes, orphaned figures, and incoherent table wrapping are gate failures in the rendered PDF (with the contact sheet built from the compiled PDF, not source images), not cosmetic nits.
+- No unscored top-tier target: a run targeting Outstanding / 国一 must pass an award-tier judge-panel scorecard (Phase 7); "competent but unremarkable" is a failure to reach the target, not a pass.
 
 ## Phase Review Matrix
 
 | Phase | Specialist focus | Critic focus |
 |---|---|---|
-| 0 | Atomic requirement map, deliverables, scoring hypothesis, official constraints, ambiguity register | Every prompt clause has an output; only material blockers are sent to the user |
-| 1 | Source ledger, data dictionary, proxy logic, benchmark methods, citation plan | Claims and model inputs are traceable or explicitly assumed with sensitivity plans |
-| 2 | Three or more model routes, tradeoff table, selected route, rejected alternatives, failure modes | Selection fits scoring, data, time, interpretability, and novelty without method stacking |
-| 3 | Notation, assumptions, units, objectives, constraints, algorithms, validation metrics | Coder can implement without inventing math; assumptions and equations survive adversarial review |
-| 4 | Reproducible code, raw outputs, tables, figures, baseline, ablation, sensitivity, robustness, result-density map, figure contact sheet | Reported values regenerate or trace; figures have source data; no cherry-picking; figure/table coverage is not sparse; no obvious generated chart defects |
+| 0 | Atomic requirement map, named-mechanism scope ledger, deliverables, scoring hypothesis, official constraints, ambiguity register | Every prompt clause has an output; every prompt-named mechanism is modeled or has a flagged descope; only material blockers are sent to the user |
+| 1 | Source ledger, data dictionary, proxy logic, benchmark methods, citation plan, `citations_to_verify` list | Claims and model inputs are traceable or explicitly assumed with sensitivity plans; verification URLs resolve to primary works |
+| 2 | Three or more model routes, tradeoff table, selected route, rejected alternatives, failure modes, innovation ledger | Selection fits scoring, data, time, interpretability, and novelty without method stacking; at least one genuine contribution is named or an award-ceiling risk is raised; selection rationale is model-agnostic |
+| 3 | Notation, assumptions, units, objectives, constraints, algorithms, validation metrics, headline-number provenance | Coder can implement without inventing math; assumptions and equations survive adversarial review; headline numbers have a baseline and a stress-test plan |
+| 4 | Reproducible code, raw outputs, tables, figures, baseline, ablation, sensitivity, robustness, result-density map, figure contact sheet, deviations-from-spec and data-conditioning notes | Reported values regenerate or trace; figures have source data; no cherry-picking; CRN shared across compared runs; constraints reported as realized probabilities with MC-SE; by-construction results labeled; all-parameter recovery reported; figure/table coverage is not sparse; no obvious generated chart defects |
 | 5 | Prompt-by-prompt interpretation, captions, recommendations, limitations, uncertainty, figure/table coverage map | Each conclusion is supported, visual or tabular where useful, and answers a prompt task |
-| 6 | Summary, coherent paper draft, references, appendix, AI-use statement when needed, final figure/table placement, rendered-PDF QA | Summary is result-first; narrative is coherent; citations, notation, figures, tables, and tasks align; rendered figures/tables are readable |
-| 7 | Independent audits and ranked fix list | No unresolved high-severity risk remains |
-| 8 | Final PDF/source/code/data notes/README/checklist package | Package is compliant, anonymous when required, clean of secrets and scratch artifacts |
+| 6 | Summary, coherent paper draft, references, appendix, AI-use statement when needed, final figure/table placement, single canonical recommendation, rendered-PDF QA | Summary is result-first; recommendation is consistent across summary/body/memo/conclusion; marginal claims name baselines; citations have confirmed specifics; narrative is coherent; rendered figures/tables are readable; no wasted pages |
+| 7 | Independent audits, ranked fix list, and an award-tier judge-panel scorecard | No unresolved high-severity risk remains; every judge seat places the work at or above the targeted award tier, or the weakest dimension is returned to the lead for an improvement loop |
+| 8 | Final PDF/source/code/data notes/README/checklist package | Package is compliant (checked against the rendered PDF), anonymous when required, clean of secrets and scratch artifacts |
 
 ## Phase 0: Intake And Scoring
 
@@ -163,19 +171,34 @@ Deliver:
 
 Critic gate: draft tells one coherent solution story, contains no orphan results, and passes summary, notation, figure/table density, caption, citation, rendered-PDF readability, and requirement-coverage checks.
 
-## Phase 7: Independent Review
+## Phase 7: Independent Review And Award-Tier Scoring
 
 Agents: `mathodology-critic`, plus one re-run of the most relevant specialist for any major flaw.
 
 Deliver:
 
-- prompt coverage audit
+- prompt coverage audit, including a check that no prompt-named mechanism was silently descoped
 - math validity audit
+- originality audit: is there a genuine modeling contribution, or only competent textbook application?
+- paper-vs-code conformance audit and quantitative-claim baseline audit
+- headline-robustness audit against the least well-recovered parameters
+- recommendation-consistency and citation-closeout audit
 - reproducibility audit
 - writing and scoring audit
 - fix list ranked by severity
+- an **award-tier judge-panel scorecard**: at least three independent judge seats appropriate to
+  the contest, each scoring named criteria 0–100 with weights, a weighted total, and a calibrated
+  award tier; the single most award-limiting weakness per seat; ranked gaps to the top tier; and a
+  do-not-regress list of what already works at award level
+- skill attribution: for each weakness, the agent/workflow gate that should have caught it
 
-Critic gate: no unresolved blocker or high-severity issue remains; every medium issue has an owner, fix, or explicit risk acceptance.
+Critic gate: no unresolved blocker or high-severity issue remains; every medium issue has an
+owner, fix, or explicit risk acceptance; and for a top-tier target, every judge seat places the
+work at or above the targeted award tier. If any seat scores below the target (e.g. high
+Meritorious for an Outstanding target, or 国二 for a 国一 target), the lead must dispatch a targeted
+improvement loop on the lowest-scoring dimension — most often an originality or scope gap, since
+those set the ceiling — and re-score before Phase 8. Do not treat a correct, reproducible,
+unremarkable submission as done when the target is the flagship tier.
 
 ## Phase 8: Final Package
 

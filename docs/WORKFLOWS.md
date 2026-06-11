@@ -28,12 +28,12 @@ Use these signals to calibrate the workflow. They are not templates to copy; the
 |---|---|---|---|
 | 0. Intake and scoring | Understand the task and judging surface | restatement, deliverables, scoring criteria, ambiguity register | every prompt requirement maps to a planned output |
 | 1. Evidence and data | Ground the problem | source inventory, data plan, benchmark methods, citation notes | every model input has data, proxy logic, or an assumption |
-| 2. Candidate models | Explore routes before committing | three model routes, tradeoff table, selected route | route fits data, time, scoring, and prompt |
-| 3. Math specification | Make the model executable | notation, assumptions, objectives, constraints, algorithms, metrics | coder can implement without inventing math |
-| 4. Experiments | Generate reproducible results | code, raw outputs, tables, figures, sensitivity, robustness, result-density map | reported numbers are reproducible and core results are visually or tabularly supported |
+| 2. Candidate models | Explore routes before committing | three model routes, tradeoff table, selected route, innovation ledger | route fits data, time, scoring, and prompt; at least one genuine contribution or a flagged award-ceiling risk |
+| 3. Math specification | Make the model executable | notation, assumptions, objectives, constraints, algorithms, metrics, headline-number provenance | coder can implement without inventing math; headline numbers have a baseline and stress-test plan |
+| 4. Experiments | Generate reproducible results | code, raw outputs, tables, figures, sensitivity, robustness, result-density map, deviations-from-spec notes | reported numbers are reproducible and core results are visually or tabularly supported; shared random numbers and by-construction labeling honored |
 | 5. Interpretation | Connect results to the prompt | findings, captions, recommendations, limitations, figure/table coverage map | each result answers a prompt question |
-| 6. Paper draft | Produce a coherent paper | abstract, methods, results, figures/tables, references, appendix | no orphan result, sparse result section, or unsupported claim |
-| 7. Independent review | Remove fixable weaknesses | prompt, math, evidence, reproducibility, writing audits | no high-severity issue remains |
+| 6. Paper draft | Produce a coherent paper | abstract, methods, results, figures/tables, references, appendix, single canonical recommendation | no orphan result, sparse result section, unsupported claim, recommendation inconsistency, or paper-vs-code drift |
+| 7. Independent review | Remove fixable weaknesses, confirm award tier | prompt, math, originality, evidence, reproducibility, writing audits, award-tier judge-panel scorecard | no high-severity issue remains and every judge seat meets the targeted award tier |
 | 8. Final package | Assemble submission | paper, source, code, data notes, README, AI-use statement, checklist | package is submit-ready |
 
 ## Detailed Phase-Agent-Critic Matrix
@@ -44,12 +44,12 @@ Every phase has three layers: specialist work, lead synthesis, and independent c
 |---|---|---|---|
 | 0. Intake and scoring | lead, problem analyst, critic | Build an atomic requirement map, deliverable list, official format constraints, scoring hypothesis, dependency graph, ambiguity register, and contest-critical questions. | Every prompt clause has an owner and output path; official constraints are separated from assumptions; only material blockers are sent to the user. |
 | 1. Evidence and data | evidence researcher, problem analyst, critic | Produce a source ledger with URLs or file paths, credibility notes, extraction summaries, data dictionary, proxy logic, citation plan, and evidence gaps. | Every nontrivial constant, dataset, benchmark, or domain claim is traceable or marked as an assumption with a planned sensitivity check. |
-| 2. Candidate model routes | at least two modelers, evidence researcher, critic | Propose at least three routes with inputs, equations or algorithm families, expected outputs, strengths, weaknesses, implementation cost, data fit, and failure modes. | Selected route is justified against scoring, data, time, interpretability, and novelty; rejected routes have concrete rejection reasons; no generic method stacking. |
+| 2. Candidate model routes | at least two modelers, evidence researcher, critic | Propose at least three routes with inputs, equations or algorithm families, expected outputs, strengths, weaknesses, implementation cost, data fit, and failure modes, plus an innovation ledger naming at least one genuine contribution. | Selected route is justified against scoring, data, time, interpretability, and novelty; rejected routes have concrete rejection reasons; no generic method stacking; no textbook-only solution passed off as award-level; for synthetic data, "matches the generating family" is forbidden as a contribution or selection rationale. |
 | 3. Mathematical specification | modeler, coder, critic | Write notation, assumptions, dimensions or units, objectives, constraints, algorithms, pseudocode, validation metrics, baseline, ablation, sensitivity, and robustness plan. | Coder can implement without inventing math; equations are dimensionally coherent; assumptions are testable or evidence-backed; validation can falsify weak claims. |
 | 4. Computation and experiments | coder, modeler, critic | Create reproducible scripts or notebooks, deterministic seeds, environment notes, raw outputs, cleaned tables, figures, baseline, ablations, sensitivity, robustness, run log, and a result-density map covering model structure, primary comparisons, sensitivity, robustness, tradeoffs, and recommendations. | Reported numbers can be regenerated or manually traced; figures have source data; failures are logged; no cherry-picked single run is accepted; sparse or decorative visuals fail the gate. |
 | 5. Interpretation | modeler, evidence researcher, paper editor, critic | Convert numerical and analytical results into prompt-by-prompt answers, figure/table captions, recommendations, limitations, uncertainty notes, claim-source links, and a coverage map showing which visual or table supports each major conclusion. | Each result answers a task; every claim is supported by data, derivation, figure, table, citation, or explicit assumption; limitations do not undermine the main conclusion; major conclusions are not left as text-only assertions. |
 | 6. Paper draft | paper editor, modeler, coder, critic | Draft summary, introduction, assumptions, methods, results, sensitivity, strengths and weaknesses, conclusion, references, appendices, AI-use statement when needed, and final figure/table placement under the page limit. | Summary states method and most important conclusions; paper is coherent and not a transcript; notation, captions, references, figure/table density, and requirement coverage are consistent. |
-| 7. Independent review | critic, lead, relevant specialist reruns | Run separate audits for prompt coverage, mathematical validity, evidence, reproducibility, writing, formatting, originality, and final scoring risk. | No high-severity issue remains; each medium issue is fixed or explicitly accepted with rationale; the critic cannot be the same agent that produced the artifact. |
+| 7. Independent review | critic, lead, relevant specialist reruns | Run separate audits for prompt coverage, mathematical validity, originality, paper-vs-code conformance, headline robustness, recommendation consistency, evidence, reproducibility, writing, formatting, and final scoring risk, plus an award-tier judge-panel scorecard with skill attribution. | No high-severity issue remains; each medium issue is fixed or explicitly accepted with rationale; for a top-tier target, every judge seat meets the targeted award tier or the lead runs a targeted improvement loop on the weakest dimension; the critic cannot be the same agent that produced the artifact. |
 | 8. Final package | submission packager, paper editor, critic | Assemble final PDF, editable source if required, code, data or provenance notes, figures, tables, reproduction README, AI-use report, and requirement-to-file checklist. | Package matches contest rules, is anonymous where required, has no secrets or scratch files, satisfies size/page limits, and can be submitted by someone outside the working session. |
 
 ## Agent Handoff Contract
@@ -270,13 +270,17 @@ The 9-phase model is the default. Before Phase 0 finishes, the lead must classif
 | M3 Challenge | 14-hour sprint with one-PDF submission and possible MATLAB technical computing award | aggressive timeboxing, rapid viable baseline, concise first-page summary, embedded code/figures, validation-presentation readiness | single PDF under size/page guidance; technical computing adds insight rather than clutter; final result survives oral validation questions |
 | Data-science leaderboard | Kaggle-like, DrivenData-like, Tianchi-like, or enterprise metric-based contests | metric alignment, leakage prevention, train/validation split, public-private leaderboard risk, reproducible pipeline, submission-file schema | validation mirrors official metric; no leakage from test/public leaderboard; submission schema matches sample; private-LB overfitting risk is explicitly managed |
 | Operations or policy case contest | Open-ended business, logistics, energy, finance, public-policy, or consulting-style modeling contest | stakeholder framing, decision variables, constraints, scenario analysis, actionable recommendations, cost and feasibility | recommendations are implementable; constraints reflect reality; scenario and sensitivity analysis cover decision risk; assumptions are acceptable to stakeholders |
+| 研究生数模 / 华为杯 | China Postgraduate Mathematical Contest in Modeling and similar multi-day graduate contests with real industry data | depth over breadth on the hard core, honest engagement with messy real data, a non-obvious modeling/algorithmic contribution, runnable code and data provenance | the hard core is solved deeply and correctly; real data is engaged with disclosed conditioning; a genuine contribution is present; paper, code, and appendix agree and reproduce |
+| APMCM 亚太赛 | Asia-Pacific contest, English or Chinese track, shorter COMAP-style window | result-first summary, defensible non-generic model, honest sensitivity, language/template per official rules | summary is standalone; model has a non-generic move; sensitivity present; language, template, anonymity, and file rules match official policy |
+| MathorCup / themed domestic cup | MathorCup, 电工杯, 数维杯, 深圳杯, 小美赛, and similar sponsor or themed cups | per-cup rule reading, baseline-first then a focused contribution, presentation-grade figures, sponsor decision language for themed cups | every required question answered; recommendation unified across summary/body/memo; code and data align with claims; format and support rules match that cup; presentation quality is competition-grade |
 | Short sprint or campus invitational | 6-24 hour local or training contest with lighter format rules | speed, baseline-first solving, selective evidence, simple robust model, clean narrative, fast package audit | at least one complete viable answer exists early; no over-complex method blocks submission; final answer prioritizes correctness and clarity |
+| Unlisted contest | Any contest not matching a row above | classify by deliverable, judging surface, window, level, and domain framing, then synthesize the closest adapter(s); never default to MCM | all universal award gates still apply; the synthesized adapter and its source adapters are recorded in the variant handoff |
 
 ### Adapter Dispatch Rules
 
 - Phase 0 must record `contest_type`, official rules source, deadline, language, file limits, identity rules, code policy, AI-use policy, and final package checklist.
 - The lead should ask the user only if the contest type, official rules, deadline, or submission format cannot be inferred safely.
-- The critic gate for every phase must include the adapter-specific gates above.
+- The critic gate for every phase must include the adapter-specific gates above, plus the universal award gates (innovation ledger, named-mechanism scope ledger, headline robustness, recommendation consistency, paper-vs-code conformance, and the Phase 7 award-tier judge-panel scorecard) for any top-tier target.
 - If the adapter is paper-first, paper editor and critic join earlier, starting in Phase 2 or Phase 3.
 - If the adapter is code/leaderboard-first, coder and critic join earlier, starting in Phase 1, and paper editor may be delayed until interpretation.
 - If the adapter is sprint-based, every phase should produce a minimal viable artifact first, then improve it only when time remains.
@@ -396,12 +400,16 @@ A complete award-level package should include:
 
 Do not treat a solution as prize-level until it has:
 
-- multiple model alternatives and a clear selection rationale
+- multiple model alternatives and a clear selection rationale on model-agnostic grounds
+- at least one genuine modeling contribution beyond competent textbook application — competent-but-unremarkable work tops out at Meritorious / 国二 and will not reach Outstanding / 国一
+- every prompt-named mechanism either modeled or carrying a justified, flagged descope
 - evidence-backed assumptions
-- reproducible computations
-- sensitivity or robustness analysis
-- enough purposeful figures and tables to make model structure, comparisons, sensitivity, robustness, tradeoffs, and final recommendations inspectable
+- reproducible computations with shared random numbers across compared runs
+- sensitivity or robustness analysis, including a stress test of every headline number against the parameters that control it
+- enough purposeful figures and tables to make model structure, comparisons, sensitivity, robustness, tradeoffs, and final recommendations inspectable, with no wasted pages
 - prompt-by-prompt answer coverage
+- a single recommendation stated consistently across summary, body, memo, and conclusion
+- paper method descriptions that match the delivered code
 - polished paper narrative
-- independent critic review
-- complete final package audit
+- independent critic review and an award-tier judge-panel scorecard that meets the targeted tier
+- complete final package audit checked against the rendered PDF

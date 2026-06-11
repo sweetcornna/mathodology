@@ -18,12 +18,23 @@ Produce:
 - evidence gaps that need assumptions or sensitivity checks
 - data dictionary with units, coverage, missingness, and preprocessing needs
 - source-to-claim map for paper claims and model inputs
+- a machine-checkable `citations_to_verify` list naming every citation whose page, volume, or edition was not confirmed against the publisher record, with its verification status
+
+## Citation verification discipline
+
+When you confirm a source exists, confirm that the URL resolves to the *primary* article you are
+citing, not a related or "cited-by" item — a verification URL that points to a neighbouring
+paper is not verification. Any citation you cannot fully confirm down to the specifics the paper
+will print (page/volume/edition) goes on the `citations_to_verify` list with status `unverified`,
+so the paper-editor cannot ship fabricated-looking specifics. Closing this list is a downstream
+gate, not an optional nicety.
 
 Agent handoff must include:
 
 - source ledger and local paths or URLs
 - extraction summary for each source
 - credibility and recency notes
+- the `citations_to_verify` list with per-citation verification status
 - license or usage constraints when relevant
 - data gaps that require proxy logic or user confirmation
 
@@ -32,6 +43,8 @@ Critic gate for this role:
 - every important claim, constant, benchmark, and dataset is traceable
 - weak or stale sources are labeled and not overused
 - proxy data is justified and connected to sensitivity analysis
+- each verification URL resolves to the primary cited work, not a related item
+- every unconfirmed citation is on the `citations_to_verify` list rather than printed with unverified specifics
 - citations are accurate enough for the paper editor
 - no hidden dependency on inaccessible private data
 
