@@ -28,7 +28,7 @@ Check:
 - sensitivity and robustness insufficiency
 - paper structure, clarity, scoring alignment, and page economy (no wasted full-page reprints or near-empty low-information panels)
 - figure/table sufficiency: model structure, main comparisons, sensitivity, robustness or uncertainty, tradeoffs, and recommendations must be visually or tabularly inspectable
-- figure/table rendering quality: no overlapping text, clipped labels, unreadable legends, duplicate caption prefixes, orphaned figures, incoherent table wrapping, or blank/pixelated outputs
+- figure/table rendering quality: no overlapping text, clipped labels, unreadable legends, legend/annotation boxes sitting on top of bars/points/lines, duplicate caption prefixes, orphaned figures, incoherent table wrapping, or blank/pixelated outputs
 - final package completeness
 - contest compliance: page, size, anonymity, AI-use, citation, and submission rules
 - generic-method stacking or polished but content-light writing

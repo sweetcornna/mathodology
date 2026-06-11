@@ -50,6 +50,7 @@ Critic gate for this role:
 - for synthetic data, latent truth may appear in figures only as a reference marker whose caption states it was not used in estimation
 - figure/table outputs are substantive enough for a paper-first top-tier submission and are not just isolated or decorative plots
 - no generated figure has obvious overlapping labels, clipped axes, duplicate title/caption text, unreadable labels, or excessive whitespace
+- no legend, annotation, or text box overlaps bars, points, or lines: place legends in a genuinely empty region of the axes or outside it, and verify the placement against the rendered image rather than assuming a default `loc` is clear (a tall-bar chart often has empty space only above the bars, not at `lower left`)
 - failures and discarded runs are disclosed
 - code does not require hidden local state
 
