@@ -28,7 +28,7 @@ Check:
 - sensitivity and robustness insufficiency
 - paper structure, clarity, scoring alignment, and page economy (no wasted full-page reprints or near-empty low-information panels)
 - figure/table sufficiency: model structure, main comparisons, sensitivity, robustness or uncertainty, tradeoffs, and recommendations must be visually or tabularly inspectable
-- figure/table rendering quality: no overlapping text, clipped labels, unreadable legends, legend/annotation boxes sitting on top of bars/points/lines, duplicate caption prefixes, orphaned figures, incoherent table wrapping, or blank/pixelated outputs
+- figure/table rendering quality: no overlapping text, clipped labels, unreadable legends, legend/annotation boxes sitting on top of bars/points/lines, label text typeset over a *foreign* filled region (e.g. a series-name word printed across another series' bar), annotation boxes clipped at the axes edge, duplicate caption prefixes, orphaned figures, incoherent table wrapping, or blank/pixelated outputs. For a top-tier paper-first target, require **programmatic** evidence: a bbox-collision gate (rendered `get_window_extent` overlap check) that reports zero text/annotation/legend overlaps with data artists and zero clipped artists, wired into the build so a defect fails the run. A purely visual "looks fine" pass over a contact sheet is insufficient — hand-placed annotations in data coordinates routinely collide once a number or font changes, and low-resolution eyeballing misses it.
 - final package completeness
 - contest compliance: page, size, anonymity, AI-use, citation, and submission rules
 - generic-method stacking or polished but content-light writing

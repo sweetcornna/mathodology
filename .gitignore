@@ -3,6 +3,10 @@
 .idea/
 .vscode/
 
+# Contest working outputs and Codex local mirror (scratch, never committed)
+/work/
+/.codex/
+
 # Env and secrets
 .env
 .env.*
