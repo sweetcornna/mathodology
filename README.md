@@ -1,121 +1,129 @@
-# Mathodology Skills
+# Mathodology 数模竞赛 Skills
 
-**English** · [简体中文](./README_zh.md)
+**简体中文** · [English](./README_en.md)
 
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![format](https://img.shields.io/badge/format-Agent%20Skills-black)
 ![tools](https://img.shields.io/badge/tools-Claude%20Code%20%7C%20Codex-blue)
+![contests](https://img.shields.io/badge/contests-MCM%2FICM%20%7C%20CUMCM%20%7C%20%E5%8D%8E%E6%95%B0%E6%9D%AF-orange)
 
-Mathodology is now a skills-only repository for AI coding tools such as Claude Code, Codex, and other Agent Skills-compatible agents.
+Mathodology 是一套**专为数学建模竞赛设计的数模 Agent Skills**，面向 Claude Code、Codex 等兼容 Agent Skills 的 AI 编程工具。它把获奖级数模方法论——问题拆解、模型构建、可复现实验、获奖级论文写作、提交包组装——沉淀为可直接加载的项目 skills、subagents 和 workflow 模板。
 
-This branch intentionally does not ship the former runnable application source. The GitHub repository now contains only project skills, skill metadata, lightweight documentation, a backup helper, and the license.
+覆盖的竞赛类型：
 
-## What This Repository Contains
+- **MCM/ICM（美赛）**：面向 Outstanding/Finalist 级产出
+- **CUMCM（全国大学生数学建模竞赛）**：面向国家一等奖级产出
+- **华数杯**、**M3**、**HiMCM/MidMCM**、**IMMC/IM2C**
+- leaderboard/数据科学型、运筹/政策/商业案例型、短时冲刺型竞赛
 
-- Claude Code project skills in `.claude/skills/<skill-name>/SKILL.md`
-- Claude Code project subagents in `.claude/agents/`
-- Claude Code workflow templates in `.claude/workflows/`
-- Codex-style metadata in each skill's `agents/openai.yaml`
-- A root `AGENTS.md` entrypoint for tools that do not auto-discover project skills
-- Skills and workflow documentation under `docs/`
-- A skills-only backup script under `mathodology-whole-project`
+本仓库是 skills-only 分支：刻意不包含原可运行应用源码，只保留项目级 skills、skill 元数据、轻量文档、备份脚本和许可证。
 
-No application source, CI workflows, deployment files, generated contracts, package lockfiles, datasets, build outputs, or installer assets are kept on this branch.
+## 仓库内容
 
-## One-Command Install And Update
+- `.claude/skills/<skill-name>/SKILL.md` 中的 Claude Code 项目 skills
+- `.claude/agents/` 中的 Claude Code 项目 subagents（建模、编码、论文、评审等分工角色）
+- `.claude/workflows/` 中的 Claude Code 竞赛 workflow 模板
+- 每个 skill 自带 `agents/openai.yaml`，方便 Codex 风格工具展示和调用
+- 根目录 `AGENTS.md`，给不会自动发现 project skills 的工具使用
+- `docs/` 下的 skills 和 workflow 文档
+- `mathodology-whole-project` skill 中的 skills-only 备份脚本
 
-Install all Mathodology skills globally for Codex and Claude Code:
+这个分支不保留应用源码、CI workflow、部署文件、生成的 contracts、包锁文件、数据集、构建产物或安装器资源。
+
+## 一键安装与更新
+
+一条命令把全部 Mathodology skills 全局安装到 Codex 和 Claude Code：
 
 ```bash
 npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
 ```
 
-Update installed Mathodology skills:
+一条命令更新已安装的 Mathodology skills：
 
 ```bash
 npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
-If you use this repository checkout for Claude Code project subagents and workflow templates, run the full one-command updater from the checkout:
+如果你用本仓库 checkout 来使用 Claude Code 项目 subagents 和 workflow 模板，请在 checkout 里运行完整一键更新器：
 
 ```bash
 git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
-This uses the open `skills` CLI from `vercel-labs/skills`, which installs Agent Skills from GitHub into the right agent directories.
+这条命令使用 `vercel-labs/skills` 提供的开放 `skills` CLI，从 GitHub 安装 Agent Skills 到对应 agent 的 skills 目录。
 
-Restart Codex or Claude Code after installation or update so the new skills, subagents, and workflow templates are discovered. Use `npx -y skills@latest --help` for CLI help; avoid `skills add <repo> --help`, because current CLI versions may treat that as an install command.
+安装或更新后重启 Codex 或 Claude Code，让新 skills、subagents 和 workflow 模板被发现。查看 CLI 帮助请用 `npx -y skills@latest --help`；不要使用 `skills add <repo> --help`，当前 CLI 版本可能会把它当成安装命令执行。
 
-See [docs/INSTALL.md](docs/INSTALL.md) for target-specific commands and verification.
+更多目标和验证方式见 [docs/INSTALL_zh.md](docs/INSTALL_zh.md)。
 
-## Codex And Claude Code Modes
+## Codex 与 Claude Code 模式
 
-Mathodology ships separate orchestration guidance for Codex and Claude Code:
+Mathodology 分别提供 Codex 和 Claude Code 的竞赛编排指导：
 
-- Claude Code: use `.claude/workflows/mathodology-award-submission.md` with project subagents in `.claude/agents/`.
-- Claude Code contest variants: use `.claude/workflows/mathodology-contest-variants.md` for M3, HiMCM/MidMCM, IMMC/IM2C, leaderboard/data-science, operations/policy/business-case, and short-sprint contests.
-- Codex: load `mathodology-whole-project` and run the 9-phase workflow in multi-agents mode.
+- Claude Code：使用 `.claude/workflows/mathodology-award-submission.md`，并调用 `.claude/agents/` 中的项目 subagents。
+- Claude Code 竞赛类型适配：M3、HiMCM/MidMCM、IMMC/IM2C、leaderboard/data-science、运筹/政策/商业案例和短时冲刺赛使用 `.claude/workflows/mathodology-contest-variants.md`。
+- Codex：加载 `mathodology-whole-project`，按多 agents 模式执行 9 个 phase。
 
-Both modes target national-first-prize or MCM/ICM O-prize level outputs: model alternatives, evidence-backed assumptions, reproducible experiments, polished paper, and a complete submission package. The workflow adapters tune those gates for paper-first, code-first, sprint, school-age, and policy/business-case contests.
+两种模式都面向国奖或 MCM/ICM O 奖级别产出：多模型备选、有证据支撑的假设、可复现实验、成熟论文、完整提交包。类型适配器会把这些 gate 调整到论文优先、代码优先、冲刺型、中学生型和政策/商业案例型竞赛。
 
-See [docs/WORKFLOWS.md](docs/WORKFLOWS.md) for the full phase model.
+完整 phase 模型见 [docs/WORKFLOWS_zh.md](docs/WORKFLOWS_zh.md)。
 
-## Skill Index
+## Skill 索引
 
-| Skill | Use When |
+| Skill | 适用场景 |
 |---|---|
-| [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | Backing up, transferring, restoring, orienting, or running Codex/Claude Code workflow orchestration |
-| [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | Starting work in this skills-only checkout or verifying repository boundaries |
-| [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | Maintaining archived knowledge about the former agent pipeline |
-| [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | Maintaining archived knowledge about the former gateway and API |
-| [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | Maintaining archived knowledge about the former web UI |
-| [`mathodology-dev-test-release`](.claude/skills/mathodology-dev-test-release/SKILL.md) | Validating the skills repository or preserving archived dev, test, and release guidance |
-| [`mathodology-skill-authoring`](.claude/skills/mathodology-skill-authoring/SKILL.md) | Adding, updating, validating, or reviewing project skills |
+| [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | 整个 skills 仓库的备份、迁移、恢复、整体理解，或 Codex/Claude Code 竞赛工作流编排 |
+| [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | 在 skills-only checkout 中开始工作，或验证仓库边界 |
+| [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | 维护原 agent pipeline 的归档知识 |
+| [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | 维护原 gateway 和 API 的归档知识 |
+| [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | 维护原 Web UI 的归档知识 |
+| [`mathodology-dev-test-release`](.claude/skills/mathodology-dev-test-release/SKILL.md) | 验证 skills 仓库，或保留 dev、test、release 归档指导 |
+| [`mathodology-skill-authoring`](.claude/skills/mathodology-skill-authoring/SKILL.md) | 新增、更新、验证或 review 项目 skills |
 
-## Quick Start
+## 快速开始
 
-Clone the repository:
+克隆仓库：
 
 ```bash
 git clone https://github.com/sweetcornna/mathodology.git
 cd mathodology
 ```
 
-For Claude Code, open this repository and load skills from:
+Claude Code 打开本仓库后，从这里加载 skills：
 
 ```text
 .claude/skills/
 ```
 
-For Codex or other AI coding tools, start from:
+Codex 或其他 AI 编程工具从这里开始：
 
 ```text
 AGENTS.md
 ```
 
-Then load `mathodology-whole-project` for full-project context, or load the most specific skill for the task.
+然后按任务加载 `mathodology-whole-project` 或更具体的 skill。拿到赛题后，直接按 [docs/WORKFLOWS_zh.md](docs/WORKFLOWS_zh.md) 的 phase 工作流开跑。
 
-## Backup and Transfer
+## 备份与迁移
 
-Create a skills-only backup:
+创建 skills-only 备份：
 
 ```bash
 bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
 ```
 
-The backup is written outside the repository by default:
+默认备份到仓库外：
 
 ```text
 ../mathodology_skills_backups/<timestamp>/mathodology-skills-<timestamp>.tar.gz
 ```
 
-The archive uses a skills whitelist, so it includes only the retained skills repository files. It excludes `.git/`, secrets, build outputs, runtime state, and any old application directories that may still exist locally.
+归档使用 skills 白名单，只包含当前保留的 skills 仓库文件。它会排除 `.git/`、secret、构建产物、运行时状态，以及本地可能残留的旧应用目录。
 
-See [docs/BACKUP.md](docs/BACKUP.md) for restore details.
+恢复细节见 [docs/BACKUP.md](docs/BACKUP.md)。
 
-## Validation
+## 验证
 
-Validate all project skills:
+验证所有项目 skills：
 
 ```bash
 for d in .claude/skills/*; do
@@ -123,7 +131,7 @@ for d in .claude/skills/*; do
 done
 ```
 
-Check metadata and directory consistency:
+检查元数据和目录一致性：
 
 ```bash
 python3 - <<'PY'
@@ -142,12 +150,12 @@ print("skills ok")
 PY
 ```
 
-## Repository Policy
+## 仓库策略
 
-Keep this branch focused on skills. Do not add back app source trees, generated clients, CI workflows, Docker files, installers, datasets, or build outputs unless the repository strategy changes explicitly.
+保持这个分支只服务数模竞赛 skills。除非明确改变仓库策略，不要加回应用源码树、生成客户端、CI workflow、Docker 文件、安装器、数据集或构建产物。
 
-Historical application implementation can be recovered from Git history if needed; it is not part of the current GitHub tree.
+如果需要历史应用实现，可以从 Git 历史恢复；它不是当前 GitHub tree 的一部分。
 
-## License
+## 许可证
 
-MIT. See [LICENSE](LICENSE).
+MIT。见 [LICENSE](LICENSE)。

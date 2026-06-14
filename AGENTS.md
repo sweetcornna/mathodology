@@ -1,6 +1,6 @@
 # Mathodology Agent Guide
 
-This repository is skills-only. The current GitHub tree intentionally contains no application source, CI, deployment, generated contracts, datasets, package manifests, lockfiles, or build outputs.
+Mathodology is an Agent Skills pack purpose-built for math modeling contests (MCM/ICM, CUMCM, Huashu Cup, M3, HiMCM/MidMCM, IMMC/IM2C, and similar), targeting award-level submissions end to end. This repository is skills-only. The current GitHub tree intentionally contains no application source, CI, deployment, generated contracts, datasets, package manifests, lockfiles, or build outputs.
 
 Project skills for AI coding tools live in `.claude/skills/`.
 Claude Code project subagents live in `.claude/agents/`.

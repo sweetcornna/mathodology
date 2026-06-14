@@ -18,7 +18,7 @@ Current work should normally edit only:
 - `.claude/skills/mathodology-whole-project/scripts/create-source-backup.sh`
 - `AGENTS.md`
 - `README.md`
-- `README_zh.md`
+- `README_en.md`
 - `docs/SKILLS.md`
 - `docs/SKILLS_zh.md`
 - `docs/INSTALL.md`
@@ -49,7 +49,7 @@ keep_exact = {
     ".gitignore",
     "AGENTS.md",
     "README.md",
-    "README_zh.md",
+    "README_en.md",
     "LICENSE",
     "docs/SKILLS.md",
     "docs/SKILLS_zh.md",
@@ -79,7 +79,7 @@ PY
 Search for stale current-path claims before committing:
 
 ```bash
-rg -n "apps/|crates/|packages/|docs/skills|Dockerfile|docker-compose|just |cargo|pnpm|uv run|\\.github|installer" README.md README_zh.md AGENTS.md docs .claude/skills
+rg -n "apps/|crates/|packages/|docs/skills|Dockerfile|docker-compose|just |cargo|pnpm|uv run|\\.github|installer" README.md README_en.md AGENTS.md docs .claude/skills
 ```
 
 Hits are acceptable only when they describe removed historical material or an absence check. They must not instruct agents to edit or run missing current files.

@@ -73,7 +73,7 @@ import sys
 
 files = [
     Path("README.md"),
-    Path("README_zh.md"),
+    Path("README_en.md"),
     Path("docs/SKILLS.md"),
     Path("docs/SKILLS_zh.md"),
     Path("docs/INSTALL.md"),
@@ -111,7 +111,7 @@ keep_exact = {
     ".gitignore",
     "AGENTS.md",
     "README.md",
-    "README_zh.md",
+    "README_en.md",
     "LICENSE",
     "docs/SKILLS.md",
     "docs/SKILLS_zh.md",

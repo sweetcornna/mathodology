@@ -102,7 +102,7 @@ keep_exact = {
     ".gitignore",
     "AGENTS.md",
     "README.md",
-    "README_zh.md",
+    "README_en.md",
     "LICENSE",
     "docs/SKILLS.md",
     "docs/SKILLS_zh.md",

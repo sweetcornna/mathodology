@@ -34,7 +34,7 @@ The archive is built from a whitelist. It includes only:
 - `docs/**`
 - `AGENTS.md`
 - `README.md`
-- `README_zh.md`
+- `README_en.md`
 - `LICENSE`
 - `.gitignore`
 

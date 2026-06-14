@@ -19,7 +19,7 @@ The retained repository surface is:
 - `.claude/agents/**`: Claude Code project subagents for award-level modeling workflows.
 - `.claude/workflows/**`: Claude Code workflow templates.
 - `AGENTS.md`: tool-neutral entrypoint.
-- `README.md` and `README_zh.md`: public project overview.
+- `README.md` (Chinese-first) and `README_en.md` (English): public project overview.
 - `docs/SKILLS.md`, `docs/SKILLS_zh.md`, `docs/INSTALL.md`, `docs/INSTALL_zh.md`, `docs/WORKFLOWS.md`, `docs/WORKFLOWS_zh.md`, and `docs/BACKUP.md`: skill, install, workflow, and backup documentation.
 - `LICENSE` and `.gitignore`.
 
