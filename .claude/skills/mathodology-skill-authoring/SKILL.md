@@ -86,35 +86,30 @@ The default prompt must mention the matching `$skill-name`.
 
 ## Validation
 
-Run skill frontmatter validation:
+Run the shared validator from the repository root; it covers frontmatter,
+metadata, links, whitelist, agents, and doc sync:
 
 ```bash
-for d in .claude/skills/*; do
-  python3 /Users/cornna/.codex/skills/.system/skill-creator/scripts/quick_validate.py "$d"
-done
+python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-Run metadata consistency:
+Use a single subcommand (`skills`, `metadata`, `links`, `whitelist`, `agents`,
+`sync`, `selftest`) while iterating.
 
-```bash
-python3 - <<'PY'
-from pathlib import Path
-import re
-import yaml
+Rules for validation logic and scripts:
 
-root = Path(".claude/skills")
-for d in sorted(p for p in root.iterdir() if p.is_dir()):
-    text = (d / "SKILL.md").read_text(encoding="utf-8")
-    match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
-    assert match, d
-    frontmatter = yaml.safe_load(match.group(1))
-    assert frontmatter["name"] == d.name, d
-    assert frontmatter["description"].startswith("Use when"), d
-    metadata = yaml.safe_load((d / "agents" / "openai.yaml").read_text(encoding="utf-8"))
-    assert f"${d.name}" in metadata["interface"]["default_prompt"], d
-print("skills metadata ok")
-PY
-```
+- Shared validation logic lives ONLY in
+  `.claude/skills/mathodology-dev-test-release/scripts/validate_repo.py`. Never
+  re-inline these checks as heredocs in a SKILL.md, doc, or agent file; extend
+  the script instead.
+- A skill MAY ship a `scripts/` directory. Every shipped script must be
+  executable, carry a `--self-test` (or `selftest` subcommand) that is run and
+  passes before shipping, and declare its prerequisites with an actionable error
+  when one is missing.
+- Run-time gate contracts (the `handoff` / `gate` / `scorecard` /
+  `decision_memo` schemas, judge thresholds, and QA scripts) belong to
+  `mathodology-award-gates`. Reference that skill; do not invent new inline gate
+  formats in individual skills or agents.
 
 ## Update Checklist
 

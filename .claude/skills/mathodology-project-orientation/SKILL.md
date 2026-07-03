@@ -1,6 +1,6 @@
 ---
 name: mathodology-project-orientation
-description: Use when starting work in the Mathodology skills-only repository, checking retained files, or deciding whether a change belongs on this branch.
+description: Use when maintaining, validating, or checking boundaries of the Mathodology skills repository itself, or deciding whether a change belongs on this branch.
 ---
 
 # Mathodology Project Orientation
@@ -11,9 +11,11 @@ This branch is a skills-only GitHub tree. Treat it as an AI-coding knowledge pac
 
 Current work should normally edit only:
 
-- `.claude/skills/<skill-name>/SKILL.md`
-- `.claude/skills/<skill-name>/agents/openai.yaml`
-- `.claude/agents/<agent-name>.md`
+- any file under `.claude/skills/<skill-name>/` — its `SKILL.md`,
+  `agents/openai.yaml`, and a `scripts/` directory when the skill ships one
+  (e.g. `.claude/skills/mathodology-award-gates/**` and
+  `.claude/skills/mathodology-dev-test-release/scripts/validate_repo.py`)
+- `.claude/agents/<agent-name>.md` (including `.claude/agents/mathodology-award-judge.md`)
 - `.claude/workflows/<workflow-name>.md`
 - `.claude/skills/mathodology-whole-project/scripts/create-source-backup.sh`
 - `AGENTS.md`
@@ -38,56 +40,34 @@ If a task requires historical implementation detail, use Git history or another 
 
 ## Boundary Check
 
-Before publishing cleanup or skill maintenance, verify tracked files:
+Before publishing cleanup or skill maintenance, verify tracked files stay inside
+the skills-repository whitelist:
 
 ```bash
-python3 - <<'PY'
-import subprocess
-import sys
-
-keep_exact = {
-    ".gitignore",
-    "AGENTS.md",
-    "README.md",
-    "README_en.md",
-    "LICENSE",
-    "docs/SKILLS.md",
-    "docs/SKILLS_zh.md",
-    "docs/INSTALL.md",
-    "docs/INSTALL_zh.md",
-    "docs/WORKFLOWS.md",
-    "docs/WORKFLOWS_zh.md",
-    "docs/BACKUP.md",
-}
-files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-bad = [
-    f for f in files
-    if f not in keep_exact
-    and not f.startswith(".claude/skills/")
-    and not f.startswith(".claude/agents/")
-    and not f.startswith(".claude/workflows/")
-]
-if bad:
-    print("\n".join(bad))
-    sys.exit(1)
-print(f"tracked whitelist ok: {len(files)} files")
-PY
+python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py whitelist
 ```
+
+Run `validate_repo.py all` for the full set of maintenance gates (skills,
+metadata, links, whitelist, agents, sync). The whitelist logic lives only in
+that script; do not re-inline it here.
 
 ## Text Check
 
-Search for stale current-path claims before committing:
+Search for stale current-path claims before committing (requires ripgrep; the
+`grep -E` fallback is shown second):
 
 ```bash
-rg -n "apps/|crates/|packages/|docs/skills|Dockerfile|docker-compose|just |cargo|pnpm|uv run|\\.github|installer" README.md README_en.md AGENTS.md docs .claude/skills
+rg -n "apps/|crates/|packages/|docs/skills|Dockerfile|docker-compose|just |cargo|pnpm|uv run|\.github|installer" README.md README_en.md AGENTS.md docs .claude/skills
+grep -REn "apps/|crates/|packages/|docs/skills|Dockerfile|docker-compose|just |cargo|pnpm|uv run|\.github|installer" README.md README_en.md AGENTS.md docs .claude/skills
 ```
 
-Hits are acceptable only when they describe removed historical material or an absence check. They must not instruct agents to edit or run missing current files.
+Hits are acceptable only when they describe removed historical material or an absence check. They must not instruct agents to edit or run missing current files. The current skills, scripts, and award-gate content do not match this pattern, so any hit is a stale claim to review.
 
 ## Choosing Skills
 
 - Whole repository backup, transfer, or orchestration: use `mathodology-whole-project`.
 - Skill text or metadata changes: use `mathodology-skill-authoring`.
 - Award-level Codex or Claude Code phase workflow: use `docs/WORKFLOWS.md`.
+- Award-run gate schemas (handoff/gate/scorecard/decision_memo), judge-panel protocol, and figure/PDF QA scripts: use `mathodology-award-gates`.
 - Former subsystem knowledge: use the matching archived subsystem skill.
 - Validation and publishing checks: use `mathodology-dev-test-release`.

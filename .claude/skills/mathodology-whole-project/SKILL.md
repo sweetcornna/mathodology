@@ -1,15 +1,21 @@
 ---
 name: mathodology-whole-project
-description: Use when backing up, transferring, restoring, archiving, or fully orienting on the Mathodology skills-only repository.
+description: Use when running, backing up, transferring, restoring, archiving, or globally installing the Mathodology skills-only repository and its award workflows.
 ---
 
 # Mathodology Whole Project
 
 ## Purpose
 
-This is the top-level project skill for the current Mathodology GitHub tree.
+This is the top-level orchestration skill for the current Mathodology GitHub
+tree: running the award workflow, backing up, transferring, restoring, and
+installing the skills globally.
 
-The repository is intentionally skills-only. It preserves Mathodology as an AI-coding knowledge pack, not as a runnable app checkout.
+The repository is intentionally skills-only. It preserves Mathodology as an
+AI-coding knowledge pack, not as a runnable app checkout.
+
+For repository maintenance, boundary and whitelist checks, and deciding whether
+a change belongs on this branch, load `mathodology-project-orientation`.
 
 ## Current Shape
 
@@ -20,20 +26,23 @@ The retained repository surface is:
 - `.claude/workflows/**`: Claude Code workflow templates.
 - `AGENTS.md`: tool-neutral entrypoint.
 - `README.md` (Chinese-first) and `README_en.md` (English): public project overview.
-- `docs/SKILLS.md`, `docs/SKILLS_zh.md`, `docs/INSTALL.md`, `docs/INSTALL_zh.md`, `docs/WORKFLOWS.md`, `docs/WORKFLOWS_zh.md`, and `docs/BACKUP.md`: skill, install, workflow, and backup documentation.
+- `docs/SKILLS*.md`, `docs/INSTALL*.md`, `docs/WORKFLOWS*.md`, and `docs/BACKUP.md`: skill, install, workflow, and backup documentation.
 - `LICENSE` and `.gitignore`.
 
-Do not expect app source, CI workflows, deployment config, generated contracts, datasets, package manifests, lockfiles, or installers in this branch.
+Do not expect app source, CI workflows, deployment config, generated contracts,
+datasets, package manifests, lockfiles, or installers in this branch. For the
+full retained-file and deletion policy, load `mathodology-project-orientation`.
 
 ## Skill Set
 
 Load these skills as needed:
 
 - `mathodology-project-orientation`: current layout, retained files, deletion policy, and repository boundary checks.
-- `mathodology-agent-pipeline`: archived knowledge about the former Python agent pipeline.
+- `mathodology-award-gates`: award-run gate schemas (handoff/gate/scorecard/decision_memo), the severity ladder, judge-panel thresholds, iteration budgets, run layout, the blind seat protocol, and the figure/PDF QA scripts.
+- `mathodology-agent-pipeline`: archived knowledge about the former Python agent pipeline and the reusable phase workflow pattern.
 - `mathodology-gateway-api`: archived knowledge about the former Rust gateway and API.
 - `mathodology-web-ui`: archived knowledge about the former Vue web UI.
-- `mathodology-dev-test-release`: skills validation and archived dev, test, deploy, packaging, and release guidance.
+- `mathodology-dev-test-release`: skills validation (`validate_repo.py`) and archived dev, test, deploy, packaging, and release guidance.
 - `mathodology-skill-authoring`: adding or updating project skills and metadata.
 
 ## Runtime Modes
@@ -87,52 +96,21 @@ Continuation state:
 - Suggested prompt: Continue from the current continuation state and run the next Mathodology phase gate.
 ```
 
-## Award-Level Phase Model
+## Award Workflow And Contest Adapters
 
-Use the shared phase model in `docs/WORKFLOWS.md`:
+Use the shared phase model, adapters, and gate guarantees from their canonical
+homes instead of restating them here:
 
-- Phase 0: Intake and scoring.
-- Phase 1: Evidence and data.
-- Phase 2: Candidate model routes.
-- Phase 3: Mathematical specification.
-- Phase 4: Computation and experiments.
-- Phase 5: Interpretation.
-- Phase 6: Paper draft.
-- Phase 7: Independent review.
-- Phase 8: Final package.
+- Phase model (Phases 0-8) and the contest-type adapter table: `docs/WORKFLOWS.md`.
+- Claude Code default workflow, phase-agent-critic matrix, and prize-level gate guarantees: `.claude/workflows/mathodology-award-submission.md`.
+- Claude Code contest variants (M3, HiMCM/MidMCM, IMMC/IM2C, leaderboard, operations/policy, short-sprint, graduate/华为杯, APMCM, MathorCup, and similar): `.claude/workflows/mathodology-contest-variants.md`.
+- Runtime gate schemas, judge-panel protocol, iteration budgets, and figure/PDF QA scripts: `mathodology-award-gates`.
 
-The bar is national-first-prize or MCM/ICM O-prize level: multiple model routes, evidence-backed assumptions, reproducible computation, sensitivity and robustness checks, polished paper, independent critic review, and complete submission package.
-
-## Contest-Type Adapters
-
-Use the adapter table in `docs/WORKFLOWS.md` for non-default contest types:
-
-- MCM/ICM O-prize.
-- CUMCM national-first-prize.
-- HiMCM/MidMCM.
-- IMMC/IM2C.
-- M3 Challenge.
-- Data-science leaderboard contests.
-- Operations, policy, or business-case contests.
-- Short sprint or campus invitational contests.
-
-For Claude Code, `.claude/workflows/mathodology-contest-variants.md` contains the repeatable adapter workflow. For Codex, Phase 0 must record the selected `contest_type`, official rules source, deadline, language, page/file limits, identity rules, code policy, AI-use policy, and adapter-specific critic gates.
-
-## Prize-Level Workflow Guarantees
-
-Codex and Claude Code runs must preserve these guarantees:
-
-- Every phase has specialist production, lead synthesis, and independent critic review.
-- Every specialist response ends with an `Agent handoff` block listing artifacts, decisions, assumptions, evidence, commands, weaknesses, questions, and requested critic focus.
-- Every critic gate assigns `blocker`, `high`, `medium`, or `low` severity.
-- No `blocker` or `high` issue may remain before advancing.
-- Every reported number maps to code, data, derivation, citation, or documented manual calculation.
-- Every major assumption maps to evidence, derivation, or sensitivity analysis.
-- At least three model routes are considered before the final route is selected.
-- Paper-first contest drafts must include enough purposeful figures and tables to inspect model structure, primary comparisons, sensitivity, robustness or uncertainty, decision tradeoffs, and final recommendations; sparse, filler, overlapping, clipped, unreadable, or orphaned visuals fail the critic gate.
-- The final paper is checked against prompt coverage, math validity, evidence, reproducibility, writing, formatting, originality, and submission compliance.
-
-Use `docs/WORKFLOWS.md` as the source of truth for the detailed phase-agent-critic matrix.
+The bar is national-first-prize or MCM/ICM Outstanding: multiple model routes,
+evidence-backed assumptions, reproducible computation, sensitivity and robustness
+checks, a polished paper, independent critic review, and a complete submission
+package. Treat `.claude/workflows/mathodology-award-submission.md` as the source
+of truth for the detailed matrix and gate guarantees.
 
 ## User Install And Update
 
@@ -145,13 +123,13 @@ npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '
 Update installed Mathodology skills with:
 
 ```bash
-npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 If the user relies on a cloned checkout for Claude Code project subagents and workflow templates, use the full one-command updater from the checkout:
 
 ```bash
-git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 Use `npx -y skills@latest --help` for CLI help. Do not use `skills add <repo> --help` as a help command because current CLI versions may install into the current project.
@@ -191,15 +169,3 @@ cd <restore-dir>
 ```
 
 Then read `AGENTS.md` and load `mathodology-project-orientation` before making edits.
-
-## Deletion Policy
-
-Do not reintroduce non-skills files on this branch:
-
-- app source directories
-- generated clients or contracts
-- CI workflows
-- Docker, service, deployment, or installer files
-- datasets, run artifacts, package lockfiles, or build outputs
-
-If historical application code is needed, inspect Git history in a separate branch or worktree instead of adding it back to `main`.

@@ -28,6 +28,8 @@ The worker also carried knowledge about HMML-style method retrieval, MATLAB or O
 
 This skill now also carries the reusable workflow pattern that replaced the removed worker source.
 
+The gate schemas (`handoff` / `gate` / `scorecard` / `decision_memo`), the judge-panel protocol, and the figure/PDF QA scripts live in `mathodology-award-gates`; reference that skill rather than restating those contracts here.
+
 For Claude Code:
 
 - Use `.claude/workflows/mathodology-award-submission.md`.
