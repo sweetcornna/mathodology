@@ -18,7 +18,7 @@ Produce:
 - evidence gaps that need assumptions or sensitivity checks
 - data dictionary with units, coverage, missingness, and preprocessing needs
 - source-to-claim map for paper claims and model inputs
-- a machine-checkable `citations_to_verify` list naming every citation whose page, volume, or edition was not confirmed against the publisher record, with its verification status
+- a machine-checkable `citations_to_verify` list — a structured list of `{id, claim, source, url, verified: bool}` entries, one per citation whose page, volume, or edition was not confirmed against the publisher record
 
 ## Citation verification discipline
 
@@ -29,12 +29,12 @@ will print (page/volume/edition) goes on the `citations_to_verify` list with sta
 so the paper-editor cannot ship fabricated-looking specifics. Closing this list is a downstream
 gate, not an optional nicety.
 
-Agent handoff must include:
+End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff`). Beyond the standard keys it carries the extra key `citations_to_verify: [{id, claim, source, url, verified: bool}]`. The block must convey:
 
 - source ledger and local paths or URLs
 - extraction summary for each source
 - credibility and recency notes
-- the `citations_to_verify` list with per-citation verification status
+- the structured `citations_to_verify` list with per-citation `verified` status
 - license or usage constraints when relevant
 - data gaps that require proxy logic or user confirmation
 

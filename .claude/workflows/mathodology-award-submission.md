@@ -2,34 +2,86 @@
 
 Use this workflow in Claude Code for national-first-prize or MCM/ICM O-prize level mathematical modeling submissions.
 
+This file is canonical for Claude Code execution; `docs/WORKFLOWS.md` mirrors the shared phase model for humans and must not diverge from it.
+
 ## Operating Mode
 
 1. Start with `mathodology-lead`.
-2. Load `mathodology-whole-project` and `mathodology-agent-pipeline`.
-3. Run each phase in order.
-4. Within each phase, dispatch the named specialist subagents in parallel when their tasks do not depend on each other.
-5. End every phase with a lead synthesis and critic gate.
-6. Do not proceed past a gate with unresolved critical risks.
+2. Load `mathodology-whole-project`, `mathodology-agent-pipeline`, and `mathodology-award-gates` (the canonical home of the handoff/gate/scorecard schemas, judge thresholds, retry budgets, run layout, seat briefs, and QA scripts).
+3. Run `mathodology-lead` as the MAIN Claude Code thread, never through the Agent tool. Subagents cannot spawn subagents, so a dispatched lead cannot dispatch the specialists this workflow requires. The lead orchestrates and scores; it does not self-author the work it must gate.
+4. Run each phase in order.
+5. Within each phase, dispatch the named specialist subagents in parallel when their tasks do not depend on each other, subject to the Dispatch rules below.
+6. End every phase with a lead synthesis and critic gate.
+7. Do not proceed past a gate with unresolved critical risks.
+
+### Dispatch rules
+
+Parallelism is a deliberate per-phase decision, not a default. Over-spawning on phases whose artifacts share state is a known failure mode.
+
+- Phase 1 MAY split evidence work into two parallel `mathodology-evidence-researcher` invocations — one for source verification, one for data hunting — when the two do not depend on each other.
+- Phase 2 dispatches TWO parallel `mathodology-modeler` invocations with disjoint route-family briefs before route selection, so the candidate routes are genuinely independent rather than variations on one idea.
+- Phases 3-6 stay deliberately SERIAL. Their artifacts share state (spec → code → prose), each depends on the previous, and running them in parallel corrupts that chain. This is a decision, not an omission.
+- Phase 7 dispatches THREE parallel `mathodology-award-judge` seats in a single message, with no shared context: each seat receives only its seat brief, the rendered PDF, and the artifact manifest, so the three scorecards are independent.
 
 ## Universal Artifact Contract
 
-Every specialist subagent must end with:
+Every specialist subagent must end with a structured `handoff:` block. Free-text handoffs are rejected.
 
-```text
-Agent handoff:
-- Phase:
-- Agent:
-- Files or artifacts produced:
-- Decisions made:
-- Assumptions introduced:
-- Evidence used:
-- Commands or computations run:
-- Known weaknesses:
-- Questions for lead or user:
-- Critic focus requested:
+```yaml
+handoff:
+  phase: 4
+  agent: mathodology-coder
+  loop: 0                      # 0 = first attempt; increments per gate retry
+  status: complete             # complete | partial | blocked
+  artifacts:
+    - {path: work/<run-id>/outputs/figures/sens.pdf, role: sensitivity}
+  decisions: []
+  assumptions: []              # each: {id: A7, text: ..., evidence: ...|assumed, sensitivity_plan: ...}
+  evidence: []
+  commands: []                 # exact rerun commands
+  weaknesses: []
+  questions: []                # empty unless contest-critical
+  critic_focus: []
 ```
 
-The lead merges handoffs into the phase log. The critic reviews the phase log plus source artifacts and assigns `blocker`, `high`, `medium`, or `low` severity. Any `blocker` or `high` issue stops the workflow. `medium` issues need an owner, fix plan, or explicit risk acceptance.
+The lead lints every block with `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py handoff` and rejects any handoff that fails the schema or arrives as free text; every `artifacts[].path` must resolve under `work/<run-id>/`. The lead merges valid handoffs into the phase log. The critic reviews the phase log plus source artifacts and assigns `blocker`, `high`, `medium`, or `low` severity. Any `blocker` or `high` issue stops the workflow. `medium` issues need an owner, fix plan, or explicit risk acceptance.
+
+## Canonical Run Layout
+
+Every run writes under a single gitignored `work/<run-id>/` tree; every handoff artifact path resolves inside it:
+
+```text
+work/<run-id>/
+  phase-logs/
+  gates/                       # gates/phase-<n>-loop-<k>.yaml
+  scorecards/                  # scorecards/phase7-seat-<A|B|C>-round-<r>.yaml
+  evidence/
+  outputs/
+    figures/
+    tables/
+    data/
+  paper/
+  package/
+```
+
+## Gate Iteration Budget
+
+Fix loops are bounded so a run cannot churn indefinitely:
+
+- Each per-phase critic gate allows at most 2 fix loops (3 evaluations total).
+- Phase 7 allows at most 2 re-score rounds.
+- The whole run is capped at 8 fix loops across all phases.
+- Stop early whenever a loop shows no improvement over the previous one.
+- On exhaustion of any budget, the lead does NOT silently continue: it emits a `decision_memo:` block and stops for a human decision.
+
+```yaml
+decision_memo:
+  phase: 7
+  budget_spent: {loops: 2, cap: 2}
+  unresolved: []               # remaining issues with severity
+  options:                     # 2-3 options, each {option, consequence, recommended: bool}
+    - {option: ..., consequence: ..., recommended: true}
+```
 
 ## Award-Level Gate Rules
 
@@ -51,7 +103,7 @@ Use these gates to target MCM/ICM Outstanding and CUMCM national-first-prize qua
 - No hidden compliance risk: page, size, anonymity, AI-use, citation, and final package rules are gate items checked against the rendered PDF, not final chores.
 - No sparse result presentation: paper-first contests need a purposeful figure/table system that covers model structure, key comparisons, sensitivity, robustness or uncertainty, decision tradeoffs, and final recommendations.
 - No filler visuals and no wasted pages: extra figures or tables count only when they are reproducible, interpreted, non-duplicative, and tied to a prompt-level conclusion; no full page may reprint a table already shown and no near-empty low-information panel may occupy space a denser figure would use.
-- No chart rendering bugs: overlapping labels, clipped axes, unreadable text, legend or annotation boxes covering bars/points/lines, label text typeset over a foreign filled region, annotation boxes clipped at the axes edge, duplicated caption prefixes, orphaned figures, and incoherent table wrapping are gate failures in the rendered PDF (with the contact sheet built from the compiled PDF, not source images), not cosmetic nits. For a top-tier paper-first target this gate is enforced **programmatically**: a bbox-collision check (rendered `get_window_extent` overlap of text/annotation/legend artists against data artists, plus a clipped-artist check) is wired into the build so any collision fails the run — hand-placed annotations in data coordinates and low-resolution visual review are not a reliable gate on their own.
+- No chart rendering bugs: overlapping labels, clipped axes, unreadable text, legend or annotation boxes covering bars/points/lines, label text typeset over a foreign filled region, annotation boxes clipped at the axes edge, duplicated caption prefixes, orphaned figures, and incoherent table wrapping are gate failures in the rendered PDF (with the contact sheet built from the compiled PDF, not source images), not cosmetic nits. For a top-tier paper-first target this gate is enforced **programmatically** by the committed scripts: `python3 .claude/skills/mathodology-award-gates/scripts/figqa.py` runs the bbox-collision check (rendered `get_window_extent` overlap of text/annotation/legend artists against data artists, plus a clipped-artist check; also importable as `figqa.assert_no_overlap(fig)`) and `bash .claude/skills/mathodology-award-gates/scripts/pdf_qa.sh` checks the compiled PDF. Their passing output is the required evidence — any collision fails the run, and hand-placed annotations in data coordinates plus low-resolution visual review are not a reliable gate on their own.
 - No unscored top-tier target: a run targeting Outstanding / 国一 must pass an award-tier judge-panel scorecard (Phase 7); "competent but unremarkable" is a failure to reach the target, not a pass.
 
 ## Phase Review Matrix
@@ -64,8 +116,8 @@ Use these gates to target MCM/ICM Outstanding and CUMCM national-first-prize qua
 | 3 | Notation, assumptions, units, objectives, constraints, algorithms, validation metrics, headline-number provenance | Coder can implement without inventing math; assumptions and equations survive adversarial review; headline numbers have a baseline and a stress-test plan |
 | 4 | Reproducible code, raw outputs, tables, figures, baseline, ablation, sensitivity, robustness, result-density map, figure contact sheet, deviations-from-spec and data-conditioning notes | Reported values regenerate or trace; figures have source data; no cherry-picking; CRN shared across compared runs; constraints reported as realized probabilities with MC-SE; by-construction results labeled; all-parameter recovery reported; figure/table coverage is not sparse; no obvious generated chart defects |
 | 5 | Prompt-by-prompt interpretation, captions, recommendations, limitations, uncertainty, figure/table coverage map | Each conclusion is supported, visual or tabular where useful, and answers a prompt task |
-| 6 | Summary, coherent paper draft, references, appendix, AI-use statement when needed, final figure/table placement, single canonical recommendation, rendered-PDF QA | Summary is result-first; recommendation is consistent across summary/body/memo/conclusion; marginal claims name baselines; citations have confirmed specifics; narrative is coherent; rendered figures/tables are readable; no wasted pages |
-| 7 | Independent audits, ranked fix list, and an award-tier judge-panel scorecard | No unresolved high-severity risk remains; every judge seat places the work at or above the targeted award tier, or the weakest dimension is returned to the lead for an improvement loop |
+| 6 | Summary, coherent paper draft, references, appendix, AI-use statement when needed, final figure/table placement, single canonical recommendation, innovation-ledger (INN-n) and scope-ledger (MECH-n) closeout, rendered-PDF QA | Summary is result-first; recommendation is consistent across summary/body/memo/conclusion; marginal claims name baselines; citations have confirmed specifics; every INN-n and MECH-n ledger entry is load-bearing in the draft or explicitly descoped in limitations; narrative is coherent; rendered figures/tables are readable; no wasted pages |
+| 7 | Critic-run independent audits and ranked fix list; lead-dispatched three-seat `mathodology-award-judge` panel, each returning one `scorecard:` block | No unresolved high-severity risk remains; lead validates each scorecard with lint_run.py and aggregates per the judge thresholds; panel passes only when every seat's implied tier meets the target, min total clears the threshold, and no criterion falls below its floor; re-score capped at 2 rounds, then a decision_memo |
 | 8 | Final PDF/source/code/data notes/README/checklist package | Package is compliant (checked against the rendered PDF), anonymous when required, clean of secrets and scratch artifacts |
 
 ## Phase 0: Intake And Scoring
@@ -84,7 +136,7 @@ Critic gate: every prompt requirement maps to a planned output, official constra
 
 ## Phase 1: Evidence And Data
 
-Agents: `mathodology-evidence-researcher`, `mathodology-problem-analyst`.
+Agents: `mathodology-evidence-researcher`, `mathodology-problem-analyst`, `mathodology-critic`.
 
 Deliver:
 
@@ -127,7 +179,7 @@ Critic gate: coder can implement from the specification without inventing missin
 
 ## Phase 4: Computation And Experiments
 
-Agents: `mathodology-coder`, `mathodology-modeler`.
+Agents: `mathodology-coder`, `mathodology-modeler`, `mathodology-critic`.
 
 Deliver:
 
@@ -143,7 +195,7 @@ Critic gate: reported numerical results are reproducible and logged; each figure
 
 ## Phase 5: Interpretation
 
-Agents: `mathodology-modeler`, `mathodology-evidence-researcher`, `mathodology-paper-editor`.
+Agents: `mathodology-modeler`, `mathodology-evidence-researcher`, `mathodology-paper-editor`, `mathodology-critic`.
 
 Deliver:
 
@@ -157,7 +209,7 @@ Critic gate: every result answers a prompt question and is supported by a figure
 
 ## Phase 6: Paper Draft
 
-Agents: `mathodology-paper-editor`, `mathodology-modeler`, `mathodology-coder`.
+Agents: `mathodology-paper-editor`, `mathodology-modeler`, `mathodology-coder`, `mathodology-critic`.
 
 Deliver:
 
@@ -167,15 +219,18 @@ Deliver:
 - figures and tables
 - references
 - appendix material
+- innovation-ledger (INN-n) and scope-ledger (MECH-n) closeout: each ledger entry is either load-bearing in the draft or explicitly descoped in the limitations section, mirroring the citation closeout
 - rendered-PDF QA evidence for figure/table placement and caption correctness
 
-Critic gate: draft tells one coherent solution story, contains no orphan results, and passes summary, notation, figure/table density, caption, citation, rendered-PDF readability, and requirement-coverage checks.
+Critic gate: draft tells one coherent solution story, contains no orphan results, and passes summary, notation, figure/table density, caption, citation, rendered-PDF readability, and requirement-coverage checks; every innovation-ledger (INN-n) and scope-ledger (MECH-n) entry is traced to a load-bearing use in the draft or an explicit descope in limitations, with no ledger entry left dangling.
 
 ## Phase 7: Independent Review And Award-Tier Scoring
 
-Agents: `mathodology-critic`, plus one re-run of the most relevant specialist for any major flaw.
+Agents: `mathodology-critic` (audits), three blind `mathodology-award-judge` seats (scoring, dispatched by the lead), plus one re-run of the most relevant specialist for any major flaw.
 
-Deliver:
+The audits stay with `mathodology-critic`. The award-tier scorecard is NOT written by the critic or the lead: the lead dispatches three parallel, blind `mathodology-award-judge` seats in a single message, each with no shared context and receiving only its seat brief, the rendered PDF, and the artifact manifest.
+
+Critic delivers:
 
 - prompt coverage audit, including a check that no prompt-named mechanism was silently descoped
 - math validity audit
@@ -186,19 +241,34 @@ Deliver:
 - reproducibility audit
 - writing and scoring audit
 - fix list ranked by severity
-- an **award-tier judge-panel scorecard**: at least three independent judge seats appropriate to
-  the contest, each scoring named criteria 0–100 with weights, a weighted total, and a calibrated
-  award tier; the single most award-limiting weakness per seat; ranked gaps to the top tier; and a
-  do-not-regress list of what already works at award level
 - skill attribution: for each weakness, the agent/workflow gate that should have caught it
 
-Critic gate: no unresolved blocker or high-severity issue remains; every medium issue has an
-owner, fix, or explicit risk acceptance; and for a top-tier target, every judge seat places the
-work at or above the targeted award tier. If any seat scores below the target (e.g. high
-Meritorious for an Outstanding target, or 国二 for a 国一 target), the lead must dispatch a targeted
-improvement loop on the lowest-scoring dimension — most often an originality or scope gap, since
-those set the ceiling — and re-score before Phase 8. Do not treat a correct, reproducible,
-unremarkable submission as done when the target is the flagship tier.
+Judge panel: the lead dispatches three seats, each returning exactly one `scorecard:` block:
+
+- Seat A — contest flagship-tier general judge.
+- Seat B — flagship-tier judge weighting innovation and decision-usefulness.
+- Seat C — skeptical applied-math referee scoring only correctness and reproducibility.
+
+```yaml
+scorecard:
+  contest: MCM
+  target_tier: outstanding
+  seat: A                      # A | B | C
+  round: 1
+  criteria:                    # one row per criterion; weights sum to 1.0
+    - {name: modeling, weight: 0.4, score: 82}
+    - {name: results, weight: 0.35, score: 80}
+    - {name: writing, weight: 0.25, score: 88}
+  weighted_total: 82.8
+  implied_tier: meritorious
+  fix_one_thing: "..."
+  ranked_gaps: []
+  do_not_regress: []
+```
+
+Aggregation (lead-run): the lead validates each seat's block with `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py scorecard`, then aggregates. The panel passes only when (a) every seat's `implied_tier` meets or exceeds the target tier, (b) the minimum `weighted_total` across seats clears the threshold, (c) no single criterion falls below its floor, and (d) no unresolved evidence conflict remains — two seats disagreeing by more than 20 on one criterion is a conflict the lead must adjudicate, never average away. Thresholds: Outstanding / 国一 → total ≥ 85, floor 70; Finalist / 国一边缘 → 80 / 65; Meritorious / 国二 → 75 / 60. `lint_run.py aggregate` enforces all four conditions.
+
+Critic gate: no unresolved blocker or high-severity issue remains and every medium issue has an owner, fix, or explicit risk acceptance; and the judge panel passes per the aggregation rule above. If the panel fails — any seat below the target tier, min total under threshold, a below-floor criterion, or an unresolved >20 single-criterion conflict — the lead dispatches a targeted improvement loop on the lowest-scoring dimension (most often an originality or scope gap, since those set the ceiling) and re-scores. Re-score is capped at 2 rounds; on exhaustion the lead emits a `decision_memo:` block and stops rather than shipping. Do not treat a correct, reproducible, unremarkable submission as done when the target is the flagship tier.
 
 ## Phase 8: Final Package
 

@@ -8,10 +8,14 @@ Use this workflow in Claude Code when the user names a specific mathematical mod
 2. Load `mathodology-whole-project` and `mathodology-agent-pipeline`.
 3. In Phase 0, classify the contest type and record official rules, deadline, language, file limits, identity policy, code policy, AI-use policy, and final package requirements.
 4. Apply exactly one primary adapter. Add secondary gates only when the official rules require them.
-5. Keep the universal `Agent handoff` and independent `mathodology-critic` gate from `mathodology-award-submission.md`.
-6. Keep the universal award gates from `mathodology-award-submission.md` for any top-tier target, regardless of adapter: the innovation ledger (at least one genuine modeling contribution or an explicit award-ceiling risk), the named-mechanism scope ledger (no silently descoped prompt mechanism), the headline-robustness stress test, recommendation consistency, paper-vs-code conformance, and the Phase 7 award-tier judge-panel scorecard. Adapters below add contest-specific emphasis; they do not relax these.
+5. Keep the universal structured `handoff:` contract and independent `mathodology-critic` gate from `mathodology-award-submission.md`.
+6. Keep the universal award gates from `mathodology-award-submission.md` for any top-tier target, regardless of adapter: the innovation ledger (at least one genuine modeling contribution or an explicit award-ceiling risk), the named-mechanism scope ledger (no silently descoped prompt mechanism), the Phase 6 ledger closeout (every INN-n and MECH-n entry either load-bearing in the draft or explicitly descoped in limitations), the headline-robustness stress test, recommendation consistency, paper-vs-code conformance, the Phase 7 three-seat award-tier judge-panel scorecard, and the gate iteration budgets (max 2 fix loops per critic gate, max 2 Phase 7 re-score rounds, whole-run cap of 8 fix loops, then a decision_memo). Adapters below add contest-specific emphasis; they do not relax these.
 7. If the contest type is not listed below, classify it with the Unlisted-Contest Classifier at the end of this file and synthesize the closest adapter rather than defaulting to MCM.
 8. If official contest rules conflict with this workflow, official rules win.
+
+## Tier Thresholds
+
+Each adapter's tier names map to the numeric thresholds defined in the `mathodology-award-gates` skill, not restated here. An adapter names only which tier label is its contest's flagship tier and which is its second tier (for example: MCM/ICM Outstanding and Meritorious; CUMCM 国一 and 国二; MathorCup 一等奖 and 二等奖). It must not restate or alter the pass totals or per-criterion floors — the lead reads those numbers from the skill when aggregating the Phase 7 judge panel.
 
 ## Adapter: MCM/ICM O-Prize
 
@@ -278,18 +282,22 @@ universal award gates. State explicitly which existing adapter(s) you synthesize
 
 ## Variant Handoff
 
-After Phase 0, the lead should append this to the phase log:
+After Phase 0, the lead appends a structured `variant:` block to the phase log (no free text):
 
-```text
-Contest variant:
-- Contest type:
-- Official rules source:
-- Deadline and timezone:
-- Language:
-- Page, file, and size limits:
-- Identity/anonymity rules:
-- Code and support-material policy:
-- AI-use policy:
-- Adapter-specific gates:
-- User confirmations needed:
+```yaml
+variant:
+  contest: <official contest type>
+  target_tier: <flagship tier label for this contest, e.g. Outstanding / 国一 / 一等奖>
+  adapter: <primary adapter applied, e.g. MCM/ICM O-Prize>
+  emphasis: []                 # adapter lead-emphasis points shaping this run
+  gates_added: []              # secondary gates the official rules require on top of the universal gates
+  thresholds_ref: mathodology-award-gates   # numeric tier thresholds live in the skill; do not restate them here
+  official_rules_source: <url or citation>
+  deadline: <date + timezone>
+  language: <submission language>
+  limits: {pages: ..., files: ..., size: ...}
+  identity_policy: <anonymity rules>
+  code_policy: <code and support-material policy>
+  ai_use_policy: <AI-use disclosure policy>
+  user_confirmations: []       # empty unless a rule needs user sign-off
 ```

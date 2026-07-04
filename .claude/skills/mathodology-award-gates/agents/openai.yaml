@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mathodology Award Gates"
+  short_description: "Award-run gate schemas and QA scripts"
+  default_prompt: "Use $mathodology-award-gates for the Mathodology award-run runtime contracts: the handoff/gate/scorecard/decision_memo blocks, the severity ladder, the judge-panel aggregation rule and thresholds, iteration budgets, run layout, the blind three-seat protocol, and the shipped figure/PDF/lint QA scripts (figqa.py, pdf_qa.sh, make_contact_sheet.py, lint_run.py). Execute the shipped scripts; do not reimplement them."

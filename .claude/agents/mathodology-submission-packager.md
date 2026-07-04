@@ -20,18 +20,18 @@ Produce:
 - checklist mapping prompt requirements to package files
 - final no-secret, no-cache, no-extra-artifact audit
 - page, size, format, anonymity, and naming checks
-- a compliance checklist asserted against the *rendered PDF*, not the source, with the command and observed value for each item (page count from a PDF tool; page-1-is-summary; no PDF Title/Author/identity metadata; AI-use section present; file size; figure/table counts)
+- a compliance checklist asserted against the *rendered PDF*, not the source, run with `bash .claude/skills/mathodology-award-gates/scripts/pdf_qa.sh` against the final PDF (attach its report), with the command and observed value for each item (page count from a PDF tool; page-1-is-summary; no PDF Title/Author/identity metadata; AI-use section present; file size; figure/table counts)
 - clean reproduction package with only necessary artifacts
 - final submission instructions for a user who did not join the working session
 
-Agent handoff must include:
+End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff`). The block must convey:
 
 - final package tree
 - requirement-to-file checklist
 - final figure/table inventory with source file, source data, and paper location
 - reproducibility README path
 - compliance checks run and results
-- rendered-PDF QA evidence: page count, figure/page contact sheet or screenshots, caption-duplication check, and figure/table count
+- rendered-PDF QA evidence: the `pdf_qa.sh` report — page count, figure/page contact sheet or screenshots, caption-duplication check, and figure/table count
 - omitted files and reason for omission
 
 Critic gate for this role:

@@ -7,6 +7,8 @@ Mathodology 支持两种编排模式：
 
 两种模式都以国奖或 MCM/ICM O 奖级别为目标：题目覆盖完整、数学模型可辩护、计算可复现、论文表达成熟、提交包完整。
 
+`.claude/workflows/mathodology-award-submission.md` 是 Claude Code 执行的权威来源；本文是给人阅读的共享 phase 模型和 Codex 接口，不得与之偏离。下文引用的运行时 gate schema、判审团协议、迭代预算和图表/PDF QA 脚本由 `mathodology-award-gates` skill 拥有。
+
 ## 外部质量信号
 
 用这些信号校准工作流。它们不是固定模板，而是要转成 gate 的规则和评审预期。
@@ -32,8 +34,8 @@ Mathodology 支持两种编排模式：
 | 3. 数学规格 | 让模型可执行 | 符号、假设、目标、约束、算法、指标、头条数字来源 | coder 不需要临时发明数学；头条数字有基线和压力测试计划 |
 | 4. 实验计算 | 生成可复现结果 | 代码、原始输出、表格、图、敏感性、鲁棒性、结果密度映射、偏离规格记录 | 论文中的数字可复现，核心结果有图表支撑；对比共用随机数、by-construction 结果如实标注 |
 | 5. 解释结果 | 把结果接回题目 | 结论、图表说明、建议、局限、图表覆盖映射 | 每个结果回答题目问题 |
-| 6. 论文初稿 | 形成完整论文 | 摘要、方法、结果、图表、参考文献、附录、单一权威推荐 | 没有孤立结果、稀疏结果区、无支撑论断、推荐不一致或论文与代码不符 |
-| 7. 独立审稿 | 删除可修缺陷、确认获奖档位 | 题目、数学、创新性、论文与代码一致、头条鲁棒性、复现、写作审计、获奖档位判审团评分表 | 无高严重度未解决问题，且每个判审席位达到目标获奖档位 |
+| 6. 论文初稿 | 形成完整论文 | 摘要、方法、结果、图表、参考文献、附录、单一权威推荐、创新清单（INN-n）和 scope ledger（MECH-n）收口 | 没有孤立结果、稀疏结果区、无支撑论断、推荐不一致或论文与代码不符；每个 INN-n 和 MECH-n 条目要么在正文承重要么被显式 descope |
+| 7. 独立审稿 | 删除可修缺陷、确认获奖档位 | critic 审计外加三个并行盲评 `mathodology-award-judge` 评分表 | 无高严重度未解决问题；lead 聚合三席，只有每席位隐含档位达标、最低总分过线、无单项低于下限、且无未解决的单项 >20 分歧时判审团才通过 |
 | 8. 最终提交 | 组装提交包 | 论文、源码、代码、数据说明、README、AI 使用说明、清单 | 用户可直接提交 |
 
 ## 细化 Phase-Agent-Critic 矩阵
@@ -48,26 +50,29 @@ Mathodology 支持两种编排模式：
 | 3. 数学规格 | modeler, coder, critic | 写清符号、假设、量纲或单位、目标函数、约束、算法、伪代码、验证指标、baseline、ablation、敏感性和鲁棒性计划。 | coder 不需要临时发明数学；方程量纲一致；假设可测试或有证据；验证设计能暴露弱结论。 |
 | 4. 实验计算 | coder, modeler, critic | 产出可复现脚本或 notebook、随机种子、环境说明、原始输出、整理表格、图、baseline、ablation、敏感性、鲁棒性、运行日志，以及覆盖模型结构、核心比较、敏感性、鲁棒性、权衡和建议的结果密度映射。 | 论文数字可重新生成或手工追踪；图有源数据；失败也被记录；不接受挑一次最好结果；图表稀疏或装饰性图表不能通过。 |
 | 5. 解释结果 | modeler, evidence researcher, paper editor, critic | 把结果转成逐问回答、图表标题、建议、局限、不确定性说明、claim-source 链接，以及说明每个主要结论由哪张图或表支撑的覆盖映射。 | 每个结果都回答题目任务；每个论断都有数据、推导、图表、引用或明确假设支撑；局限不推翻主结论；重要结论不能只停留在文字断言。 |
-| 6. 论文初稿 | paper editor, modeler, coder, critic | 完成摘要、引言、假设、方法、结果、敏感性、优缺点、结论、参考文献、必要的 AI 使用说明，以及页数约束内的最终图表布局。 | 摘要说明方法和最重要结论；论文不是实验流水账；符号、图注、引用、图表密度和需求覆盖一致。 |
-| 7. 独立审稿 | critic, lead, 相关专家 rerun | 分别审计题目覆盖、数学有效性、原创性、论文与代码一致性、头条鲁棒性、推荐一致性、证据、复现、写作、格式和最终评分风险，并出具带 skill 归因的获奖档位判审团评分表。 | 无 blocker/high 问题；每个 medium 问题已修复或有明确接受理由；冲击顶档时每个判审席位达标，否则 lead 对最弱维度跑一轮定向改进；critic 不能是原产出 agent。 |
+| 6. 论文初稿 | paper editor, modeler, coder, critic | 完成摘要、引言、假设、方法、结果、敏感性、优缺点、结论、参考文献、必要的 AI 使用说明、页数约束内的最终图表布局，以及对照引用收口的创新清单（INN-n）和 scope ledger（MECH-n）收口。 | 摘要说明方法和最重要结论；论文不是实验流水账；符号、图注、引用、图表密度和需求覆盖一致；每个创新清单（INN-n）和 scope ledger（MECH-n）条目要么在正文承重要么在局限里被显式 descope。 |
+| 7. 独立审稿 | critic, 三个盲评 `mathodology-award-judge` 席位, lead, 相关专家 rerun | critic 分别审计题目覆盖、数学有效性、原创性、论文与代码一致性、头条鲁棒性、推荐一致性、证据、复现、写作、格式和最终评分风险，并带 skill 归因；lead 在无共享上下文下并行分派三个盲评 `mathodology-award-judge` 席位（A 旗舰通用、B 创新与决策有用性、C 只评正确性与可复现性），各出一份评分表。 | 无 blocker/high 问题；每个 medium 问题已修复或有明确接受理由；lead lint 每份评分表并按阈值聚合（Outstanding/国一 总分 ≥ 85、下限 70；Finalist/国一边缘 80/65；Meritorious/国二 75/60），只有每席位隐含档位达标、最低总分过线、无单项低于下限、且无未解决的单项 >20 分歧时判审团才通过；re-score 封顶 2 轮，然后出 decision_memo；critic 和判审都不能是原产出 agent。 |
 | 8. 最终提交 | submission packager, paper editor, critic | 组装最终 PDF、必要的可编辑源文件、代码、数据或来源说明、图表、复现 README、AI 使用报告和 requirement-to-file 清单。 | 提交包符合规则、必要时匿名、无密钥和草稿文件、满足大小和页数限制，且未参与工作的人也能提交。 |
 
 ## Agent Handoff 契约
 
-每个专家回复末尾都要带 handoff block，便于 lead 和 critic 不重读完整历史也能审查：
+每个专家回复末尾都要带结构化 `handoff:` yaml block，便于 lead 和 critic 不重读完整历史也能审查。自由文本 handoff 会被拒绝。lead 用 `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py handoff` lint 每个 block，任何不符合 schema 或以自由文本提交的 handoff 都会被拒；每个 `artifacts[].path` 必须落在 `work/<run-id>/` 下。这个 schema 的权威定义在 `mathodology-award-gates` skill。
 
-```text
-Agent handoff:
-- Phase:
-- Agent:
-- Files or artifacts produced:
-- Decisions made:
-- Assumptions introduced:
-- Evidence used:
-- Commands or computations run:
-- Known weaknesses:
-- Questions for lead or user:
-- Critic focus requested:
+```yaml
+handoff:
+  phase: 4
+  agent: mathodology-coder
+  loop: 0                      # 0 = first attempt; increments per gate retry
+  status: complete             # complete | partial | blocked
+  artifacts:
+    - {path: work/<run-id>/outputs/figures/sens.pdf, role: sensitivity}
+  decisions: []
+  assumptions: []              # each: {id: A7, text: ..., evidence: ...|assumed, sensitivity_plan: ...}
+  evidence: []
+  commands: []                 # exact rerun commands
+  weaknesses: []
+  questions: []                # empty unless contest-critical
+  critic_focus: []
 ```
 
 ## Critic Gate 协议
@@ -81,6 +86,36 @@ Agent handoff:
 - 只有不会影响评分、正确性、复现或提交合法性的 `low` 问题才可排队。
 - 任一产物缺少来源、计算路径或负责假设时，本 phase 不能通过。
 - lead 必须记录 critic 发现和修复后才能推进。
+
+critic 在每次 review 末尾给出结构化 `gate:` yaml block（用 `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py gate` lint）：
+
+```yaml
+gate:
+  phase: 4
+  loop: 0
+  verdict: pass                # pass | fail
+  issues:
+    - {severity: high, summary: ..., artifact: ..., required_fix: ..., owner: mathodology-coder}
+  evidence_checked: []
+  missing_evidence: []
+```
+
+修复循环有硬性预算，避免无限打磨：
+
+- 每个 per-phase critic gate 最多 2 轮修复（共 3 次评估）。
+- Phase 7 最多 2 轮 re-score。
+- 整轮运行封顶 8 轮修复。
+- 一旦某轮相比上一轮没有改进就提前停止。
+- 任一预算耗尽时，lead 不会静默继续：它输出 `decision_memo:` yaml block 并停下等人工决策。
+
+```yaml
+decision_memo:
+  phase: 7
+  budget_spent: {loops: 2, cap: 2}
+  unresolved: []               # remaining issues with severity
+  options:                     # 2-3 options, each {option, consequence, recommended: bool}
+    - {option: ..., consequence: ..., recommended: true}
+```
 
 ## 图表充足性 Gate
 
@@ -216,31 +251,23 @@ paper editor 必须检查最终渲染 PDF，而不仅是 Markdown/LaTeX 源码�
 
 ### 自动和视觉验证
 
-Phase 6 或 Phase 8 通过前，必须执行图表 QA：
+Phase 6 或 Phase 8 通过前，运行 `mathodology-award-gates` skill 中已交付的图表/PDF QA gate。执行已交付的脚本 —— 不要内联重写它们的逻辑。`figqa.py` 主要是可导入 gate：把 `assert_no_overlap(fig)` 接入图表工厂，任何文字/annotation/legend 与数据 artist 重叠，或任何被裁切的 artist，都会让本次运行失败。`make_contact_sheet.py` 从编译后的 PDF 生成 contact sheet，`pdf_qa.sh` 检查渲染 PDF 的页数、重复 caption 前缀、匿名元数据和空白页。
 
 ```bash
-python3 <experiment_script>.py
-find outputs/figures -type f \( -name '*.png' -o -name '*.pdf' -o -name '*.svg' \) | sort
-python3 <make_contact_sheet_or_equivalent>.py
-(cd paper && pandoc solution.md --pdf-engine=tectonic -o solution.pdf)
-pdfinfo paper/solution.pdf
-pdftoppm -png -r 110 paper/solution.pdf /tmp/solution-page
-if pdftotext paper/solution.pdf - | rg -q "Figure [0-9]+: Figure|Table [0-9]+: Table"; then
-  echo "发现重复 caption 前缀" >&2
-  exit 1
-fi
+python3 .claude/skills/mathodology-award-gates/scripts/figqa.py --self-test
+python3 .claude/skills/mathodology-award-gates/scripts/make_contact_sheet.py work/<run-id>/paper/solution.pdf -o work/<run-id>/outputs/figures/contact_sheet.png
+bash    .claude/skills/mathodology-award-gates/scripts/pdf_qa.sh work/<run-id>/paper/solution.pdf --max-pages 25 --anonymous
 ```
 
-具体命令可随环境调整，但证据必须包含：
+这些脚本的通过输出就是必需证据；本次运行收集的产物必须包含：
 
 - 生成图数量和表数量
-- 全部图的 contact sheet 或单图截图
-- 渲染后 PDF 页数
-- PDF 页面截图或 contact sheet
-- caption 前缀重复检查
+- 从编译后 PDF 生成的 contact sheet，而不是源图
+- 渲染后 PDF 页数和一份干净的 `pdf_qa.sh` 报告
+- 每张生成图的 `figqa.py` 零碰撞退出
 - 最终包 checksum 或干净重建证明
 
-critic 必须目检 contact sheet，并至少检查含密集图表的页面。自动检查不能替代目检，因为 layout engine 可能给出数学上合法但阅读上失败的结果。
+critic 仍必须目检 contact sheet，并至少检查含密集图表的页面。程序化 gate 不能替代目检，因为 layout engine 可能给出数学上合法但阅读上失败的结果。
 
 ### 失败条件
 
@@ -297,7 +324,7 @@ critic 必须目检 contact sheet，并至少检查含密集图表的页面。�
 .claude/workflows/mathodology-award-submission.md
 ```
 
-Subagents：
+Subagents（9 个）：
 
 - `mathodology-lead`：phase 控制、综合、风险登记
 - `mathodology-problem-analyst`：题目拆解和评分映射
@@ -306,23 +333,27 @@ Subagents：
 - `mathodology-coder`：可复现计算、图、表
 - `mathodology-critic`：对抗审稿和 phase gate
 - `mathodology-paper-editor`：论文叙事与润色
+- `mathodology-award-judge`：Phase 7 的一个独立盲评席位（lead 并行分派三个）
 - `mathodology-submission-packager`：最终提交包和复现 README
+
+`mathodology-lead`、`mathodology-problem-analyst`、`mathodology-modeler`、`mathodology-coder`、`mathodology-critic`、`mathodology-paper-editor` 和 `mathodology-award-judge` 在 frontmatter 里固定为 `model: opus`；`mathodology-evidence-researcher` 和 `mathodology-submission-packager` 继承会话模型。`CLAUDE_CODE_SUBAGENT_MODEL` 环境变量或按次调用的 model 参数会覆盖 frontmatter 固定（env/按次调用 > frontmatter）。lead 始终作为 Claude Code 主线程运行，绝不作为被分派的 subagent，因为被分派的 subagent 无法再生成本 workflow 所需的专家 subagent。
 
 执行方式：
 
-1. `mathodology-lead` 加载 `mathodology-whole-project`。
+1. `mathodology-lead` 加载 `mathodology-whole-project`、`mathodology-agent-pipeline` 和 `mathodology-award-gates`。
 2. Lead 启动 Phase 0 并分派专家。
-3. 专家独立产出本阶段材料。
+3. 专家独立产出本阶段材料，每个都以 `handoff:` block 收尾。
 4. Lead 合并为统一决策记录。
-5. `mathodology-critic` 审计本阶段。
-6. Lead 修复或重新分派，直到 gate 通过。
-7. 重复到 Phase 8。
+5. `mathodology-critic` 审计本阶段并返回 `gate:` block。
+6. Lead 在迭代预算内修复或重新分派，直到 gate 通过。
+7. Phase 7 时 lead 分派三个盲评 `mathodology-award-judge` 席位并聚合评分表。
+8. 重复到 Phase 8。
 
 如果用户只通过 `skills` CLI 全局安装 skills，Claude Code 可能不会获得 `.claude/agents` 和 `.claude/workflows` 文件。这时加载 `mathodology-whole-project`，并按本文的 phase 模型执行。
 
 ## Codex 多 Agents 模式
 
-适用于把 skills 全局安装到 Codex 后使用。
+适用于把 skills 全局安装到 Codex 后使用。Codex 运行会加载 `mathodology-whole-project` 和 `mathodology-award-gates` —— 后者拥有 handoff/gate/scorecard/decision_memo schema、判审团阈值、迭代预算和图表/PDF QA 脚本。
 
 启动提示：
 
@@ -339,7 +370,10 @@ Codex agent 角色：
 - 实验计算 agent
 - Critic agent
 - 论文写作 agent
+- 三个独立的 Phase 7 判审 agent（盲评团）
 - 提交打包 agent
+
+在 Codex 里，Phase 7 盲评判审团被模拟成三个互不共享上下文的独立 agent 调用。每个只拿到自己的 seat brief —— A 席旗舰通用评委、B 席侧重创新与决策有用性、C 席只评正确性与可复现性的怀疑型裁判 —— 外加渲染后 PDF 和 artifact manifest，各自返回恰好一份 `scorecard:` block。lead 校验每份 block，然后按 `mathodology-award-gates` 阈值聚合三席（Outstanding/国一 总分 ≥ 85、下限 70；Finalist/国一边缘 80/65；Meritorious/国二 75/60），单项分歧超过 20 时绝不取平均抹平。
 
 ### Codex 确认与连续执行
 
@@ -378,6 +412,7 @@ Codex 执行规则：
 - 每个 agent 都要有窄 brief、预期文件和 phase gate。
 - Phase 2 至少让两个 agent 独立提出模型路线。
 - 每个 gate 都由独立 critic agent 审查。
+- Phase 7 分派三个独立盲评判审 agent，并按 award-gates 阈值聚合评分表；任一预算耗尽（每 gate 最多 2 轮修复、Phase 7 最多 2 轮 re-score、整轮封顶 8 轮）时输出 decision_memo 并停下交用户。
 - 保留 phase log：决策、假设、被拒路线、证据、命令、输出路径。
 - 最终回复前，按 Phase 8 检查提交包完整性。
 
@@ -412,4 +447,7 @@ Codex 执行规则：
 - 论文中的方法描述与交付代码一致
 - 论文叙事成熟
 - 经过独立 critic 审稿，并有达到目标档位的获奖判审团评分表
+- 结构化的 yaml handoff/gate/scorecard/decision_memo 产物，由随 skill 交付的 `lint_run.py` 校验
+- 有界的 gate 迭代预算（每个 critic gate 最多 2 轮修复、Phase 7 最多 2 轮 re-score、整轮封顶 8 轮），预算耗尽时向用户输出 decision_memo 升级
+- 已交付的图表/PDF QA 硬门（`figqa.py`、`pdf_qa.sh`），其通过输出是必需证据
 - 最终提交包完整，且合规项已对渲染后的 PDF 核对

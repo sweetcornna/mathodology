@@ -31,110 +31,34 @@ Claude Code should run `mathodology-submission-packager` and then `mathodology-c
 
 ## Active Validation
 
-Validate all project skills:
+Shared repository validation lives in ONE place: `scripts/validate_repo.py`
+(pure standard library, no PyYAML). Do not re-inline these checks as heredocs in
+docs or other skills; add or change a gate in the script.
+
+Run every maintenance gate from the repository root:
 
 ```bash
-for d in .claude/skills/*; do
-  python3 /Users/cornna/.codex/skills/.system/skill-creator/scripts/quick_validate.py "$d"
-done
+python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-Validate metadata:
+Run one gate by naming it: `skills`, `metadata`, `links`, `whitelist`, `agents`,
+`sync`, or `selftest`. The script prints per-check `PASS`/`FAIL` lines and exits
+non-zero on any failure.
 
-```bash
-python3 - <<'PY'
-from pathlib import Path
-import re
-import yaml
+- `skills` / `metadata`: every `.claude/skills/*/SKILL.md` frontmatter (name ==
+  dir, lowercase-hyphen, `Use when` description) and every `agents/openai.yaml`
+  default prompt mentioning `$<dirname>`.
+- `links`: relative markdown links, inline `.claude/...` paths, and
+  `mathodology-<x>` name references in tracked docs resolve.
+- `whitelist`: only skills-repository files are tracked.
+- `agents`: every `.claude/agents/*.md` frontmatter (name == stem, description,
+  tools, and any `model` in opus/sonnet/haiku/inherit).
+- `sync`: each en/zh doc twin agrees on heading and code-block counts, and code
+  blocks are byte-identical after dropping CJK lines.
+- `selftest`: proves each checker can both pass and fail on tempdir fixtures.
 
-root = Path(".claude/skills")
-skills = sorted(p for p in root.iterdir() if p.is_dir())
-assert skills, "no skills found"
-for d in skills:
-    text = (d / "SKILL.md").read_text(encoding="utf-8")
-    match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
-    assert match, d
-    frontmatter = yaml.safe_load(match.group(1))
-    assert frontmatter["name"] == d.name, d
-    assert frontmatter["description"].startswith("Use when"), d
-    metadata = yaml.safe_load((d / "agents" / "openai.yaml").read_text(encoding="utf-8"))
-    assert f"${d.name}" in metadata["interface"]["default_prompt"], d
-print("skills metadata ok")
-PY
-```
-
-Validate local markdown links:
-
-```bash
-python3 - <<'PY'
-from pathlib import Path
-import re
-import sys
-
-files = [
-    Path("README.md"),
-    Path("README_en.md"),
-    Path("docs/SKILLS.md"),
-    Path("docs/SKILLS_zh.md"),
-    Path("docs/INSTALL.md"),
-    Path("docs/INSTALL_zh.md"),
-    Path("docs/WORKFLOWS.md"),
-    Path("docs/WORKFLOWS_zh.md"),
-    Path("docs/BACKUP.md"),
-    Path("AGENTS.md"),
-]
-errors = []
-for f in files:
-    text = f.read_text(encoding="utf-8")
-    for m in re.finditer(r"\[[^\]]+\]\(([^)]+)\)", text):
-        target = m.group(1)
-        if target.startswith(("http://", "https://", "#", "mailto:")):
-            continue
-        path = target.split("#", 1)[0]
-        if path and not (f.parent / path).exists():
-            errors.append(f"{f}: missing link {target}")
-if errors:
-    print("\n".join(errors))
-    sys.exit(1)
-print("markdown local links ok")
-PY
-```
-
-Validate tracked files:
-
-```bash
-python3 - <<'PY'
-import subprocess
-import sys
-
-keep_exact = {
-    ".gitignore",
-    "AGENTS.md",
-    "README.md",
-    "README_en.md",
-    "LICENSE",
-    "docs/SKILLS.md",
-    "docs/SKILLS_zh.md",
-    "docs/INSTALL.md",
-    "docs/INSTALL_zh.md",
-    "docs/WORKFLOWS.md",
-    "docs/WORKFLOWS_zh.md",
-    "docs/BACKUP.md",
-}
-files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-bad = [
-    f for f in files
-    if f not in keep_exact
-    and not f.startswith(".claude/skills/")
-    and not f.startswith(".claude/agents/")
-    and not f.startswith(".claude/workflows/")
-]
-if bad:
-    print("\n".join(bad))
-    sys.exit(1)
-print(f"tracked whitelist ok: {len(files)} files")
-PY
-```
+From a global skill install, run `scripts/validate_repo.py` from this skill's
+directory instead of the repo-relative path.
 
 ## Backup Check
 

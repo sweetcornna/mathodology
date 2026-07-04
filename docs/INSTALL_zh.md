@@ -13,7 +13,7 @@ npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '
 这条命令会：
 
 - 从 `github.com/sweetcornna/mathodology` 下载 skills
-- 安装全部 7 个 skills
+- 安装全部 8 个 skills
 - 目标 agent 为 Codex 和 Claude Code
 - 安装到当前用户的全局 skills 目录
 - 使用复制模式，不创建 symlink
@@ -36,13 +36,13 @@ npx -y skills@latest --help
 只更新 Mathodology skills：
 
 ```bash
-npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 在 Mathodology clone checkout 中使用的完整一键更新器：
 
 ```bash
-git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 如果你依赖 `.claude/agents/` 或 `.claude/workflows/`，请使用完整一键更新器，因为这些项目级文件在 checkout 中，不在全局 skill package 内。
@@ -94,6 +94,7 @@ npx -y skills@latest add sweetcornna/mathodology --list
 预期 skills：
 
 - `mathodology-agent-pipeline`
+- `mathodology-award-gates`
 - `mathodology-dev-test-release`
 - `mathodology-gateway-api`
 - `mathodology-project-orientation`

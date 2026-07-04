@@ -10,10 +10,13 @@ Project skills live under `.claude/skills/`:
 .claude/skills/
 ├── mathodology-whole-project/
 ├── mathodology-project-orientation/
+├── mathodology-award-gates/
+│   └── scripts/                 # figqa.py, pdf_qa.sh, make_contact_sheet.py, lint_run.py
 ├── mathodology-agent-pipeline/
 ├── mathodology-gateway-api/
 ├── mathodology-web-ui/
 ├── mathodology-dev-test-release/
+│   └── scripts/                 # validate_repo.py
 └── mathodology-skill-authoring/
 ```
 
@@ -24,7 +27,7 @@ SKILL.md
 agents/openai.yaml
 ```
 
-`SKILL.md` is the agent-facing instruction body. `agents/openai.yaml` is metadata for Codex-style interfaces.
+`SKILL.md` is the agent-facing instruction body. `agents/openai.yaml` is metadata for Codex-style interfaces. Some skills also ship a `scripts/` directory with executable gates: `mathodology-award-gates` carries the figure/PDF QA and run-block linting scripts, and `mathodology-dev-test-release` carries the repository validator. These scripts run from a cloned checkout or a global skill install.
 
 Claude Code project orchestration assets live under:
 
@@ -59,73 +62,21 @@ The subsystem skills now preserve archived design knowledge. They should not tel
 
 ## Validation
 
-Validate project skill frontmatter:
+All mechanical repository validation lives in one script, `validate_repo.py`, shipped inside the `mathodology-dev-test-release` skill (pure standard library, no PyYAML). Do not re-inline these checks as heredocs in docs or other skills; add or change a gate in the script.
+
+Run every maintenance gate from the repository root:
 
 ```bash
-for d in .claude/skills/*; do
-  python3 /Users/cornna/.codex/skills/.system/skill-creator/scripts/quick_validate.py "$d"
-done
+python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-Validate project skill metadata:
+Run one gate by naming it — `skills`, `metadata`, `links`, `whitelist`, `agents`, `sync`, or `selftest`:
 
 ```bash
-python3 - <<'PY'
-from pathlib import Path
-import re
-import yaml
-
-root = Path(".claude/skills")
-skills = sorted(p for p in root.iterdir() if p.is_dir())
-assert skills, "no skills found"
-for d in skills:
-    text = (d / "SKILL.md").read_text(encoding="utf-8")
-    match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
-    assert match, d
-    frontmatter = yaml.safe_load(match.group(1))
-    assert frontmatter["name"] == d.name, d
-    assert frontmatter["description"].startswith("Use when"), d
-    metadata = yaml.safe_load((d / "agents" / "openai.yaml").read_text(encoding="utf-8"))
-    assert f"${d.name}" in metadata["interface"]["default_prompt"], d
-print("skills ok")
-PY
+python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py sync
 ```
 
-Validate that only skills-repository files are tracked:
-
-```bash
-python3 - <<'PY'
-import subprocess
-import sys
-
-keep_exact = {
-    ".gitignore",
-    "AGENTS.md",
-    "README.md",
-    "README_en.md",
-    "LICENSE",
-    "docs/SKILLS.md",
-    "docs/SKILLS_zh.md",
-    "docs/INSTALL.md",
-    "docs/INSTALL_zh.md",
-    "docs/WORKFLOWS.md",
-    "docs/WORKFLOWS_zh.md",
-    "docs/BACKUP.md",
-}
-files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-bad = [
-    f for f in files
-    if f not in keep_exact
-    and not f.startswith(".claude/skills/")
-    and not f.startswith(".claude/agents/")
-    and not f.startswith(".claude/workflows/")
-]
-if bad:
-    print("\n".join(bad))
-    sys.exit(1)
-print(f"tracked whitelist ok: {len(files)} files")
-PY
-```
+The `all` run covers skill and agent frontmatter, `agents/openai.yaml` metadata, markdown link and `.claude/...` path resolution, the tracked-file whitelist, and en/zh doc-twin sync (heading and code-block counts, with code blocks byte-identical after dropping CJK lines). From a global skill install, run `scripts/validate_repo.py` from the skill's directory instead of the repo-relative path.
 
 ## Updating a Skill
 
