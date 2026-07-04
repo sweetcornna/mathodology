@@ -18,8 +18,8 @@ Subcommands (default: all):
     whitelist   tracked files stay inside the skills-repo whitelist.
     agents      .claude/agents/*.md frontmatter: name==stem, description, tools,
                 and model (if present) in {opus,sonnet,haiku,inherit}.
-    sync        en/zh doc twins agree on heading + code-block counts, and code
-                blocks are byte-identical after dropping CJK lines.
+    sync        en/zh doc twins agree on heading + code-block counts, and the
+                command-significant code (comments stripped) is identical.
     selftest    construct pass/fail fixtures in a tempdir; prove each checker works.
     all         run skills, metadata, links, whitelist, agents, sync.
 
@@ -56,6 +56,7 @@ DOC_TWINS = [
     ("docs/SKILLS.md", "docs/SKILLS_zh.md"),
     ("docs/INSTALL.md", "docs/INSTALL_zh.md"),
     ("docs/WORKFLOWS.md", "docs/WORKFLOWS_zh.md"),
+    ("README_en.md", "README.md"),
 ]
 
 # Historical mathodology-<x> names that may appear in archive text but do not
@@ -84,7 +85,9 @@ def parse_frontmatter(text):
         mm = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", line)
         if not mm:
             continue
-        key, val = mm.group(1), mm.group(2).strip()
+        # normalize keys to lowercase so a case-variant (e.g. 'Model:') cannot
+        # slip past a lookup that expects the canonical lowercase key.
+        key, val = mm.group(1).lower(), mm.group(2).strip()
         if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
             val = val[1:-1]
         fm[key] = val
@@ -327,18 +330,27 @@ def check_agents(root):
     return ok, lines
 
 
-def _has_cjk(s):
-    for ch in s:
-        o = ord(ch)
-        if (
-            0x4E00 <= o <= 0x9FFF
-            or 0x3400 <= o <= 0x4DBF
-            or 0x3000 <= o <= 0x30FF
-            or 0xFF00 <= o <= 0xFFEF
-            or 0x2E80 <= o <= 0x2EFF
-        ):
-            return True
-    return False
+_INLINE_COMMENT_RE = re.compile(r"\s#\s.*$")
+
+
+def _code_signif(block_lines):
+    """Reduce a fenced block to its command-significant content.
+
+    Drops full-line comments and strips ' # ...' inline-comment tails, so a
+    *translated* comment (the only place CJK should appear in a shared command
+    block) is ignored, while a divergent COMMAND -- even one hidden behind a
+    CJK comment on the same line -- still shows up as a difference. This is
+    stricter than dropping the whole CJK line, which masked such divergences.
+    """
+    out = []
+    for ln in block_lines:
+        if ln.strip().startswith("#"):
+            continue  # full-line comment (may be a translated note)
+        m = _INLINE_COMMENT_RE.search(ln)
+        code = (ln[:m.start()] if m else ln).rstrip()
+        if code:
+            out.append(code)
+    return "\n".join(out)
 
 
 def _scan_md(text):
@@ -384,10 +396,8 @@ def check_sync(root):
         if len(be) != len(bz):
             errs.append(f"code-block counts differ: en={len(be)} vs zh={len(bz)}")
         for i in range(min(len(be), len(bz))):
-            en_code = "\n".join(ln for ln in be[i] if not _has_cjk(ln))
-            zh_code = "\n".join(ln for ln in bz[i] if not _has_cjk(ln))
-            if en_code != zh_code:
-                errs.append(f"code block #{i + 1} differs after dropping CJK lines")
+            if _code_signif(be[i]) != _code_signif(bz[i]):
+                errs.append(f"code block #{i + 1} commands differ (comments ignored)")
         if errs:
             ok = False
             lines.append(f"FAIL sync[{en} <-> {zh}]:")
@@ -481,6 +491,13 @@ def _selftest():
     expect("agents-fail", check_agents, t, False)
     shutil.rmtree(t, ignore_errors=True)
 
+    # agents: a case-variant 'Model:' key must not bypass the enum
+    t = tempfile.mkdtemp()
+    _mk(os.path.join(t, ".claude", "agents", "mathodology-case.md"),
+        "---\nname: mathodology-case\ndescription: x\ntools: Read\nModel: gpt\n---\n")
+    expect("agents-fail(case-variant-model)", check_agents, t, False)
+    shutil.rmtree(t, ignore_errors=True)
+
     # whitelist (needs git)
     t = tempfile.mkdtemp()
     _good_skill(t)
@@ -518,6 +535,14 @@ def _selftest():
     expect("sync-pass", check_sync, t, True)
     _mk(os.path.join(t, "docs", "SKILLS_zh.md"), "## 标题\n\n```bash\nls -R\n```\n")
     expect("sync-fail", check_sync, t, False)
+    # a purely translated inline comment must still PASS
+    _mk(os.path.join(t, "docs", "SKILLS.md"), "## H\n\n```bash\nls -la  # list files\n```\n")
+    _mk(os.path.join(t, "docs", "SKILLS_zh.md"), "## 标题\n\n```bash\nls -la  # 列出文件\n```\n")
+    expect("sync-pass(translated-inline-comment)", check_sync, t, True)
+    # a divergent command hidden behind a translated comment must FAIL
+    _mk(os.path.join(t, "docs", "SKILLS.md"), "## H\n\n```bash\nls -la  # list files\n```\n")
+    _mk(os.path.join(t, "docs", "SKILLS_zh.md"), "## 标题\n\n```bash\nls -R  # 列出文件\n```\n")
+    expect("sync-fail(command-behind-cjk-comment)", check_sync, t, False)
     shutil.rmtree(t, ignore_errors=True)
 
     print("validate_repo selftest:", "OK" if ok else "FAILED")

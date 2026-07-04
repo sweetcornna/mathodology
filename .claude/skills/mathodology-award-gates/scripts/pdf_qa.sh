@@ -21,11 +21,40 @@
 
 set -euo pipefail
 
-# Known non-personal PDF "Creator"/"Producer" values that are safe under
-# anonymity (rendering toolchains, not author names).
-SAFE_CREATOR_RE='matplotlib|latex|tex|pdftex|xetex|luatex|tectonic|pandoc|ghostscript|word|libreoffice|openoffice|chromium|chrome|skia|quartz|wkhtmltopdf|weasyprint|cairo|reportlab|dvips|groff|prince'
+# Anonymity scanning. An anonymity gate must bias toward flagging: a false
+# positive costs a human a second look, a false negative leaks identity to the
+# judges. Hard identity markers (email, team/control number) are checked on
+# every metadata field; a personal-name residue is checked on the author/tool
+# fields, exempting known rendering-toolchain tokens.
+EMAIL_RE='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z][A-Za-z]+'
+IDNUM_RE='[0-9]{5,}'   # team / control number (tool versions use dotted digits)
+# Rendering toolchain / connective words that are NOT an identity.
+SAFE_TOKENS='matplotlib latex tex pdftex xetex luatex tectonic pandoc ghostscript word microsoft libreoffice openoffice chromium chrome skia quartz wkhtmltopdf weasyprint cairo reportlab dvips groff prince princexml adobe acrobat distiller indesign apple preview mozilla firefox safari typst pdfkit itext fpdf pdflib hyperref beamer'
+STOPWORDS='via and for with the personal edition pro professional version using generated document creator producer library'
 
 die() { echo "pdf_qa: $*" >&2; exit 2; }
+
+# Echo alphabetic tokens (len>=3) in a value that are neither a known tool nor a
+# stopword -- i.e. residual identity text (used for the Author field).
+identity_residual() {  # <value>
+    printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -c 'a-z' '\n' \
+        | awk -v toks="$SAFE_TOKENS $STOPWORDS" \
+            'BEGIN{n=split(toks,a," ");for(i=1;i<=n;i++)s[a[i]]=1}
+             length>=3 && !($0 in s){print}' || true
+}
+
+# Echo any "Capitalised Capitalised" bigram whose BOTH tokens are non-tool words
+# -- i.e. a personal name like "Jane Doe" (used for Creator/Producer).
+name_bigram_identity() {  # <value>
+    printf '%s' "$1" | grep -oE '[A-Z][a-z]+[[:space:]]+[A-Z][a-z]+' 2>/dev/null | while IFS= read -r bg; do
+        [ -n "$bg" ] || continue
+        w1="${bg%%[[:space:]]*}"; w2="${bg##*[[:space:]]}"
+        lw1="$(printf '%s' "$w1" | tr 'A-Z' 'a-z')"; lw2="$(printf '%s' "$w2" | tr 'A-Z' 'a-z')"
+        case " $SAFE_TOKENS $STOPWORDS " in *" $lw1 "*) continue ;; esac
+        case " $SAFE_TOKENS $STOPWORDS " in *" $lw2 "*) continue ;; esac
+        echo "$bg"
+    done || true
+}
 
 require_poppler() {
     local missing=()
@@ -73,20 +102,46 @@ check_duplicate_captions() {  # <pdf>
 }
 
 check_anonymity() {  # <pdf>  (only called under --anonymous)
-    local pdf="$1" info author creator fail=0
+    local pdf="$1" info fail=0 f val res bg
     info="$(pdfinfo "$pdf" 2>/dev/null || true)"
-    author="$(printf '%s\n' "$info" | sed -n 's/^Author:[[:space:]]*//p')"
-    creator="$(printf '%s\n' "$info" | sed -n 's/^Creator:[[:space:]]*//p')"
-    if [ -n "$author" ]; then
-        echo "  FAIL anonymity: Author metadata is set: '$author' (must be empty for anonymous submission)"
-        fail=1
+
+    # 1) hard identity markers (email, team/control number) in ANY field
+    for f in Title Author Subject Keywords Creator Producer; do
+        val="$(printf '%s\n' "$info" | sed -n "s/^${f}:[[:space:]]*//p")"
+        [ -n "$val" ] || continue
+        if printf '%s' "$val" | grep -qE "$EMAIL_RE"; then
+            echo "  FAIL anonymity: $f metadata contains an email address: '$val'"
+            fail=1
+        fi
+        if printf '%s' "$val" | grep -qE "$IDNUM_RE"; then
+            echo "  FAIL anonymity: $f metadata contains a team/control-number-like digit run: '$val'"
+            fail=1
+        fi
+    done
+
+    # 2) Author must carry no non-tool identity text at all
+    val="$(printf '%s\n' "$info" | sed -n 's/^Author:[[:space:]]*//p')"
+    if [ -n "$val" ]; then
+        res="$(identity_residual "$val" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+        if [ -n "$res" ]; then
+            echo "  FAIL anonymity: Author metadata looks like an identity (non-tool text: '$res'): '$val'"
+            fail=1
+        fi
     fi
-    if [ -n "$creator" ] && ! printf '%s' "$creator" | grep -qiE "$SAFE_CREATOR_RE"; then
-        echo "  FAIL anonymity: Creator metadata looks like an identity: '$creator'"
-        fail=1
-    fi
+
+    # 3) Creator/Producer: a personal-name bigram (e.g. 'Jane Doe')
+    for f in Creator Producer; do
+        val="$(printf '%s\n' "$info" | sed -n "s/^${f}:[[:space:]]*//p")"
+        [ -n "$val" ] || continue
+        bg="$(name_bigram_identity "$val" | head -n1)"
+        if [ -n "$bg" ]; then
+            echo "  FAIL anonymity: $f metadata contains a personal name ('$bg'): '$val'"
+            fail=1
+        fi
+    done
+
     if [ "$fail" -eq 0 ]; then
-        echo "  PASS anonymity: no identifying Author/Creator metadata"
+        echo "  PASS anonymity: no identifying Title/Author/Subject/Keywords/Creator/Producer metadata"
     fi
     return "$fail"
 }
@@ -94,7 +149,9 @@ check_anonymity() {  # <pdf>  (only called under --anonymous)
 check_blank_pages() {  # <pdf>
     # Heuristic: render every page to a low-res PNG. A near-uniform (blank)
     # page compresses to a tiny PNG. Flag pages far below the median size.
-    local pdf="$1" tmp png sizes median floor=1200 flagged=0 n i sz
+    # floor tuned between a truly-blank page (~300B at 30 DPI) and a
+    # sparse-but-real text page (~1200B) to avoid flagging real content.
+    local pdf="$1" tmp png sizes median floor=800 flagged=0 n i sz
     tmp="$(mktemp -d)"
     if ! pdftoppm -png -r 30 "$pdf" "$tmp/pg" >/dev/null 2>&1; then
         echo "  FAIL blank-page: pdftoppm could not rasterise '$pdf'"
@@ -118,9 +175,11 @@ check_blank_pages() {  # <pdf>
         [ -e "$png" ] || continue
         i=$((i + 1))
         sz="${sizes[$((i - 1))]}"
-        # blank iff both below an absolute floor AND well under the median
-        if [ "$sz" -lt "$floor" ] && [ "$((sz * 100))" -lt "$((median * 20))" ]; then
-            echo "  FAIL blank-page: page $i looks blank/near-uniform (${sz}B vs median ${median}B)"
+        # A page below the absolute floor is essentially content-free at 30 DPI.
+        # This catches a lone/all-blank PDF (where every page is at the median),
+        # which a purely median-relative test can never flag.
+        if [ "$sz" -lt "$floor" ]; then
+            echo "  FAIL blank-page: page $i looks blank (${sz}B < floor ${floor}B; median ${median}B)"
             flagged=1
         fi
     done
@@ -181,6 +240,29 @@ with PdfPages(f"{tmp}/dup.pdf") as pdf:
         fig.text(0.1, 0.9, "Figure 1: a caption prefix that repeats")
         fig.text(0.1, 0.5, "Body text so the page is not blank. " * 6)
         pdf.savefig(fig); plt.close(fig)
+
+# anon_clean.pdf: real content, no identifying metadata (matplotlib producer)
+with PdfPages(f"{tmp}/anon_clean.pdf") as pdf:
+    fig = plt.figure(figsize=(6, 4))
+    fig.text(0.1, 0.9, "Figure 1: anonymous content page")
+    fig.text(0.1, 0.5, "Body text so the page is not blank. " * 6)
+    pdf.savefig(fig); plt.close(fig)
+
+# leak.pdf: identity planted across several metadata fields
+with PdfPages(f"{tmp}/leak.pdf") as pdf:
+    fig = plt.figure(figsize=(6, 4))
+    fig.text(0.1, 0.5, "Body text so the page is not blank. " * 6)
+    pdf.savefig(fig); plt.close(fig)
+    d = pdf.infodict()
+    d["Title"] = "Team 2501234 Solution"     # control/team number
+    d["Author"] = "Jane Doe"                  # personal name
+    d["Subject"] = "contact john@example.com"  # email
+    d["Keywords"] = "team 2412345"            # control number
+
+# blank.pdf: a single, fully-blank page (all-blank case)
+with PdfPages(f"{tmp}/blank.pdf") as pdf:
+    fig = plt.figure(figsize=(6, 4))
+    pdf.savefig(fig); plt.close(fig)
 print("fixtures-built")
 PY
 
@@ -203,6 +285,27 @@ PY
         echo "FAIL page-count overrun should have failed"; ok=0
     else
         echo "PASS page-count overrun caught"
+    fi
+
+    echo "--- anon_clean.pdf --anonymous (expect PASS) ---"
+    if run_qa "$tmp/anon_clean.pdf" "" 1; then
+        echo "PASS anon_clean.pdf passed anonymity"
+    else
+        echo "FAIL anon_clean.pdf should have passed anonymity"; ok=0
+    fi
+
+    echo "--- leak.pdf --anonymous (expect identity leak caught) ---"
+    if run_qa "$tmp/leak.pdf" "" 1; then
+        echo "FAIL leak.pdf should have failed anonymity (team number/email/name)"; ok=0
+    else
+        echo "PASS leak.pdf failed as expected (metadata identity leak caught)"
+    fi
+
+    echo "--- blank.pdf (expect all-blank page caught) ---"
+    if run_qa "$tmp/blank.pdf" "" 0; then
+        echo "FAIL blank.pdf should have failed on a blank page"; ok=0
+    else
+        echo "PASS all-blank page caught"
     fi
 
     rm -rf "$tmp"

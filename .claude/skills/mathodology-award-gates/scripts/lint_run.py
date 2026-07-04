@@ -4,7 +4,7 @@
 Validates the four canonical run blocks (handoff / gate / scorecard /
 decision_memo) whether they arrive as a bare ``.yaml`` file or as fenced
 ```yaml``` blocks inside a ``.md`` file, and aggregates Phase-7 judge
-scorecards per the S3 panel rule.
+scorecards per the judge-panel rule.
 
 Subcommands:
     handoff   <file...>            validate handoff blocks
@@ -12,7 +12,7 @@ Subcommands:
     scorecard <file...>            validate judge scorecard blocks
     memo      <file...>            validate decision_memo blocks
     aggregate <scorecard...> --target <tier>
-                                   run the S3 judge-panel rule; print PASS/FAIL,
+                                   run the judge-panel rule; print PASS/FAIL,
                                    min-seat total, weakest criterion, conflicts
     --self-test                    run embedded good/bad fixtures
 
@@ -36,7 +36,7 @@ except ImportError:  # pragma: no cover - actionable, not a stack trace
 
 
 # --------------------------------------------------------------------------
-# tier model (S3)
+# tier model
 # --------------------------------------------------------------------------
 # Documented OPEN enum: known values are validated; unknown values are warned
 # about (not rejected) so contest-specific tiers do not hard-fail the linter.
@@ -46,14 +46,20 @@ KNOWN_TIER_RANK = {
     "honorable": 1,
     "honorable_mention": 1,
     "national_third": 1,
+    "国三": 1,
     "meritorious": 2,
     "national_second": 2,
+    "国二": 2,
+    "guoer": 2,
     "finalist": 3,
+    "国一边缘": 3,
     "outstanding": 4,
     "national_first": 4,
+    "国一": 4,
+    "guoyi": 4,
 }
 
-# target tier -> S3 thresholds
+# target tier -> thresholds
 THRESHOLDS = {
     "outstanding": {"total": 85, "floor": 70},
     "finalist": {"total": 80, "floor": 65},
@@ -85,6 +91,22 @@ def _is_number(x):
 
 def _is_int(x):
     return isinstance(x, int) and not isinstance(x, bool)
+
+
+def _path_in_work(path):
+    """True only if ``path`` stays inside the work/ sandbox once normalized.
+
+    A raw ``startswith('work/')`` test is bypassable with ``work/../secret``;
+    normalize first and reject absolute paths and any '..' escape.
+    """
+    if not isinstance(path, str) or not path:
+        return False
+    if os.path.isabs(path):
+        return False
+    norm = os.path.normpath(path)
+    if norm == "work" or norm.startswith("work" + os.sep):
+        return True
+    return False
 
 
 # --------------------------------------------------------------------------
@@ -170,8 +192,11 @@ def validate_handoff(body):
         path = art.get("path")
         if not isinstance(path, str) or not path:
             errors.append(f"artifacts[{i}] missing 'path'")
-        elif not path.startswith("work/"):
-            errors.append(f"artifacts[{i}] path must start with 'work/' (got {path!r})")
+        elif not _path_in_work(path):
+            errors.append(
+                f"artifacts[{i}] path must stay inside the work/ sandbox "
+                f"(got {path!r}; absolute paths and '..' escapes are rejected)"
+            )
         if "role" not in art:
             warnings.append(f"artifacts[{i}] has no 'role'")
     for i, asm in enumerate(body.get("assumptions", []) or []):
@@ -245,6 +270,8 @@ def validate_scorecard(body):
         w, s = c.get("weight"), c.get("score")
         if not _is_number(w):
             errors.append(f"criteria[{i}] weight must be a number")
+        elif not (0 <= w <= 1):
+            errors.append(f"criteria[{i}] weight must be within 0-1 (got {w})")
         else:
             wsum += w
         if not _is_number(s):
@@ -352,7 +379,7 @@ def validate_files(kind, paths):
 
 
 # --------------------------------------------------------------------------
-# S3 aggregation
+# judge-panel aggregation
 # --------------------------------------------------------------------------
 def _tier_rank(tier):
     if isinstance(tier, str):
@@ -361,7 +388,7 @@ def _tier_rank(tier):
 
 
 def aggregate(paths, target):
-    """Implement the S3 judge-panel rule. Return (passed, report_lines)."""
+    """Implement the judge-panel rule. Return (passed, report_lines)."""
     lines = []
     canon = TARGET_ALIASES.get(str(target).strip().lower())
     if canon is None:
@@ -394,6 +421,18 @@ def aggregate(paths, target):
 
     if not seats:
         return False, ["aggregate: no scorecards found"]
+
+    # panel completeness: this is a three-seat blind panel; a lone judge or a
+    # duplicated seat is not a panel and must not be able to PASS the gate.
+    seat_labels = [s[0] for s in seats]
+    seat_set = set(seat_labels)
+    if seat_set != {"A", "B", "C"} or len(seat_labels) != 3:
+        return False, lines + [
+            "",
+            f"aggregate: incomplete or duplicate panel: seats present = "
+            f"{sorted(seat_labels)} (need exactly one each of A, B, C)",
+            "RESULT: FAIL",
+        ]
 
     lines.append("")
     lines.append("Per-seat:")
@@ -437,7 +476,7 @@ def aggregate(paths, target):
             lines.append(f"  '{name}': Seat {lo[1]}={lo[0]:.0f} vs Seat {hi[1]}={hi[0]:.0f} "
                          f"(spread {hi[0] - lo[0]:.0f})")
 
-    # S3 conditions
+    # panel pass/fail conditions
     reasons = []
     # (a) every seat implied_tier >= target
     below_tier = [(s[0], s[2]) for s in seats if s[3] is None or s[3] < need_rank]
@@ -512,6 +551,23 @@ handoff:
   critic_focus: []
 """
 
+ESCAPE_HANDOFF = """
+handoff:
+  phase: 4
+  agent: mathodology-coder
+  loop: 0
+  status: complete
+  artifacts:
+    - {path: work/../secrets.env, role: leak}
+  decisions: []
+  assumptions: []
+  evidence: []
+  commands: []
+  weaknesses: []
+  questions: []
+  critic_focus: []
+"""
+
 GOOD_GATE = """
 gate:
   phase: 4
@@ -561,6 +617,22 @@ scorecard:
     - {name: correctness, weight: 0.4, score: 90}
   weighted_total: 88.0
   implied_tier: outstanding
+  fix_one_thing: x
+  ranked_gaps: []
+  do_not_regress: []
+"""
+
+NEG_WEIGHT_SCORECARD = """
+scorecard:
+  contest: MCM
+  target_tier: outstanding
+  seat: A
+  round: 1
+  criteria:
+    - {name: originality, weight: -0.5, score: 90}
+    - {name: correctness, weight: 1.5, score: 80}
+  weighted_total: 75.0
+  implied_tier: meritorious
   fix_one_thing: x
   ranked_gaps: []
   do_not_regress: []
@@ -631,12 +703,16 @@ def _self_test():
     check("handoff-good", True, _write(tmp, "h_good.yaml", GOOD_HANDOFF), "handoff")
     check("handoff-bad(artifact-outside-work)", False,
           _write(tmp, "h_bad.md", _wrap_md(BAD_HANDOFF)), "handoff")
+    check("handoff-bad(work/..-escape)", False,
+          _write(tmp, "h_escape.yaml", ESCAPE_HANDOFF), "handoff")
     check("gate-good", True, _write(tmp, "g_good.md", _wrap_md(GOOD_GATE)), "gate")
     check("gate-bad(missing-verdict+bad-severity)", False,
           _write(tmp, "g_bad.yaml", BAD_GATE), "gate")
     check("scorecard-good", True, _write(tmp, "s_good.yaml", GOOD_SCORECARD), "scorecard")
     check("scorecard-bad(seatD+weights0.8+score130)", False,
           _write(tmp, "s_bad.md", _wrap_md(BAD_SCORECARD)), "scorecard")
+    check("scorecard-bad(negative-weight)", False,
+          _write(tmp, "s_neg.yaml", NEG_WEIGHT_SCORECARD), "scorecard")
     check("memo-good", True, _write(tmp, "m_good.yaml", GOOD_MEMO), "memo")
     check("memo-bad(missing-options)", False,
           _write(tmp, "m_bad.yaml", BAD_MEMO), "memo")
@@ -695,6 +771,50 @@ def _self_test():
         ok = False
         print("FAIL self-test[aggregate-conflict] should have FAILED on a conflict")
 
+    print("--- aggregate: Chinese-tier passing panel (expect PASS) ---")
+    # implied_tier written as 国一 must rank as outstanding, not 'unknown-tier'.
+    cn_paths = [
+        _write(tmp, "cnA.yaml", _panel("A", 88, "国一",
+               [("originality", 0.4, 88), ("correctness", 0.3, 90), ("writing", 0.3, 86)])),
+        _write(tmp, "cnB.yaml", _panel("B", 86, "国一",
+               [("originality", 0.4, 84), ("correctness", 0.3, 88), ("writing", 0.3, 87)])),
+        _write(tmp, "cnC.yaml", _panel("C", 90, "国一",
+               [("originality", 0.4, 90), ("correctness", 0.3, 92), ("writing", 0.3, 88)])),
+    ]
+    passed, rep = aggregate(cn_paths, "国一")
+    print("\n".join(rep))
+    if passed:
+        print("PASS self-test[aggregate-cn-tier]")
+    else:
+        ok = False
+        print("FAIL self-test[aggregate-cn-tier] should have PASSED with 国一 labels")
+
+    print("--- aggregate: incomplete panel (single seat, expect FAIL) ---")
+    passed, rep = aggregate([pass_paths[0]], "outstanding")
+    print("\n".join(rep))
+    if not passed and any("incomplete or duplicate panel" in line for line in rep):
+        print("PASS self-test[aggregate-incomplete]")
+    else:
+        ok = False
+        print("FAIL self-test[aggregate-incomplete] should have FAILED on a lone seat")
+
+    print("--- aggregate: duplicate-seat panel (A,A,B expect FAIL) ---")
+    dup_paths = [
+        _write(tmp, "dA1.yaml", _panel("A", 88, "outstanding",
+               [("originality", 0.4, 88), ("correctness", 0.3, 90), ("writing", 0.3, 86)])),
+        _write(tmp, "dA2.yaml", _panel("A", 88, "outstanding",
+               [("originality", 0.4, 88), ("correctness", 0.3, 90), ("writing", 0.3, 86)])),
+        _write(tmp, "dB.yaml", _panel("B", 86, "outstanding",
+               [("originality", 0.4, 84), ("correctness", 0.3, 88), ("writing", 0.3, 87)])),
+    ]
+    passed, rep = aggregate(dup_paths, "outstanding")
+    print("\n".join(rep))
+    if not passed and any("incomplete or duplicate panel" in line for line in rep):
+        print("PASS self-test[aggregate-duplicate]")
+    else:
+        ok = False
+        print("FAIL self-test[aggregate-duplicate] should have FAILED on duplicate seats")
+
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
     print("lint_run self-test:", "OK" if ok else "FAILED")
@@ -714,7 +834,7 @@ def main(argv=None):
     for name in ("handoff", "gate", "scorecard", "memo"):
         p = sub.add_parser(name, help=f"validate {name} block(s)")
         p.add_argument("files", nargs="+")
-    agg = sub.add_parser("aggregate", help="run the S3 judge-panel rule")
+    agg = sub.add_parser("aggregate", help="run the judge-panel rule")
     agg.add_argument("files", nargs="+")
     agg.add_argument("--target", required=True, help="target tier (e.g. outstanding)")
 

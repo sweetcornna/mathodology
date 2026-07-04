@@ -131,22 +131,52 @@ def _describe(artist, index):
 # --------------------------------------------------------------------------
 # sampling data artists into screen-space points (avoids diagonal-bbox trap)
 # --------------------------------------------------------------------------
-def _line_points(line, n_per_segment=24):
+def _line_segments(line):
+    """Screen-space polyline segments [(p0, p1), ...] with finite endpoints.
+
+    Used instead of point-sampling: a fixed sample count steps over a label on
+    a long segment (e.g. an axhline/axvline crossing a data label), so we test
+    each segment against the text box exactly, independent of screen length.
+    """
     xy = line.get_xydata()
     if xy is None or len(xy) == 0:
-        return np.empty((0, 2))
+        return []
     disp = line.get_transform().transform(np.asarray(xy, dtype=float))
     disp = disp[np.isfinite(disp).all(axis=1)]
-    if len(disp) == 1:
-        return disp
-    if len(disp) == 0:
-        return np.empty((0, 2))
-    pts = []
-    ts = np.linspace(0.0, 1.0, n_per_segment)
-    for i in range(len(disp) - 1):
-        p0, p1 = disp[i], disp[i + 1]
-        pts.append(p0[None, :] + ts[:, None] * (p1 - p0)[None, :])
-    return np.vstack(pts)
+    if len(disp) < 2:
+        return []
+    return [(disp[i], disp[i + 1]) for i in range(len(disp) - 1)]
+
+
+def _seg_box_hit(p0, p1, xmin, ymin, xmax, ymax):
+    """True if segment p0->p1 intersects the axis-aligned box (Liang-Barsky).
+
+    Density-independent: catches a line crossing a label on any segment length,
+    including endpoints that fall inside the box.
+    """
+    if xmax <= xmin or ymax <= ymin:
+        return False
+    x0, y0 = float(p0[0]), float(p0[1])
+    x1, y1 = float(p1[0]), float(p1[1])
+    dx, dy = x1 - x0, y1 - y0
+    t0, t1 = 0.0, 1.0
+    for p, q in ((-dx, x0 - xmin), (dx, xmax - x0), (-dy, y0 - ymin), (dy, ymax - y0)):
+        if p == 0.0:
+            if q < 0.0:
+                return False  # parallel to this edge and outside the slab
+        else:
+            r = q / p
+            if p < 0.0:
+                if r > t1:
+                    return False
+                if r > t0:
+                    t0 = r
+            else:
+                if r < t0:
+                    return False
+                if r < t1:
+                    t1 = r
+    return t0 <= t1
 
 
 def _collection_points(coll):
@@ -249,13 +279,16 @@ def collisions(fig, tol=TOL, min_area=MIN_AREA, inset=INSET):
                     found.append(_mk("legend-over-patch", ai, "legend",
                                      _describe(p, pi), area))
 
-        # 3) lines vs text boxes -- sample the line, do NOT use its bbox
+        # 3) lines vs text boxes -- exact segment-vs-box test (NOT the line bbox,
+        #    and NOT fixed-count point sampling which steps over long segments)
         for li, ln in enumerate(lines):
-            pts = _finite_points(_line_points(ln))
-            if len(pts) == 0:
+            segs = _line_segments(ln)
+            if not segs:
                 continue
             for (lbl, tb) in text_boxes:
-                if any(_point_in(tb, x, y, inset) for x, y in pts):
+                xmin, ymin = tb.x0 + inset, tb.y0 + inset
+                xmax, ymax = tb.x1 - inset, tb.y1 - inset
+                if any(_seg_box_hit(p0, p1, xmin, ymin, xmax, ymax) for p0, p1 in segs):
                     found.append(_mk("line-through-text", ai, lbl,
                                      _describe(ln, li)))
 
@@ -277,10 +310,16 @@ def collisions(fig, tol=TOL, min_area=MIN_AREA, inset=INSET):
                     found.append(_mk("text-over-text", ai, text_boxes[i][0],
                                      text_boxes[j][0], area))
 
-        # 6) clipped: text-like artist escaping the figure bounds
+        # 6) clipped: text-like artist STRADDLING the figure edge (genuinely
+        #    cut off). A box fully outside the canvas is an intentional
+        #    outside-axes placement that a bbox_inches='tight' save captures, so
+        #    it is not flagged; only a partial straddle is a real clip.
         for (lbl, bb) in text_boxes:
-            if not _fully_inside(bb, fig_bbox, tol):
-                found.append(_mk("clipped-out-of-figure", ai, lbl, "figure-bounds"))
+            if _fully_inside(bb, fig_bbox, tol):
+                continue
+            if _inter_area(bb, fig_bbox) <= min_area:
+                continue  # fully off-canvas -> intentional outside placement
+            found.append(_mk("clipped-out-of-figure", ai, lbl, "figure-bounds"))
 
     return found
 
@@ -316,6 +355,24 @@ def _build_colliding_figure():
         ha="center", va="center",
         arrowprops=dict(arrowstyle="->"),
     )
+    return fig
+
+
+def _build_line_through_label_figure():
+    """A reference line crossing a data label on ONE long segment.
+
+    Regression for the fixed-sample-count false negative: a vertical guide line
+    running the full axes height is a single 2-vertex segment, so point sampling
+    stepped over the label; segment-vs-box catches it.
+    """
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(4, 6))
+    ax.plot([0, 10], [0, 100])
+    ax.axvline(5.0)                       # one tall segment, full axes height
+    ax.text(5, 20, "crossed label", ha="center", va="center")
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 100)
     return fig
 
 
@@ -355,6 +412,15 @@ def _self_test():
     except AssertionError:
         print("PASS assert_no_overlap raised on the colliding figure")
     plt.close(colliding)
+
+    crossing = _build_line_through_label_figure()
+    hits = collisions(crossing)
+    if any(d["kind"] == "line-through-text" for d in hits):
+        print("PASS reference-line-through-label -> line-through-text detected")
+    else:
+        ok = False
+        print("FAIL reference-line-through-label -> line crossing a label not detected")
+    plt.close(crossing)
 
     clean = _build_clean_figure()
     hits = collisions(clean)
