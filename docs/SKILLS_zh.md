@@ -10,10 +10,13 @@
 .claude/skills/
 ├── mathodology-whole-project/
 ├── mathodology-project-orientation/
+├── mathodology-award-gates/
+│   └── scripts/                 # figqa.py, pdf_qa.sh, make_contact_sheet.py, lint_run.py
 ├── mathodology-agent-pipeline/
 ├── mathodology-gateway-api/
 ├── mathodology-web-ui/
 ├── mathodology-dev-test-release/
+│   └── scripts/                 # validate_repo.py
 └── mathodology-skill-authoring/
 ```
 
@@ -24,7 +27,7 @@ SKILL.md
 agents/openai.yaml
 ```
 
-`SKILL.md` 是 agent 读取的技能正文。`agents/openai.yaml` 是给 Codex 风格界面使用的元数据。
+`SKILL.md` 是 agent 读取的技能正文。`agents/openai.yaml` 是给 Codex 风格界面使用的元数据。部分 skill 还带一个 `scripts/` 目录，内含可执行 gate：`mathodology-award-gates` 携带图表/PDF QA 和 run-block lint 脚本，`mathodology-dev-test-release` 携带仓库验证器。这些脚本可从 clone checkout 或全局安装的 skill 运行。
 
 Claude Code 项目编排资产放在：
 
@@ -59,73 +62,21 @@ Claude Code 项目编排资产放在：
 
 ## 验证
 
-验证项目 skill frontmatter：
+仓库的全部机械验证集中在一个脚本 `validate_repo.py`，它随 `mathodology-dev-test-release` skill 一起交付（纯标准库，不依赖 PyYAML）。不要再把这些检查以 heredoc 形式内联到文档或其他 skill；要加或改 gate 就改脚本。
+
+从仓库根运行全部维护 gate：
 
 ```bash
-for d in .claude/skills/*; do
-  python3 /Users/cornna/.codex/skills/.system/skill-creator/scripts/quick_validate.py "$d"
-done
+python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-验证项目 skill 元数据：
+也可以只运行某个 gate —— `skills`、`metadata`、`links`、`whitelist`、`agents`、`sync` 或 `selftest`：
 
 ```bash
-python3 - <<'PY'
-from pathlib import Path
-import re
-import yaml
-
-root = Path(".claude/skills")
-skills = sorted(p for p in root.iterdir() if p.is_dir())
-assert skills, "no skills found"
-for d in skills:
-    text = (d / "SKILL.md").read_text(encoding="utf-8")
-    match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
-    assert match, d
-    frontmatter = yaml.safe_load(match.group(1))
-    assert frontmatter["name"] == d.name, d
-    assert frontmatter["description"].startswith("Use when"), d
-    metadata = yaml.safe_load((d / "agents" / "openai.yaml").read_text(encoding="utf-8"))
-    assert f"${d.name}" in metadata["interface"]["default_prompt"], d
-print("skills ok")
-PY
+python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py sync
 ```
 
-验证只跟踪 skills 仓库文件：
-
-```bash
-python3 - <<'PY'
-import subprocess
-import sys
-
-keep_exact = {
-    ".gitignore",
-    "AGENTS.md",
-    "README.md",
-    "README_en.md",
-    "LICENSE",
-    "docs/SKILLS.md",
-    "docs/SKILLS_zh.md",
-    "docs/INSTALL.md",
-    "docs/INSTALL_zh.md",
-    "docs/WORKFLOWS.md",
-    "docs/WORKFLOWS_zh.md",
-    "docs/BACKUP.md",
-}
-files = subprocess.check_output(["git", "ls-files"], text=True).splitlines()
-bad = [
-    f for f in files
-    if f not in keep_exact
-    and not f.startswith(".claude/skills/")
-    and not f.startswith(".claude/agents/")
-    and not f.startswith(".claude/workflows/")
-]
-if bad:
-    print("\n".join(bad))
-    sys.exit(1)
-print(f"tracked whitelist ok: {len(files)} files")
-PY
-```
+`all` 覆盖 skill 和 agent frontmatter、`agents/openai.yaml` 元数据、markdown 链接和 `.claude/...` 路径解析、跟踪文件白名单，以及 en/zh 文档孪生同步（标题数与代码块数，代码块在剔除 CJK 行后逐字节一致）。从全局安装的 skill 运行时，用 skill 目录内的 `scripts/validate_repo.py` 代替仓库相对路径。
 
 ## 更新 Skill
 

@@ -7,6 +7,8 @@ Mathodology has two supported orchestration modes:
 
 Both modes target national-first-prize or MCM/ICM O-prize level modeling work: complete prompt coverage, defensible math, reproducible computation, polished paper, and a submission-ready package.
 
+`.claude/workflows/mathodology-award-submission.md` is canonical for Claude Code execution; this document is the shared phase model for humans and the Codex interface, and must not diverge from it. The runtime gate schemas, judge-panel protocol, iteration budgets, and figure/PDF QA scripts referenced below are owned by the `mathodology-award-gates` skill.
+
 ## External Quality Signals
 
 Use these signals to calibrate the workflow. They are not templates to copy; they are constraints and reviewer expectations to convert into gates.
@@ -32,8 +34,8 @@ Use these signals to calibrate the workflow. They are not templates to copy; the
 | 3. Math specification | Make the model executable | notation, assumptions, objectives, constraints, algorithms, metrics, headline-number provenance | coder can implement without inventing math; headline numbers have a baseline and stress-test plan |
 | 4. Experiments | Generate reproducible results | code, raw outputs, tables, figures, sensitivity, robustness, result-density map, deviations-from-spec notes | reported numbers are reproducible and core results are visually or tabularly supported; shared random numbers and by-construction labeling honored |
 | 5. Interpretation | Connect results to the prompt | findings, captions, recommendations, limitations, figure/table coverage map | each result answers a prompt question |
-| 6. Paper draft | Produce a coherent paper | abstract, methods, results, figures/tables, references, appendix, single canonical recommendation | no orphan result, sparse result section, unsupported claim, recommendation inconsistency, or paper-vs-code drift |
-| 7. Independent review | Remove fixable weaknesses, confirm award tier | prompt, math, originality, evidence, reproducibility, writing audits, award-tier judge-panel scorecard | no high-severity issue remains and every judge seat meets the targeted award tier |
+| 6. Paper draft | Produce a coherent paper | abstract, methods, results, figures/tables, references, appendix, single canonical recommendation, innovation-ledger (INN-n) and scope-ledger (MECH-n) closeout | no orphan result, sparse result section, unsupported claim, recommendation inconsistency, or paper-vs-code drift; every INN-n and MECH-n ledger entry is load-bearing or explicitly descoped |
+| 7. Independent review | Remove fixable weaknesses, confirm award tier | critic audits plus three parallel blind `mathodology-award-judge` scorecards | no high-severity issue remains; the lead aggregates the three seats and the panel passes only when every seat's implied tier meets the target, the min total clears the threshold, and no criterion is below its floor |
 | 8. Final package | Assemble submission | paper, source, code, data notes, README, AI-use statement, checklist | package is submit-ready |
 
 ## Detailed Phase-Agent-Critic Matrix
@@ -48,26 +50,29 @@ Every phase has three layers: specialist work, lead synthesis, and independent c
 | 3. Mathematical specification | modeler, coder, critic | Write notation, assumptions, dimensions or units, objectives, constraints, algorithms, pseudocode, validation metrics, baseline, ablation, sensitivity, and robustness plan. | Coder can implement without inventing math; equations are dimensionally coherent; assumptions are testable or evidence-backed; validation can falsify weak claims. |
 | 4. Computation and experiments | coder, modeler, critic | Create reproducible scripts or notebooks, deterministic seeds, environment notes, raw outputs, cleaned tables, figures, baseline, ablations, sensitivity, robustness, run log, and a result-density map covering model structure, primary comparisons, sensitivity, robustness, tradeoffs, and recommendations. | Reported numbers can be regenerated or manually traced; figures have source data; failures are logged; no cherry-picked single run is accepted; sparse or decorative visuals fail the gate. |
 | 5. Interpretation | modeler, evidence researcher, paper editor, critic | Convert numerical and analytical results into prompt-by-prompt answers, figure/table captions, recommendations, limitations, uncertainty notes, claim-source links, and a coverage map showing which visual or table supports each major conclusion. | Each result answers a task; every claim is supported by data, derivation, figure, table, citation, or explicit assumption; limitations do not undermine the main conclusion; major conclusions are not left as text-only assertions. |
-| 6. Paper draft | paper editor, modeler, coder, critic | Draft summary, introduction, assumptions, methods, results, sensitivity, strengths and weaknesses, conclusion, references, appendices, AI-use statement when needed, and final figure/table placement under the page limit. | Summary states method and most important conclusions; paper is coherent and not a transcript; notation, captions, references, figure/table density, and requirement coverage are consistent. |
-| 7. Independent review | critic, lead, relevant specialist reruns | Run separate audits for prompt coverage, mathematical validity, originality, paper-vs-code conformance, headline robustness, recommendation consistency, evidence, reproducibility, writing, formatting, and final scoring risk, plus an award-tier judge-panel scorecard with skill attribution. | No high-severity issue remains; each medium issue is fixed or explicitly accepted with rationale; for a top-tier target, every judge seat meets the targeted award tier or the lead runs a targeted improvement loop on the weakest dimension; the critic cannot be the same agent that produced the artifact. |
+| 6. Paper draft | paper editor, modeler, coder, critic | Draft summary, introduction, assumptions, methods, results, sensitivity, strengths and weaknesses, conclusion, references, appendices, AI-use statement when needed, final figure/table placement under the page limit, and an innovation-ledger (INN-n) and scope-ledger (MECH-n) closeout mirroring the citation closeout. | Summary states method and most important conclusions; paper is coherent and not a transcript; notation, captions, references, figure/table density, and requirement coverage are consistent; every innovation-ledger (INN-n) and scope-ledger (MECH-n) entry is load-bearing in the draft or explicitly descoped in the limitations. |
+| 7. Independent review | critic, three blind `mathodology-award-judge` seats, lead, relevant specialist reruns | Critic runs separate audits for prompt coverage, mathematical validity, originality, paper-vs-code conformance, headline robustness, recommendation consistency, evidence, reproducibility, writing, formatting, and final scoring risk, with skill attribution; the lead dispatches three parallel blind `mathodology-award-judge` seats (A flagship-general, B innovation and decision-usefulness, C correctness and reproducibility only) with no shared context, each returning one scorecard. | No high-severity issue remains; each medium issue is fixed or explicitly accepted with rationale; the lead lints every scorecard and aggregates per the thresholds (Outstanding/国一 total ≥ 85, floor 70; Finalist/国一边缘 80/65; Meritorious/国二 75/60), the panel passing only when every seat's implied tier meets the target, the min total clears the threshold, and no criterion falls below its floor; re-score is capped at 2 rounds, then a decision_memo; the critic and judges are never the agent that produced the artifact. |
 | 8. Final package | submission packager, paper editor, critic | Assemble final PDF, editable source if required, code, data or provenance notes, figures, tables, reproduction README, AI-use report, and requirement-to-file checklist. | Package matches contest rules, is anonymous where required, has no secrets or scratch files, satisfies size/page limits, and can be submitted by someone outside the working session. |
 
 ## Agent Handoff Contract
 
-Every specialist response should end with a handoff block so the lead and critic can audit without rereading the full history:
+Every specialist response must end with a structured `handoff:` yaml block so the lead and critic can audit without rereading the full history. Free-text handoffs are rejected. The lead lints every block with `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py handoff` and rejects any handoff that fails the schema or arrives as free text; every `artifacts[].path` must resolve under `work/<run-id>/`. This schema is canonical in the `mathodology-award-gates` skill.
 
-```text
-Agent handoff:
-- Phase:
-- Agent:
-- Files or artifacts produced:
-- Decisions made:
-- Assumptions introduced:
-- Evidence used:
-- Commands or computations run:
-- Known weaknesses:
-- Questions for lead or user:
-- Critic focus requested:
+```yaml
+handoff:
+  phase: 4
+  agent: mathodology-coder
+  loop: 0                      # 0 = first attempt; increments per gate retry
+  status: complete             # complete | partial | blocked
+  artifacts:
+    - {path: work/<run-id>/outputs/figures/sens.pdf, role: sensitivity}
+  decisions: []
+  assumptions: []              # each: {id: A7, text: ..., evidence: ...|assumed, sensitivity_plan: ...}
+  evidence: []
+  commands: []                 # exact rerun commands
+  weaknesses: []
+  questions: []                # empty unless contest-critical
+  critic_focus: []
 ```
 
 ## Critic Gate Protocol
@@ -81,6 +86,36 @@ Each critic gate must be independent, adversarial, and evidence-linked.
 - `low` issues may be queued only when they cannot affect scoring, correctness, reproducibility, or submission validity.
 - A phase cannot pass if any artifact lacks a traceable source, calculation path, or responsible assumption.
 - The lead must document critic findings and fixes before advancing.
+
+The critic ends every review with a structured `gate:` yaml block (lint with `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py gate`):
+
+```yaml
+gate:
+  phase: 4
+  loop: 0
+  verdict: pass                # pass | fail
+  issues:
+    - {severity: high, summary: ..., artifact: ..., required_fix: ..., owner: mathodology-coder}
+  evidence_checked: []
+  missing_evidence: []
+```
+
+Fix loops are bounded so a run cannot churn indefinitely:
+
+- Each per-phase critic gate allows at most 2 fix loops (3 evaluations total).
+- Phase 7 allows at most 2 re-score rounds.
+- The whole run is capped at 8 fix loops across all phases.
+- Stop early whenever a loop shows no improvement over the previous one.
+- On exhaustion of any budget the lead does NOT silently continue: it emits a `decision_memo:` yaml block and stops for a human decision.
+
+```yaml
+decision_memo:
+  phase: 7
+  budget_spent: {loops: 2, cap: 2}
+  unresolved: []               # remaining issues with severity
+  options:                     # 2-3 options, each {option, consequence, recommended: bool}
+    - {option: ..., consequence: ..., recommended: true}
+```
 
 ## Figure And Table Sufficiency Gate
 
@@ -216,31 +251,23 @@ The paper editor must verify the final rendered PDF, not only the source Markdow
 
 ### Automated And Visual Verification
 
-Before Phase 6 or Phase 8 can pass, run a figure QA sequence:
+Before Phase 6 or Phase 8 can pass, run the committed figure/PDF QA gates from the `mathodology-award-gates` skill. Execute the shipped scripts — do not reimplement their logic inline. `figqa.py` is primarily an importable gate: wire `assert_no_overlap(fig)` into the figure factory so any text/annotation/legend overlap with data artists, or any clipped artist, fails the run. `make_contact_sheet.py` builds the contact sheet from the compiled PDF, and `pdf_qa.sh` checks the rendered PDF for page count, duplicate caption prefixes, anonymity metadata, and blank pages.
 
 ```bash
-python3 <experiment_script>.py
-find outputs/figures -type f \( -name '*.png' -o -name '*.pdf' -o -name '*.svg' \) | sort
-python3 <make_contact_sheet_or_equivalent>.py
-(cd paper && pandoc solution.md --pdf-engine=tectonic -o solution.pdf)
-pdfinfo paper/solution.pdf
-pdftoppm -png -r 110 paper/solution.pdf /tmp/solution-page
-if pdftotext paper/solution.pdf - | rg -q "Figure [0-9]+: Figure|Table [0-9]+: Table"; then
-  echo "duplicated caption prefix found" >&2
-  exit 1
-fi
+python3 .claude/skills/mathodology-award-gates/scripts/figqa.py --self-test
+python3 .claude/skills/mathodology-award-gates/scripts/make_contact_sheet.py work/<run-id>/paper/solution.pdf -o work/<run-id>/outputs/figures/contact_sheet.png
+bash    .claude/skills/mathodology-award-gates/scripts/pdf_qa.sh work/<run-id>/paper/solution.pdf --max-pages 25 --anonymous
 ```
 
-The exact commands may differ by environment, but the evidence must include:
+The passing output of these scripts is the required evidence; the run's collected artifacts must include:
 
 - generated figure count and table count
-- contact sheet or individual screenshots of all figures
-- rendered PDF page count
-- rendered PDF page screenshots or contact sheet
-- check for duplicated caption prefixes
+- the contact sheet built from the compiled PDF, never from source images
+- rendered PDF page count and a clean `pdf_qa.sh` report
+- a zero-collision `figqa.py` exit for every generated figure
 - checksum or clean rebuild proof for the final package
 
-The critic must visually inspect the contact sheet and at least the pages containing dense figures/tables. Automated checks do not replace the visual pass because layout engines can produce mathematically valid but unreadable results.
+The critic must still visually inspect the contact sheet and at least the pages containing dense figures/tables. The programmatic gates do not replace the visual pass because layout engines can produce mathematically valid but unreadable results.
 
 ### Failure Conditions
 
@@ -297,7 +324,7 @@ Primary entrypoint:
 .claude/workflows/mathodology-award-submission.md
 ```
 
-Subagents:
+Subagents (9):
 
 - `mathodology-lead`: phase control, synthesis, risk register
 - `mathodology-problem-analyst`: prompt decomposition and scoring map
@@ -306,23 +333,27 @@ Subagents:
 - `mathodology-coder`: reproducible computation, figures, tables
 - `mathodology-critic`: adversarial review and phase gates
 - `mathodology-paper-editor`: paper narrative and polish
+- `mathodology-award-judge`: one independent blind Phase 7 judge seat (the lead dispatches three in parallel)
 - `mathodology-submission-packager`: final package and reproducibility README
+
+`mathodology-lead`, `mathodology-problem-analyst`, `mathodology-modeler`, `mathodology-coder`, `mathodology-critic`, `mathodology-paper-editor`, and `mathodology-award-judge` are pinned to `model: opus` in their frontmatter; `mathodology-evidence-researcher` and `mathodology-submission-packager` inherit the session model. A `CLAUDE_CODE_SUBAGENT_MODEL` env var or a per-invocation model parameter overrides the frontmatter pin (env/per-invocation > frontmatter). The lead always runs as the main Claude Code thread, never as a dispatched subagent, because a dispatched subagent cannot spawn the specialist subagents this workflow requires.
 
 Execution pattern:
 
-1. `mathodology-lead` loads `mathodology-whole-project`.
+1. `mathodology-lead` loads `mathodology-whole-project`, `mathodology-agent-pipeline`, and `mathodology-award-gates`.
 2. Lead starts Phase 0 and dispatches specialists.
-3. Specialists produce phase artifacts independently.
+3. Specialists produce phase artifacts independently, each closing with a `handoff:` block.
 4. Lead merges artifacts into a single decision log.
-5. `mathodology-critic` audits the phase.
-6. Lead fixes or redispatches until the gate passes.
-7. Repeat through Phase 8.
+5. `mathodology-critic` audits the phase and returns a `gate:` block.
+6. Lead fixes or redispatches until the gate passes, within the iteration budgets.
+7. At Phase 7 the lead dispatches three blind `mathodology-award-judge` seats and aggregates their scorecards.
+8. Repeat through Phase 8.
 
 For installed global skills, Claude Code may not receive `.claude/agents` and `.claude/workflows` from the `skills` CLI. In that case, load `mathodology-whole-project` and follow the same phase model from this document.
 
 ## Codex Multi-Agents Mode
 
-Use this when the skills are installed globally for Codex.
+Use this when the skills are installed globally for Codex. The Codex run loads `mathodology-whole-project` and `mathodology-award-gates` — the latter owns the handoff/gate/scorecard/decision_memo schemas, the judge-panel thresholds, the iteration budgets, and the figure/PDF QA scripts.
 
 Start prompt:
 
@@ -339,7 +370,10 @@ Codex agent roles:
 - Experiment and computation agent
 - Critic agent
 - Paper writing agent
+- Three independent Phase 7 judge agents (blind panel)
 - Submission packaging agent
+
+In Codex the Phase 7 blind judge panel is emulated as three INDEPENDENT agent invocations with no shared context. Each receives only its seat brief — Seat A flagship-tier general judge, Seat B weighting innovation and decision-usefulness, Seat C a skeptical referee scoring only correctness and reproducibility — plus the rendered PDF and the artifact manifest, and each returns exactly one `scorecard:` block. The lead validates each block, then aggregates the three per the `mathodology-award-gates` thresholds (Outstanding/国一 total ≥ 85, floor 70; Finalist/国一边缘 80/65; Meritorious/国二 75/60), never averaging a >20 single-criterion disagreement away.
 
 ### Codex Clarification And Continuation
 
@@ -378,6 +412,7 @@ Codex execution rules:
 - Give each agent a narrow brief, expected files, and phase gate.
 - Ask at least two agents for model-route proposals in Phase 2.
 - Ask one independent critic agent to review each gate.
+- Dispatch three independent blind judge agents in Phase 7 and aggregate their scorecards per the award-gates thresholds; on any budget exhaustion (max 2 fix loops per gate, max 2 Phase 7 re-score rounds, whole-run cap 8) emit a decision_memo and stop for the user.
 - Preserve a phase log with decisions, assumptions, rejected alternatives, evidence, commands, and output paths.
 - Before final response, verify package completeness against Phase 8.
 
@@ -412,4 +447,7 @@ Do not treat a solution as prize-level until it has:
 - paper method descriptions that match the delivered code
 - polished paper narrative
 - independent critic review and an award-tier judge-panel scorecard that meets the targeted tier
+- structured yaml handoff/gate/scorecard/decision_memo artifacts, linted by the shipped `lint_run.py`
+- bounded gate iteration budgets (max 2 fix loops per critic gate, max 2 Phase 7 re-score rounds, whole-run cap 8) with a decision_memo escalation to the user on exhaustion
+- committed figure/PDF QA gates (`figqa.py`, `pdf_qa.sh`) whose passing output is required evidence
 - complete final package audit checked against the rendered PDF

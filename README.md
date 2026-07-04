@@ -21,7 +21,7 @@ Mathodology 是一套**专为数学建模竞赛设计的数模 Agent Skills**，
 ## 仓库内容
 
 - `.claude/skills/<skill-name>/SKILL.md` 中的 Claude Code 项目 skills
-- `.claude/agents/` 中的 Claude Code 项目 subagents（建模、编码、论文、评审等分工角色）
+- `.claude/agents/` 中的 9 个 Claude Code 项目 subagents（建模、编码、论文、评审、盲评判审等分工角色）
 - `.claude/workflows/` 中的 Claude Code 竞赛 workflow 模板
 - 每个 skill 自带 `agents/openai.yaml`，方便 Codex 风格工具展示和调用
 - 根目录 `AGENTS.md`，给不会自动发现 project skills 的工具使用
@@ -41,13 +41,13 @@ npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '
 一条命令更新已安装的 Mathodology skills：
 
 ```bash
-npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 如果你用本仓库 checkout 来使用 Claude Code 项目 subagents 和 workflow 模板，请在 checkout 里运行完整一键更新器：
 
 ```bash
-git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 这条命令使用 `vercel-labs/skills` 提供的开放 `skills` CLI，从 GitHub 安装 Agent Skills 到对应 agent 的 skills 目录。
@@ -68,12 +68,22 @@ Mathodology 分别提供 Codex 和 Claude Code 的竞赛编排指导：
 
 完整 phase 模型见 [docs/WORKFLOWS_zh.md](docs/WORKFLOWS_zh.md)。
 
+## 获奖级质量 gate
+
+获奖级质量控制被做成可执行、有边界的机制，全部由 `mathodology-award-gates` skill 承载：
+
+- **独立三席盲评判审团**：Phase 7 并行派发 3 个互不共享上下文的 `mathodology-award-judge` seat（旗舰通审 / 创新与决策效用 / 只审正确性与可复现），各自只拿到渲染 PDF 与产物清单打分；lead 按数值阈值聚合（Outstanding/国一 ≥85、floor 70），任一席位低于目标档即触发定向改进循环。
+- **有界迭代预算**：每个 phase gate 最多 2 轮修复、Phase 7 最多 2 轮重评、全程上限 8 轮；耗尽后不静默继续，而是向用户发结构化 `decision_memo` 决策备忘。
+- **结构化 YAML handoff**：specialist 交接、critic gate、判审 scorecard 都是带固定字段的 YAML 块，由 `lint_run.py` 脚本校验，杜绝自由文本漏项。
+- **随包发布的图表/PDF QA gate**：`figqa.py`（bbox 碰撞硬门）和 `pdf_qa.sh`（渲染 PDF 页数、重复 caption、匿名性检查）随 skill 发布，直接执行而非每次重写。
+
 ## Skill 索引
 
 | Skill | 适用场景 |
 |---|---|
 | [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | 整个 skills 仓库的备份、迁移、恢复、整体理解，或 Codex/Claude Code 竞赛工作流编排 |
 | [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | 在 skills-only checkout 中开始工作，或验证仓库边界 |
+| [`mathodology-award-gates`](.claude/skills/mathodology-award-gates/SKILL.md) | 运行竞赛时执行获奖级 phase gate、判审团、结构化 handoff、图表 QA 或渲染 PDF QA |
 | [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | 维护原 agent pipeline 的归档知识 |
 | [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | 维护原 gateway 和 API 的归档知识 |
 | [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | 维护原 Web UI 的归档知识 |
@@ -123,32 +133,21 @@ bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
 
 ## 验证
 
-验证所有项目 skills：
+所有机械化仓库验证都收敛到一个脚本 `validate_repo.py`（纯标准库，无需 PyYAML），随 `mathodology-dev-test-release` skill 一起发布。不要再把这些检查以 heredoc 形式内联进文档或其他 skill。
+
+从仓库根目录运行全部维护 gate：
 
 ```bash
-for d in .claude/skills/*; do
-  python3 /Users/cornna/.codex/skills/.system/skill-creator/scripts/quick_validate.py "$d"
-done
+python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-检查元数据和目录一致性：
+按名字单独运行某个 gate —— `skills`、`metadata`、`links`、`whitelist`、`agents`、`sync` 或 `selftest`：
 
 ```bash
-python3 - <<'PY'
-from pathlib import Path
-import re
-import yaml
-
-root = Path(".claude/skills")
-for d in sorted(p for p in root.iterdir() if p.is_dir()):
-    text = (d / "SKILL.md").read_text(encoding="utf-8")
-    frontmatter = yaml.safe_load(re.match(r"^---\n(.*?)\n---\n", text, re.S).group(1))
-    assert frontmatter["name"] == d.name
-    assert frontmatter["description"].startswith("Use when")
-    assert (d / "agents" / "openai.yaml").exists()
-print("skills ok")
-PY
+python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py sync
 ```
+
+`all` 覆盖 skill 与 agent 的 frontmatter、`agents/openai.yaml` 元数据、markdown 链接与 `.claude/...` 路径解析、tracked 文件白名单，以及中英文档孪生同步。`mathodology-award-gates` 与 `mathodology-dev-test-release` 携带的脚本各自带 `--self-test`。
 
 ## 仓库策略
 

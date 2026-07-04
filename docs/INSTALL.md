@@ -13,7 +13,7 @@ npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '
 What it does:
 
 - downloads the skills from `github.com/sweetcornna/mathodology`
-- installs all 7 skills
+- installs all 8 skills
 - targets Codex and Claude Code
 - installs globally for the current user
 - copies files instead of symlinking
@@ -36,13 +36,13 @@ Do not use `skills add <repo> --help` as a help command. Current `skills` CLI ve
 Update only Mathodology skills:
 
 ```bash
-npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 Full one-command updater from a cloned Mathodology checkout:
 
 ```bash
-git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 Use the full updater when you rely on `.claude/agents/` or `.claude/workflows/`, because those project-level files live in the checkout rather than inside the global skill packages.
@@ -94,6 +94,7 @@ npx -y skills@latest add sweetcornna/mathodology --list
 Expected skills:
 
 - `mathodology-agent-pipeline`
+- `mathodology-award-gates`
 - `mathodology-dev-test-release`
 - `mathodology-gateway-api`
 - `mathodology-project-orientation`
