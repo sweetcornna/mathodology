@@ -15,7 +15,7 @@ Use this workflow in Claude Code when the user names a specific mathematical mod
 
 ## Tier Thresholds
 
-Each adapter's tier names map to the numeric thresholds defined in the `mathodology-award-gates` skill (S3), not restated here. An adapter names only which tier label is its contest's flagship tier and which is its second tier (for example: MCM/ICM Outstanding and Meritorious; CUMCM 国一 and 国二; MathorCup 一等奖 and 二等奖). It must not restate or alter the pass totals or per-criterion floors — the lead reads those numbers from the skill when aggregating the Phase 7 judge panel.
+Each adapter's tier names map to the numeric thresholds defined in the `mathodology-award-gates` skill, not restated here. An adapter names only which tier label is its contest's flagship tier and which is its second tier (for example: MCM/ICM Outstanding and Meritorious; CUMCM 国一 and 国二; MathorCup 一等奖 and 二等奖). It must not restate or alter the pass totals or per-criterion floors — the lead reads those numbers from the skill when aggregating the Phase 7 judge panel.
 
 ## Adapter: MCM/ICM O-Prize
 
@@ -291,7 +291,7 @@ variant:
   adapter: <primary adapter applied, e.g. MCM/ICM O-Prize>
   emphasis: []                 # adapter lead-emphasis points shaping this run
   gates_added: []              # secondary gates the official rules require on top of the universal gates
-  thresholds_ref: mathodology-award-gates   # numeric tier thresholds (S3) live in the skill; do not restate them here
+  thresholds_ref: mathodology-award-gates   # numeric tier thresholds live in the skill; do not restate them here
   official_rules_source: <url or citation>
   deadline: <date + timezone>
   language: <submission language>

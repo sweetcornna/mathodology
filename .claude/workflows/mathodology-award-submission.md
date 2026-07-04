@@ -255,18 +255,20 @@ scorecard:
   target_tier: outstanding
   seat: A                      # A | B | C
   round: 1
-  criteria:
-    - {name: ..., weight: 0.25, score: 82}
-  weighted_total: 84.5
+  criteria:                    # one row per criterion; weights sum to 1.0
+    - {name: modeling, weight: 0.4, score: 82}
+    - {name: results, weight: 0.35, score: 80}
+    - {name: writing, weight: 0.25, score: 88}
+  weighted_total: 82.8
   implied_tier: meritorious
   fix_one_thing: "..."
   ranked_gaps: []
   do_not_regress: []
 ```
 
-Aggregation (lead-run): the lead validates each seat's block with `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py scorecard`, then aggregates. The panel passes only when (a) every seat's `implied_tier` meets or exceeds the target tier, (b) the minimum `weighted_total` across seats clears the threshold, and (c) no single criterion falls below its floor. Thresholds: Outstanding / 国一 → total ≥ 85, floor 70; Finalist / 国一边缘 → 80 / 65; Meritorious / 国二 → 75 / 60. Two seats disagreeing by more than 20 on one criterion is an evidence conflict the lead investigates — never averaged away.
+Aggregation (lead-run): the lead validates each seat's block with `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py scorecard`, then aggregates. The panel passes only when (a) every seat's `implied_tier` meets or exceeds the target tier, (b) the minimum `weighted_total` across seats clears the threshold, (c) no single criterion falls below its floor, and (d) no unresolved evidence conflict remains — two seats disagreeing by more than 20 on one criterion is a conflict the lead must adjudicate, never average away. Thresholds: Outstanding / 国一 → total ≥ 85, floor 70; Finalist / 国一边缘 → 80 / 65; Meritorious / 国二 → 75 / 60. `lint_run.py aggregate` enforces all four conditions.
 
-Critic gate: no unresolved blocker or high-severity issue remains and every medium issue has an owner, fix, or explicit risk acceptance; and the judge panel passes per the aggregation rule above. If the panel fails — any seat below the target tier, min total under threshold, or a below-floor criterion — the lead dispatches a targeted improvement loop on the lowest-scoring dimension (most often an originality or scope gap, since those set the ceiling) and re-scores. Re-score is capped at 2 rounds (S4); on exhaustion the lead emits a `decision_memo:` block and stops rather than shipping. Do not treat a correct, reproducible, unremarkable submission as done when the target is the flagship tier.
+Critic gate: no unresolved blocker or high-severity issue remains and every medium issue has an owner, fix, or explicit risk acceptance; and the judge panel passes per the aggregation rule above. If the panel fails — any seat below the target tier, min total under threshold, a below-floor criterion, or an unresolved >20 single-criterion conflict — the lead dispatches a targeted improvement loop on the lowest-scoring dimension (most often an originality or scope gap, since those set the ceiling) and re-scores. Re-score is capped at 2 rounds; on exhaustion the lead emits a `decision_memo:` block and stops rather than shipping. Do not treat a correct, reproducible, unremarkable submission as done when the target is the flagship tier.
 
 ## Phase 8: Final Package
 

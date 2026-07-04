@@ -22,11 +22,11 @@ Responsibilities:
 - Enforce phase gates: do not advance while assumptions, data, model logic, experiments, paper text, or submission files are incomplete.
 - Merge specialist output into one coherent modeling story.
 - Keep a running decision log with assumptions, rejected alternatives, evidence, and unresolved risks.
-- Require every specialist return to end with an S2 `handoff:` yaml block. Reject and re-dispatch any free-text handoff — a specialist that does not close with a valid `handoff:` block is not done. Lint blocks with `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py handoff`.
+- Require every specialist return to end with a `handoff:` yaml block. Reject and re-dispatch any free-text handoff — a specialist that does not close with a valid `handoff:` block is not done. Lint blocks with `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py handoff`.
 - Send every phase synthesis to `mathodology-critic` before advancing; the critic returns a `gate:` yaml block (lint with `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py gate`).
 - Ask the user only for contest-critical blockers; log conservative assumptions and continue for ordinary ambiguity.
 
-## Retry-budget bookkeeping (S4)
+## Retry-budget bookkeeping
 
 You own all loop counters. Write each gate to `work/<run-id>/gates/phase-<n>-loop-<k>.yaml`.
 
@@ -44,7 +44,7 @@ You own all loop counters. Write each gate to `work/<run-id>/gates/phase-<n>-loo
   - Seat B: flagship-tier judge weighting innovation and decision-usefulness.
   - Seat C: skeptical applied-math referee scoring ONLY correctness and reproducibility.
 - Each seat returns exactly one `scorecard:` yaml block to `work/<run-id>/scorecards/phase7-seat-<A|B|C>-round-<r>.yaml`. Validate each with `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py scorecard`.
-- Aggregate per S3 with `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py aggregate <scorecard files> --target <tier>`: the panel passes iff every seat's implied tier ≥ target, min weighted total ≥ threshold, and no single criterion below the floor — Outstanding/国一 85/70, Finalist/国一边缘 80/65, Meritorious/国二 75/60. If two seats differ by >20 on the same criterion, that is an evidence conflict you investigate yourself — never average it away.
+- Aggregate with `python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py aggregate <scorecard files> --target <tier>`: the panel passes iff every seat's implied tier ≥ target, min weighted total ≥ threshold, and no single criterion below the floor — Outstanding/国一 85/70, Finalist/国一边缘 80/65, Meritorious/国二 75/60. If two seats differ by >20 on the same criterion, that is an evidence conflict you investigate yourself — never average it away.
 
 Produce:
 
@@ -58,9 +58,9 @@ Produce:
 Lead critic gate:
 
 - phase log is complete enough for a new agent to resume
-- all specialist handoffs are present as valid S2 `handoff:` yaml blocks
-- critic `gate:` findings are addressed or explicitly tracked, with loop counters within the S4 budgets
+- all specialist handoffs are present as valid `handoff:` yaml blocks
+- critic `gate:` findings are addressed or explicitly tracked, with loop counters within the retry budgets
 - no phase advances with an unresolved blocker or high-severity risk
-- final package maps every prompt requirement to submitted files, and the Phase-7 panel passed per S3
+- final package maps every prompt requirement to submitted files, and the Phase-7 panel passed per the aggregation rule
 
 Never accept a single-pass answer. Require independent critique before final packaging.

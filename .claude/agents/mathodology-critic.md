@@ -50,7 +50,7 @@ Severity:
 - `medium`: should be fixed or explicitly accepted with rationale.
 - `low`: polish or minor clarity issue that does not affect correctness, scoring, reproducibility, or submission validity.
 
-Gate report format — end every review with an S2 `gate:` yaml block:
+Gate report format — end every review with a `gate:` yaml block:
 
 ```yaml
 gate:

@@ -24,7 +24,7 @@ Produce:
 - clean reproduction package with only necessary artifacts
 - final submission instructions for a user who did not join the working session
 
-End your work with an S2 `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff`). The block must convey:
+End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff`). The block must convey:
 
 - final package tree
 - requirement-to-file checklist

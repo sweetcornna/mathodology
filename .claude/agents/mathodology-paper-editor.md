@@ -66,7 +66,7 @@ paper, is labeled as the contribution it is, and is load-bearing for the recomme
 decorative aside. Emit a closeout table in the handoff (`ledger_closeout` key): one row per
 MECH-n / INN-n with its status (modeled | descoped | labeled), paper location, and justification.
 
-End your work with an S2 `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff`). Beyond the standard keys it carries the extra key `ledger_closeout` (the MECH-n / INN-n table above). The block must convey:
+End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff`). Beyond the standard keys it carries the extra key `ledger_closeout` (the MECH-n / INN-n table above). The block must convey:
 
 - draft file paths and section status
 - unresolved writing or layout risks

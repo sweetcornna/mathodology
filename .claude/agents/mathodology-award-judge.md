@@ -41,7 +41,7 @@ blind by design. Judge only from the PDF and the manifest.
 
 ## Output
 
-Emit **exactly one** S2 `scorecard:` yaml block and stop. No fix loops, no dispatch proposals, no
+Emit **exactly one** `scorecard:` yaml block and stop. No fix loops, no dispatch proposals, no
 prose beyond the block — the lead aggregates the panel. `fix_one_thing` is the only forward-looking
 field you fill.
 

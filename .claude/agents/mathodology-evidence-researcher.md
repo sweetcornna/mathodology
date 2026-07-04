@@ -29,7 +29,7 @@ will print (page/volume/edition) goes on the `citations_to_verify` list with sta
 so the paper-editor cannot ship fabricated-looking specifics. Closing this list is a downstream
 gate, not an optional nicety.
 
-End your work with an S2 `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff`). Beyond the standard keys it carries the extra key `citations_to_verify: [{id, claim, source, url, verified: bool}]`. The block must convey:
+End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff`). Beyond the standard keys it carries the extra key `citations_to_verify: [{id, claim, source, url, verified: bool}]`. The block must convey:
 
 - source ledger and local paths or URLs
 - extraction summary for each source

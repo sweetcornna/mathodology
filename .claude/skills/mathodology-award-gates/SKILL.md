@@ -59,9 +59,11 @@ scorecard:
   target_tier: outstanding
   seat: A                      # A | B | C
   round: 1
-  criteria:
-    - {name: ..., weight: 0.25, score: 82}   # weights sum to 1.0, scores 0-100
-  weighted_total: 84.5
+  criteria:                    # one row per criterion; weights sum to 1.0, scores 0-100
+    - {name: modeling, weight: 0.4, score: 82}
+    - {name: results, weight: 0.35, score: 80}
+    - {name: writing, weight: 0.25, score: 88}
+  weighted_total: 82.8
   implied_tier: meritorious
   fix_one_thing: "..."
   ranked_gaps: []

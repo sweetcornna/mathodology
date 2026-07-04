@@ -35,7 +35,7 @@ Mathodology 支持两种编排模式：
 | 4. 实验计算 | 生成可复现结果 | 代码、原始输出、表格、图、敏感性、鲁棒性、结果密度映射、偏离规格记录 | 论文中的数字可复现，核心结果有图表支撑；对比共用随机数、by-construction 结果如实标注 |
 | 5. 解释结果 | 把结果接回题目 | 结论、图表说明、建议、局限、图表覆盖映射 | 每个结果回答题目问题 |
 | 6. 论文初稿 | 形成完整论文 | 摘要、方法、结果、图表、参考文献、附录、单一权威推荐、创新清单（INN-n）和 scope ledger（MECH-n）收口 | 没有孤立结果、稀疏结果区、无支撑论断、推荐不一致或论文与代码不符；每个 INN-n 和 MECH-n 条目要么在正文承重要么被显式 descope |
-| 7. 独立审稿 | 删除可修缺陷、确认获奖档位 | critic 审计外加三个并行盲评 `mathodology-award-judge` 评分表 | 无高严重度未解决问题；lead 聚合三席，只有每席位隐含档位达标、最低总分过线、且无单项低于下限时判审团才通过 |
+| 7. 独立审稿 | 删除可修缺陷、确认获奖档位 | critic 审计外加三个并行盲评 `mathodology-award-judge` 评分表 | 无高严重度未解决问题；lead 聚合三席，只有每席位隐含档位达标、最低总分过线、无单项低于下限、且无未解决的单项 >20 分歧时判审团才通过 |
 | 8. 最终提交 | 组装提交包 | 论文、源码、代码、数据说明、README、AI 使用说明、清单 | 用户可直接提交 |
 
 ## 细化 Phase-Agent-Critic 矩阵
@@ -51,7 +51,7 @@ Mathodology 支持两种编排模式：
 | 4. 实验计算 | coder, modeler, critic | 产出可复现脚本或 notebook、随机种子、环境说明、原始输出、整理表格、图、baseline、ablation、敏感性、鲁棒性、运行日志，以及覆盖模型结构、核心比较、敏感性、鲁棒性、权衡和建议的结果密度映射。 | 论文数字可重新生成或手工追踪；图有源数据；失败也被记录；不接受挑一次最好结果；图表稀疏或装饰性图表不能通过。 |
 | 5. 解释结果 | modeler, evidence researcher, paper editor, critic | 把结果转成逐问回答、图表标题、建议、局限、不确定性说明、claim-source 链接，以及说明每个主要结论由哪张图或表支撑的覆盖映射。 | 每个结果都回答题目任务；每个论断都有数据、推导、图表、引用或明确假设支撑；局限不推翻主结论；重要结论不能只停留在文字断言。 |
 | 6. 论文初稿 | paper editor, modeler, coder, critic | 完成摘要、引言、假设、方法、结果、敏感性、优缺点、结论、参考文献、必要的 AI 使用说明、页数约束内的最终图表布局，以及对照引用收口的创新清单（INN-n）和 scope ledger（MECH-n）收口。 | 摘要说明方法和最重要结论；论文不是实验流水账；符号、图注、引用、图表密度和需求覆盖一致；每个创新清单（INN-n）和 scope ledger（MECH-n）条目要么在正文承重要么在局限里被显式 descope。 |
-| 7. 独立审稿 | critic, 三个盲评 `mathodology-award-judge` 席位, lead, 相关专家 rerun | critic 分别审计题目覆盖、数学有效性、原创性、论文与代码一致性、头条鲁棒性、推荐一致性、证据、复现、写作、格式和最终评分风险，并带 skill 归因；lead 在无共享上下文下并行分派三个盲评 `mathodology-award-judge` 席位（A 旗舰通用、B 创新与决策有用性、C 只评正确性与可复现性），各出一份评分表。 | 无 blocker/high 问题；每个 medium 问题已修复或有明确接受理由；lead lint 每份评分表并按阈值聚合（Outstanding/国一 总分 ≥ 85、下限 70；Finalist/国一边缘 80/65；Meritorious/国二 75/60），只有每席位隐含档位达标、最低总分过线、且无单项低于下限时判审团才通过；re-score 封顶 2 轮，然后出 decision_memo；critic 和判审都不能是原产出 agent。 |
+| 7. 独立审稿 | critic, 三个盲评 `mathodology-award-judge` 席位, lead, 相关专家 rerun | critic 分别审计题目覆盖、数学有效性、原创性、论文与代码一致性、头条鲁棒性、推荐一致性、证据、复现、写作、格式和最终评分风险，并带 skill 归因；lead 在无共享上下文下并行分派三个盲评 `mathodology-award-judge` 席位（A 旗舰通用、B 创新与决策有用性、C 只评正确性与可复现性），各出一份评分表。 | 无 blocker/high 问题；每个 medium 问题已修复或有明确接受理由；lead lint 每份评分表并按阈值聚合（Outstanding/国一 总分 ≥ 85、下限 70；Finalist/国一边缘 80/65；Meritorious/国二 75/60），只有每席位隐含档位达标、最低总分过线、无单项低于下限、且无未解决的单项 >20 分歧时判审团才通过；re-score 封顶 2 轮，然后出 decision_memo；critic 和判审都不能是原产出 agent。 |
 | 8. 最终提交 | submission packager, paper editor, critic | 组装最终 PDF、必要的可编辑源文件、代码、数据或来源说明、图表、复现 README、AI 使用报告和 requirement-to-file 清单。 | 提交包符合规则、必要时匿名、无密钥和草稿文件、满足大小和页数限制，且未参与工作的人也能提交。 |
 
 ## Agent Handoff 契约
