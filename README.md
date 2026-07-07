@@ -32,25 +32,31 @@ Mathodology 是一套**专为数学建模竞赛设计的数模 Agent Skills**，
 
 ## 一键安装与更新
 
-一条命令把全部 Mathodology skills 全局安装到 Codex 和 Claude Code：
+推荐：在目标项目根目录运行一条命令，把全部内容（8 个 skills + 9 个 Claude Code subagents + 2 个 workflow 模板）只部署到当前文件夹，作为项目级 skill，不影响其他项目：
+
+```bash
+npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows'
+```
+
+更新项目级安装（在项目根目录）：
+
+```bash
+npx -y skills@latest update --project --yes
+```
+
+备选：一条命令把全部 Mathodology skills 全局安装到 Codex 和 Claude Code（影响本机所有项目）：
 
 ```bash
 npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
 ```
 
-一条命令更新已安装的 Mathodology skills：
+更新全局安装的 Mathodology skills：
 
 ```bash
 npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
-如果你用本仓库 checkout 来使用 Claude Code 项目 subagents 和 workflow 模板，请在 checkout 里运行完整一键更新器：
-
-```bash
-git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
-```
-
-这条命令使用 `vercel-labs/skills` 提供的开放 `skills` CLI，从 GitHub 安装 Agent Skills 到对应 agent 的 skills 目录。
+这些命令使用 `vercel-labs/skills` 提供的开放 `skills` CLI，从 GitHub 安装 Agent Skills 到对应 agent 的 skills 目录。
 
 安装或更新后重启 Codex 或 Claude Code，让新 skills、subagents 和 workflow 模板被发现。查看 CLI 帮助请用 `npx -y skills@latest --help`；不要使用 `skills add <repo> --help`，当前 CLI 版本可能会把它当成安装命令执行。
 

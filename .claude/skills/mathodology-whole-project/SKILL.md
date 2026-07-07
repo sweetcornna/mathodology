@@ -114,27 +114,33 @@ of truth for the detailed matrix and gate guarantees.
 
 ## User Install And Update
 
-For end users, prefer the mature `skills` CLI installer:
+For end users, prefer the mature `skills` CLI installer. The recommended scope is project-level: run from the target project root, deploy everything (skills, Claude Code subagents, workflow templates) into that folder only, and leave other projects untouched:
+
+```bash
+npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows'
+```
+
+Update a project-level install from the project root with:
+
+```bash
+npx -y skills@latest update --project --yes
+```
+
+For a machine-wide install across all projects, use the global variant:
 
 ```bash
 npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
 ```
 
-Update installed Mathodology skills with:
+Update globally installed Mathodology skills with:
 
 ```bash
 npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
-If the user relies on a cloned checkout for Claude Code project subagents and workflow templates, use the full one-command updater from the checkout:
+Use `npx -y skills@latest --help` for CLI help. Do not use `skills add <repo> --help` as a help command because current CLI versions may treat that form as an install command.
 
-```bash
-git pull --ff-only && npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
-```
-
-Use `npx -y skills@latest --help` for CLI help. Do not use `skills add <repo> --help` as a help command because current CLI versions may install into the current project.
-
-See `docs/INSTALL.md` for target-specific variants.
+See `docs/INSTALL.md` for target-specific variants, verification, and removal.
 
 ## Backup Workflow
 
