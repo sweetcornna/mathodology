@@ -33,9 +33,9 @@ Check:
 - sensitivity and robustness insufficiency
 - paper structure, clarity, scoring alignment, and page economy (no wasted full-page reprints or near-empty low-information panels)
 - figure/table sufficiency: model structure, main comparisons, sensitivity, robustness or uncertainty, tradeoffs, and recommendations must be visually or tabularly inspectable
-- figure/table rendering quality: no overlapping text, clipped labels, unreadable legends, legend/annotation boxes sitting on top of bars/points/lines, label text typeset over a *foreign* filled region (e.g. a series-name word printed across another series' bar), annotation boxes clipped at the axes edge, duplicate caption prefixes, orphaned figures, incoherent table wrapping, or blank/pixelated outputs. Require as evidence a zero-collision exit from `python3 .claude/skills/mathodology-award-gates/scripts/figqa.py` (the rendered `get_window_extent` bbox-collision gate, wired into the build so a defect fails the run) plus a clean `bash .claude/skills/mathodology-award-gates/scripts/pdf_qa.sh` report on the compiled PDF. A visual "looks fine" pass over a contact sheet is insufficient — hand-placed annotations in data coordinates routinely collide once a number or font changes, and low-resolution eyeballing misses it.
+- figure/table rendering quality: no overlapping text, clipped labels, unreadable legends, legend/annotation boxes sitting on top of bars/points/lines, label text typeset over a *foreign* filled region (e.g. a series-name word printed across another series' bar), annotation boxes clipped at the axes edge, duplicate caption prefixes, orphaned figures, incoherent table wrapping, or blank/pixelated outputs. A zero-collision pass is evidenced by **you independently re-running** `run_all.py` (which embeds `figqa.assert_no_overlap` on every figure) and observing exit 0 — do not merely trust the coder's `collision_gate_result` handoff key; `python3 .claude/skills/mathodology-award-gates/scripts/figqa.py --self-test` proves the gate itself works. Also require a clean `bash .claude/skills/mathodology-award-gates/scripts/pdf_qa.sh` report on the compiled PDF. A visual "looks fine" pass over a contact sheet is insufficient — hand-placed annotations in data coordinates routinely collide once a number or font changes, and low-resolution eyeballing misses it.
 - final package completeness
-- contest compliance: page, size, anonymity, AI-use, citation, and submission rules
+- contest compliance: page, size, anonymity, AI-use, citation, and submission rules — anonymity covers the PDF **body text** (author/institution names, emails, 姓名/学校/指导教师 labels on the title page), not just metadata; the contest control number must appear where rules require it while all other identity must not
 - generic-method stacking or polished but content-light writing
 - sparse, decorative, duplicated, or uninterpreted figures and tables
 - generated chart bugs that survive into the rendered PDF
@@ -50,7 +50,9 @@ Severity:
 - `medium`: should be fixed or explicitly accepted with rationale.
 - `low`: polish or minor clarity issue that does not affect correctness, scoring, reproducibility, or submission validity.
 
-Gate report format — end every review with a `gate:` yaml block:
+Gate report format — end every review with a `gate:` yaml block. Every issue carries a stable
+`id` (`G<phase>-<n>`); when a finding recurs in a later loop, reuse its id unchanged so the lead
+can mechanically detect a stalled fix:
 
 ```yaml
 gate:
@@ -58,7 +60,7 @@ gate:
   loop: 0                       # matches the lead's loop counter for this phase
   verdict: pass                 # pass | fail
   issues:
-    - {severity: high, summary: ..., artifact: ..., required_fix: ..., owner: mathodology-coder}
+    - {id: G4-1, severity: high, summary: ..., artifact: ..., required_fix: ..., owner: mathodology-coder}
   evidence_checked: []
   missing_evidence: []
 ```

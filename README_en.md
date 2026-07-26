@@ -88,11 +88,11 @@ Award-level quality control is implemented as executable, bounded machinery, all
 | Skill | Use When |
 |---|---|
 | [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | Backing up, transferring, restoring, orienting, or running Codex/Claude Code contest workflow orchestration |
-| [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | Starting work in this skills-only checkout or verifying repository boundaries |
+| [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | Starting work in this skills-only checkout or checking repository boundaries |
 | [`mathodology-award-gates`](.claude/skills/mathodology-award-gates/SKILL.md) | Running award-workflow phase gates, judge panels, structured handoffs, figure QA, or rendered-PDF QA during a contest run |
-| [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | Maintaining archived knowledge about the former agent pipeline |
-| [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | Maintaining archived knowledge about the former gateway and API |
-| [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | Maintaining archived knowledge about the former web UI |
+| [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | Orchestrating the nine-phase award workflow (phase responsibilities, specialist roster, prize-level gates), plus archived agent-pipeline knowledge |
+| [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | Export/packaging/API reasoning for workflows, plus archived gateway and API knowledge |
+| [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | Figure/table presentation reasoning for workflows, plus archived web UI knowledge |
 | [`mathodology-dev-test-release`](.claude/skills/mathodology-dev-test-release/SKILL.md) | Validating the skills repository or preserving archived dev, test, and release guidance |
 | [`mathodology-skill-authoring`](.claude/skills/mathodology-skill-authoring/SKILL.md) | Adding, updating, validating, or reviewing project skills |
 
@@ -153,7 +153,7 @@ Run one gate by naming it — `skills`, `metadata`, `links`, `whitelist`, `agent
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py sync
 ```
 
-The `all` run covers skill and agent frontmatter, `agents/openai.yaml` metadata, markdown link and `.claude/...` path resolution, the tracked-file whitelist, and en/zh doc-twin sync. The scripts shipped in `mathodology-award-gates` and `mathodology-dev-test-release` each carry a `--self-test`.
+The `all` run covers skill and agent frontmatter, `agents/openai.yaml` metadata, markdown link and `.claude/...` path resolution, the tracked-file whitelist, and en/zh doc-twin sync. The scripts shipped in `mathodology-award-gates` each carry a `--self-test`; `validate_repo.py` uses its `selftest` subcommand.
 
 ## Repository Policy
 

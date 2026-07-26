@@ -115,7 +115,7 @@ npx -y skills@latest update --global --yes
 Codex：
 
 ```bash
-ls ~/.agents/skills | rg '^mathodology-'
+ls ~/.codex/skills | rg '^mathodology-'
 ```
 
 Claude Code：

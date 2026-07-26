@@ -1,6 +1,6 @@
 ---
 name: mathodology-whole-project
-description: Use when running, backing up, transferring, restoring, archiving, or globally installing the Mathodology skills-only repository and its award workflows.
+description: Use when running, backing up, transferring, restoring, archiving, or installing (project-level or global) the Mathodology skills-only repository and its award workflows.
 ---
 
 # Mathodology Whole Project

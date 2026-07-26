@@ -5,7 +5,7 @@ Use this workflow in Claude Code when the user names a specific mathematical mod
 ## Operating Mode
 
 1. Start with `mathodology-lead`.
-2. Load `mathodology-whole-project` and `mathodology-agent-pipeline`.
+2. Load `mathodology-whole-project`, `mathodology-agent-pipeline`, and `mathodology-award-gates` (the canonical home of the handoff/gate/scorecard schemas, judge thresholds, retry budgets, and QA scripts this workflow depends on).
 3. In Phase 0, classify the contest type and record official rules, deadline, language, file limits, identity policy, code policy, AI-use policy, and final package requirements.
 4. Apply exactly one primary adapter. Add secondary gates only when the official rules require them.
 5. Keep the universal structured `handoff:` contract and independent `mathodology-critic` gate from `mathodology-award-submission.md`.
@@ -16,6 +16,8 @@ Use this workflow in Claude Code when the user names a specific mathematical mod
 ## Tier Thresholds
 
 Each adapter's tier names map to the numeric thresholds defined in the `mathodology-award-gates` skill, not restated here. An adapter names only which tier label is its contest's flagship tier and which is its second tier (for example: MCM/ICM Outstanding and Meritorious; CUMCM 国一 and 国二; MathorCup 一等奖 and 二等奖). It must not restate or alter the pass totals or per-criterion floors — the lead reads those numbers from the skill when aggregating the Phase 7 judge panel.
+
+In `target_tier`, `implied_tier`, and `--target`, seats and the lead use the canonical tokens (`outstanding` | `finalist` | `meritorious`) or a documented alias (`国一`, `国二`, `国一边缘`, `一等奖`, `二等奖` — `lint_run.py` accepts these); the contest's local tier label is recorded only in the `variant:` block. An undocumented local label (e.g. a sponsor cup's own tier name) in `implied_tier` cannot be ranked and fails aggregation.
 
 ## Adapter: MCM/ICM O-Prize
 
@@ -145,6 +147,8 @@ Phase changes:
 - Phase 2 compares baseline, feature, model-family, and ensembling routes.
 - Phase 3 specifies validation folds, feature pipeline, inference path, and submission schema.
 - Phase 4 logs local validation, public leaderboard submissions, private-risk estimates, and seed variance.
+- Phases 5-6 produce a **reproducibility report + validation study** instead of a contest paper: pipeline description, validation design and results, leakage audit, ablations, seed variance, and private-leaderboard risk assessment, compiled to a PDF so the rendered-PDF gates still apply.
+- Phase 7 keeps the three-seat judge panel: seats score the reproducibility report + validation study (in place of a contest paper) with the same shared criteria, where `summary` = the report's executive summary, `results` = validation quality and private-LB risk honesty. Medal-style tier labels map onto the threshold rows (top medal → the outstanding row, second medal → the finalist row); the lead records the mapping in the `variant:` block and uses the canonical tokens in `--target`.
 - Phase 8 packages code, model artifacts when allowed, submission file, and reproduction instructions.
 
 Critic gate:

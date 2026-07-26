@@ -21,6 +21,11 @@
 
 set -euo pipefail
 
+# Byte-wise collation so the ASCII ranges below behave identically on BSD and
+# GNU tooling regardless of the caller's locale. CJK is matched explicitly
+# (has_cjk) rather than through locale-dependent character classes.
+export LC_ALL=C
+
 # Anonymity scanning. An anonymity gate must bias toward flagging: a false
 # positive costs a human a second look, a false negative leaks identity to the
 # judges. Hard identity markers (email, team/control number) are checked on
@@ -29,10 +34,37 @@ set -euo pipefail
 EMAIL_RE='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z][A-Za-z]+'
 IDNUM_RE='[0-9]{5,}'   # team / control number (tool versions use dotted digits)
 # Rendering toolchain / connective words that are NOT an identity.
-SAFE_TOKENS='matplotlib latex tex pdftex xetex luatex tectonic pandoc ghostscript word microsoft libreoffice openoffice chromium chrome skia quartz wkhtmltopdf weasyprint cairo reportlab dvips groff prince princexml adobe acrobat distiller indesign apple preview mozilla firefox safari typst pdfkit itext fpdf pdflib hyperref beamer'
+SAFE_TOKENS='matplotlib latex tex pdftex xetex luatex tectonic pandoc ghostscript word microsoft libreoffice openoffice chromium chrome skia quartz wkhtmltopdf weasyprint cairo reportlab dvips groff prince princexml adobe acrobat distiller indesign apple preview mozilla firefox safari typst pdfkit itext fpdf pdflib hyperref beamer google docs renderer office writer'
 STOPWORDS='via and for with the personal edition pro professional version using generated document creator producer library'
 
+# Page-1 body-text identity shapes. A control number is REQUIRED on an MCM
+# summary sheet, so digit runs are deliberately not flagged in body text --
+# only affiliation/author shapes and emails are.
+AFFIL_RE='(University|College|Institute|Academy) of [A-Z][a-z]+|[A-Z][a-z]+ (University|College)|School of [A-Z][a-z]+'
+AUTHORLINE_RE='^[[:space:]]*(Author|Authors|Submitted by|Prepared by)[[:space:]]*:'
+# Chinese identity labels (matched as literal UTF-8 byte sequences under LC_ALL=C).
+CN_ID_LABELS='姓名 学校 学院 指导教师 参赛队员 参赛学校 联系电话 队员'
+
 die() { echo "pdf_qa: $*" >&2; exit 2; }
+
+# True when the value contains a CJK ideograph. Prefers python3 (exact code
+# point ranges); falls back to matching the UTF-8 lead/continuation byte shape
+# of the CJK blocks, which is all that is available in a pure-POSIX shell.
+has_cjk() {  # <value>
+    if command -v python3 >/dev/null 2>&1; then
+        printf '%s' "$1" | PYTHONUTF8=1 python3 -c 'import sys, re
+data = sys.stdin.buffer.read().decode("utf-8", "replace")
+sys.exit(0 if re.search(r"[㐀-䶿一-鿿豈-﫿]", data) else 1)' 2>/dev/null
+    else
+        printf '%s' "$1" | grep -q $'[\xe3-\xe9][\x80-\xbf][\x80-\xbf]'
+    fi
+}
+
+# Strip dotted version numbers (e.g. 'Distiller 21.0.20155') so a tool version
+# is never mistaken for a team/control number by IDNUM_RE.
+strip_versions() {  # <value>
+    printf '%s' "$1" | sed -E 's/[0-9]+(\.[0-9]+)+//g'
+}
 
 # Echo alphabetic tokens (len>=3) in a value that are neither a known tool nor a
 # stopword -- i.e. residual identity text (used for the Author field).
@@ -84,11 +116,28 @@ check_pages() {  # <pdf> <max_pages_or_empty>
     return 0
 }
 
+# Echo whitespace-normalised caption prefixes found in the text on stdin, one
+# per line. Three capture shapes:
+#   1. colon style, anywhere on a line (a cross-reference almost never ends in
+#      a colon, so this is safe to match mid-sentence);
+#   2. period style, LINE-ANCHORED only -- 'as shown in Figure 1.' at the end
+#      of a sentence would otherwise collide with its own caption;
+#   3. Chinese captions (图 N / 表 N), line-anchored for the same reason.
+# Normalising whitespace makes 'Figure  1:' and 'Figure 1:' compare equal.
+extract_caption_prefixes() {
+    local text; text="$(cat)"
+    {
+        printf '%s\n' "$text" | grep -oE '(Figure|Table|Fig\.)[[:space:]]*[0-9]+:'
+        printf '%s\n' "$text" | grep -oE '^[[:space:]]*(Figure|Table|Fig\.)[[:space:]]*[0-9]+\.'
+        printf '%s\n' "$text" | grep -oE '^[[:space:]]*(图|表)[[:space:]]*[0-9]+'
+    } 2>/dev/null | sed 's/[[:space:]]//g' | grep -v '^$' || true
+}
+
 check_duplicate_captions() {  # <pdf>
     local pdf="$1" prefixes dups
-    prefixes="$(pdftotext "$pdf" - 2>/dev/null | grep -oE '(Figure|Table) [0-9]+:' || true)"
+    prefixes="$(pdftotext "$pdf" - 2>/dev/null | extract_caption_prefixes || true)"
     if [ -z "$prefixes" ]; then
-        echo "  PASS captions: no 'Figure N:' / 'Table N:' prefixes found"
+        echo "  PASS captions: no 'Figure N' / 'Table N' / '图 N' / '表 N' prefixes found"
         return 0
     fi
     dups="$(printf '%s\n' "$prefixes" | sort | uniq -d || true)"
@@ -102,7 +151,7 @@ check_duplicate_captions() {  # <pdf>
 }
 
 check_anonymity() {  # <pdf>  (only called under --anonymous)
-    local pdf="$1" info fail=0 f val res bg
+    local pdf="$1" info fail=0 f val res bg lbl page1
     info="$(pdfinfo "$pdf" 2>/dev/null || true)"
 
     # 1) hard identity markers (email, team/control number) in ANY field
@@ -113,13 +162,15 @@ check_anonymity() {  # <pdf>  (only called under --anonymous)
             echo "  FAIL anonymity: $f metadata contains an email address: '$val'"
             fail=1
         fi
-        if printf '%s' "$val" | grep -qE "$IDNUM_RE"; then
+        if strip_versions "$val" | grep -qE "$IDNUM_RE"; then
             echo "  FAIL anonymity: $f metadata contains a team/control-number-like digit run: '$val'"
             fail=1
         fi
     done
 
-    # 2) Author must carry no non-tool identity text at all
+    # 2) Author must carry no non-tool identity text at all. A Chinese personal
+    # name has no ASCII residue at all, so it must be checked separately --
+    # this is the expected leak shape on a CUMCM submission.
     val="$(printf '%s\n' "$info" | sed -n 's/^Author:[[:space:]]*//p')"
     if [ -n "$val" ]; then
         res="$(identity_residual "$val" | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
@@ -127,9 +178,13 @@ check_anonymity() {  # <pdf>  (only called under --anonymous)
             echo "  FAIL anonymity: Author metadata looks like an identity (non-tool text: '$res'): '$val'"
             fail=1
         fi
+        if has_cjk "$val"; then
+            echo "  FAIL anonymity: Author metadata contains CJK text (personal name?): '$val'"
+            fail=1
+        fi
     fi
 
-    # 3) Creator/Producer: a personal-name bigram (e.g. 'Jane Doe')
+    # 3) Creator/Producer: a personal-name bigram (e.g. 'Jane Doe') or CJK text
     for f in Creator Producer; do
         val="$(printf '%s\n' "$info" | sed -n "s/^${f}:[[:space:]]*//p")"
         [ -n "$val" ] || continue
@@ -138,10 +193,53 @@ check_anonymity() {  # <pdf>  (only called under --anonymous)
             echo "  FAIL anonymity: $f metadata contains a personal name ('$bg'): '$val'"
             fail=1
         fi
+        if has_cjk "$val"; then
+            echo "  FAIL anonymity: $f metadata contains CJK text (personal name?): '$val'"
+            fail=1
+        fi
     done
 
+    # 4) CJK in the descriptive fields is legitimate (a Chinese paper title) but
+    # is where an institution name hides -- surface it for review, do not fail.
+    for f in Title Subject Keywords; do
+        val="$(printf '%s\n' "$info" | sed -n "s/^${f}:[[:space:]]*//p")"
+        [ -n "$val" ] || continue
+        if has_cjk "$val"; then
+            echo "  WARN anonymity: $f metadata has CJK text -- confirm it names no school or person: '$val'"
+        fi
+    done
+
+    # 5) Page-1 body text. The title page / summary sheet is where identity
+    # actually leaks. A control number is REQUIRED there by MCM rules, so digit
+    # runs are deliberately not flagged -- only emails, affiliation shapes,
+    # author lines, and Chinese identity labels.
+    page1="$(pdftotext -f 1 -l 1 "$pdf" - 2>/dev/null || true)"
+    if [ -n "$page1" ]; then
+        if printf '%s\n' "$page1" | grep -qE "$EMAIL_RE"; then
+            echo "  FAIL anonymity: page 1 body text contains an email address:"
+            printf '%s\n' "$page1" | grep -oE "$EMAIL_RE" | head -n3 | sed 's/^/          /'
+            fail=1
+        fi
+        if printf '%s\n' "$page1" | grep -qE "$AFFIL_RE"; then
+            echo "  FAIL anonymity: page 1 body text names an institution:"
+            printf '%s\n' "$page1" | grep -oE "$AFFIL_RE" | head -n3 | sed 's/^/          /'
+            fail=1
+        fi
+        if printf '%s\n' "$page1" | grep -qE "$AUTHORLINE_RE"; then
+            echo "  FAIL anonymity: page 1 body text has an author/attribution line:"
+            printf '%s\n' "$page1" | grep -E "$AUTHORLINE_RE" | head -n3 | sed 's/^/          /'
+            fail=1
+        fi
+        for lbl in $CN_ID_LABELS; do
+            if printf '%s\n' "$page1" | grep -q "$lbl"; then
+                echo "  FAIL anonymity: page 1 body text contains the identity label '$lbl'"
+                fail=1
+            fi
+        done
+    fi
+
     if [ "$fail" -eq 0 ]; then
-        echo "  PASS anonymity: no identifying Title/Author/Subject/Keywords/Creator/Producer metadata"
+        echo "  PASS anonymity: no identifying metadata and no page-1 identity leak"
     fi
     return "$fail"
 }
@@ -207,12 +305,82 @@ run_qa() {  # <pdf> <max> <anonymous 0|1>
 }
 
 # ------------------------------- self-test -------------------------------
+
+# Text- and CLI-level checks that need no rendered PDF. These cover the shapes
+# a fixture cannot exercise: CJK captions and labels would need a CJK font
+# installed to survive matplotlib rendering, and argument validation never
+# reaches the QA stage at all.
+self_test_patterns() {  # -> 0 ok, 1 failed
+    local ok=1 out rc
+
+    # has_cjk
+    if has_cjk "张三"; then echo "PASS has_cjk detects a Chinese name"; else
+        echo "FAIL has_cjk missed '张三'"; ok=0; fi
+    if has_cjk "Jane Doe"; then echo "FAIL has_cjk flagged ASCII text"; ok=0; else
+        echo "PASS has_cjk ignores ASCII text"; fi
+
+    # strip_versions keeps a dotted tool version from reading as a control number
+    if strip_versions "Acrobat Distiller 21.0.20155" | grep -qE "$IDNUM_RE"; then
+        echo "FAIL dotted tool version still looks like a control number"; ok=0
+    else
+        echo "PASS dotted tool version is not a control number"
+    fi
+    if strip_versions "Team 2501234" | grep -qE "$IDNUM_RE"; then
+        echo "PASS a real control number survives version stripping"
+    else
+        echo "FAIL control number lost to version stripping"; ok=0
+    fi
+
+    # Chinese duplicate captions
+    out="$(printf '%s\n' "图 1 收敛曲线" "正文" "图1 另一张图" | extract_caption_prefixes | sort | uniq -d)"
+    if [ -n "$out" ]; then echo "PASS duplicate Chinese caption prefix caught"; else
+        echo "FAIL duplicate Chinese caption prefix missed"; ok=0; fi
+
+    # Period-style duplicate captions
+    out="$(printf '%s\n' "Figure 1. First" "body" "Figure 1. Second" | extract_caption_prefixes | sort | uniq -d)"
+    if [ -n "$out" ]; then echo "PASS duplicate period-style caption prefix caught"; else
+        echo "FAIL duplicate period-style caption prefix missed"; ok=0; fi
+
+    # A mid-sentence cross-reference must NOT collide with its own caption
+    out="$(printf '%s\n' "Figure 1. First" "as shown in Figure 1." | extract_caption_prefixes | sort | uniq -d)"
+    if [ -n "$out" ]; then
+        echo "FAIL mid-sentence cross-reference falsely read as a duplicate caption"; ok=0
+    else
+        echo "PASS mid-sentence cross-reference is not a duplicate caption"
+    fi
+
+    # argument validation (must exit 2, not silently disable a gate)
+    for bad in "--max-pages abc" "--max-pages 0"; do
+        # shellcheck disable=SC2086
+        out="$("$0" /nonexistent.pdf $bad 2>&1)" && rc=0 || rc=$?
+        if [ "$rc" -eq 2 ]; then echo "PASS '$bad' rejected"; else
+            echo "FAIL '$bad' not rejected (rc=$rc): $out"; ok=0; fi
+    done
+    out="$("$0" /nonexistent.pdf --max-pages 2>&1)" && rc=0 || rc=$?
+    if [ "$rc" -eq 2 ] && [ -n "$out" ]; then
+        echo "PASS dangling --max-pages rejected with a message"
+    else
+        echo "FAIL dangling --max-pages not reported (rc=$rc): '$out'"; ok=0
+    fi
+    out="$("$0" a.pdf b.pdf 2>&1)" && rc=0 || rc=$?
+    if [ "$rc" -eq 2 ]; then echo "PASS second positional PDF rejected"; else
+        echo "FAIL second positional PDF silently dropped (rc=$rc)"; ok=0; fi
+
+    return $((1 - ok))
+}
+
 self_test() {
     require_poppler
+    local pattern_rc=0
+    echo "--- pattern & argument checks (no PDF needed) ---"
+    self_test_patterns || pattern_rc=1
     if ! command -v python3 >/dev/null 2>&1 || ! python3 -c "import matplotlib" >/dev/null 2>&1; then
-        echo "pdf_qa self-test: SKIPPED (python3 + matplotlib required to synthesise test PDFs)."
+        echo "pdf_qa self-test: PDF fixtures SKIPPED (python3 + matplotlib required to synthesise test PDFs)."
         echo "  Install with: python3 -m pip install matplotlib"
-        return 0
+        if [ "$pattern_rc" -eq 0 ]; then
+            echo "pdf_qa self-test: OK (patterns only)"; return 0
+        fi
+        echo "pdf_qa self-test: FAILED (pattern checks)"; return 1
     fi
     local tmp ok=1; tmp="$(mktemp -d)"
     python3 - "$tmp" <<'PY'
@@ -259,6 +427,34 @@ with PdfPages(f"{tmp}/leak.pdf") as pdf:
     d["Subject"] = "contact john@example.com"  # email
     d["Keywords"] = "team 2412345"            # control number
 
+# cjk_leak.pdf: a Chinese personal name in Author -- the expected CUMCM leak
+# shape, invisible to ASCII-only checks. Metadata needs no CJK font, so this
+# fixture works even where matplotlib cannot render CJK glyphs.
+with PdfPages(f"{tmp}/cjk_leak.pdf") as pdf:
+    fig = plt.figure(figsize=(6, 4))
+    fig.text(0.1, 0.5, "Body text so the page is not blank. " * 6)
+    pdf.savefig(fig); plt.close(fig)
+    d = pdf.infodict()
+    d["Author"] = "张三"  # 张三
+
+# body_leak.pdf: clean metadata, but an email in the page-1 body text -- the
+# classic title-page leak that a metadata-only gate misses.
+with PdfPages(f"{tmp}/body_leak.pdf") as pdf:
+    fig = plt.figure(figsize=(6, 4))
+    fig.text(0.1, 0.7, "Contact: jane.doe@example.edu")
+    fig.text(0.1, 0.5, "Body text so the page is not blank. " * 6)
+    pdf.savefig(fig); plt.close(fig)
+
+# versioned.pdf: clean, but with a dotted tool version in Producer that an
+# unstripped digit-run check would falsely flag as a control number.
+with PdfPages(f"{tmp}/versioned.pdf") as pdf:
+    fig = plt.figure(figsize=(6, 4))
+    fig.text(0.1, 0.9, "Figure 1: content page")
+    fig.text(0.1, 0.5, "Body text so the page is not blank. " * 6)
+    pdf.savefig(fig); plt.close(fig)
+    d = pdf.infodict()
+    d["Producer"] = "Acrobat Distiller 21.0.20155"
+
 # blank.pdf: a single, fully-blank page (all-blank case)
 with PdfPages(f"{tmp}/blank.pdf") as pdf:
     fig = plt.figure(figsize=(6, 4))
@@ -301,6 +497,27 @@ PY
         echo "PASS leak.pdf failed as expected (metadata identity leak caught)"
     fi
 
+    echo "--- cjk_leak.pdf --anonymous (expect Chinese author name caught) ---"
+    if run_qa "$tmp/cjk_leak.pdf" "" 1; then
+        echo "FAIL cjk_leak.pdf should have failed anonymity (CJK author name)"; ok=0
+    else
+        echo "PASS cjk_leak.pdf failed as expected (CJK author name caught)"
+    fi
+
+    echo "--- body_leak.pdf --anonymous (expect page-1 email caught) ---"
+    if run_qa "$tmp/body_leak.pdf" "" 1; then
+        echo "FAIL body_leak.pdf should have failed anonymity (page-1 email)"; ok=0
+    else
+        echo "PASS body_leak.pdf failed as expected (page-1 email caught)"
+    fi
+
+    echo "--- versioned.pdf --anonymous (expect dotted tool version tolerated) ---"
+    if run_qa "$tmp/versioned.pdf" "" 1; then
+        echo "PASS versioned.pdf passed (dotted tool version not misread as control number)"
+    else
+        echo "FAIL versioned.pdf should have passed anonymity"; ok=0
+    fi
+
     echo "--- blank.pdf (expect all-blank page caught) ---"
     if run_qa "$tmp/blank.pdf" "" 0; then
         echo "FAIL blank.pdf should have failed on a blank page"; ok=0
@@ -309,7 +526,7 @@ PY
     fi
 
     rm -rf "$tmp"
-    if [ "$ok" -eq 1 ]; then
+    if [ "$ok" -eq 1 ] && [ "$pattern_rc" -eq 0 ]; then
         echo "pdf_qa self-test: OK"; return 0
     fi
     echo "pdf_qa self-test: FAILED"; return 1
@@ -336,10 +553,23 @@ main() {
     local pdf="" max="" anon=0
     while [ "$#" -gt 0 ]; do
         case "$1" in
-            --max-pages) max="${2:-}"; shift 2 ;;
+            --max-pages)
+                # A silently-dropped or non-numeric cap would disable the
+                # page gate while still reporting PASS, so reject it loudly.
+                [ "$#" -ge 2 ] || die "--max-pages requires a value"
+                max="$2"
+                case "$max" in
+                    ''|*[!0-9]*) die "--max-pages must be a positive integer (got '$max')" ;;
+                esac
+                [ "$max" -gt 0 ] || die "--max-pages must be a positive integer (got '$max')"
+                shift 2
+                ;;
             --anonymous) anon=1; shift ;;
             -*) die "unknown option: $1" ;;
-            *) pdf="$1"; shift ;;
+            *)
+                [ -z "$pdf" ] || die "one PDF per invocation (already given '$pdf', then '$1')"
+                pdf="$1"; shift
+                ;;
         esac
     done
     [ -n "$pdf" ] || die "no PDF path given"

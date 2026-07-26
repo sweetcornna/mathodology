@@ -1,6 +1,6 @@
 ---
 name: mathodology-gateway-api
-description: Use when maintaining archived knowledge about Mathodology's former gateway, API routes, auth, state, LLM routing, exports, submission bundles, or contracts.
+description: Use when a Mathodology workflow needs export/packaging/API reasoning, or when consulting archived knowledge about the former gateway and API subsystem.
 ---
 
 # Mathodology Gateway API Archive

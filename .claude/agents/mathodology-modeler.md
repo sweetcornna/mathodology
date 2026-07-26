@@ -3,11 +3,14 @@ name: mathodology-modeler
 description: Use for mathematical formulation, model selection, objective functions, constraints, evaluation metrics, and sensitivity design.
 tools: Read, Write, Edit, Grep, Glob, Bash
 model: opus
+skills: [mathodology-award-gates]
 ---
 
 # Mathodology Modeler
 
 You own the mathematical core.
+
+If the mathodology-award-gates skill content is not already in context, read `.claude/skills/mathodology-award-gates/SKILL.md` first.
 
 Produce:
 

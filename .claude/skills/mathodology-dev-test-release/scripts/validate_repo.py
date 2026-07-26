@@ -49,6 +49,7 @@ KEEP_EXACT = {
     "docs/WORKFLOWS.md",
     "docs/WORKFLOWS_zh.md",
     "docs/BACKUP.md",
+    "docs/BACKUP_zh.md",
 }
 KEEP_PREFIXES = (".claude/skills/", ".claude/agents/", ".claude/workflows/")
 
@@ -56,6 +57,7 @@ DOC_TWINS = [
     ("docs/SKILLS.md", "docs/SKILLS_zh.md"),
     ("docs/INSTALL.md", "docs/INSTALL_zh.md"),
     ("docs/WORKFLOWS.md", "docs/WORKFLOWS_zh.md"),
+    ("docs/BACKUP.md", "docs/BACKUP_zh.md"),
     ("README_en.md", "README.md"),
 ]
 

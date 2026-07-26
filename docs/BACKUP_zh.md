@@ -1,20 +1,20 @@
-# Backup and Restore
+# 备份与恢复
 
-The skills repository includes a skills-only backup script:
+本 skills 仓库自带一个 skills-only 备份脚本：
 
 ```bash
 bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
 ```
 
-By default it writes to:
+默认写入：
 
 ```text
 ../mathodology_skills_backups/<timestamp>/
 ```
 
-## Backup Contents
+## 备份内容
 
-Each backup directory contains:
+每个备份目录包含：
 
 ```text
 mathodology-skills-<timestamp>.tar.gz
@@ -26,7 +26,7 @@ uncommitted-diff.patch
 untracked-files.txt
 ```
 
-The archive is built from a whitelist. It includes only:
+归档按白名单构建，仅包含：
 
 - `.claude/skills/**`
 - `.claude/agents/**`
@@ -38,21 +38,21 @@ The archive is built from a whitelist. It includes only:
 - `LICENSE`
 - `.gitignore`
 
-This keeps old local source remnants out of the skills backup.
+这样可以把旧的本地源码残留排除在 skills 备份之外。
 
-## Exclusions
+## 排除项
 
-The archive does not include:
+归档不包含：
 
 - `.git/`
-- `.env` or local secret files
-- application source trees
-- CI, deployment, installer, or package-manager files
-- build outputs and dependency directories
-- local run artifacts
+- `.env` 及本地机密文件
+- 应用源码树
+- CI、部署、安装器与包管理器文件
+- 构建产物与依赖目录
+- 本地运行产物
 - `.claude/worktrees/`
 
-## Verify a Backup
+## 验证备份
 
 ```bash
 cd ../mathodology_skills_backups/<timestamp>
@@ -60,21 +60,21 @@ shasum -a 256 -c SHA256SUMS
 tar -tzf mathodology-skills-<timestamp>.tar.gz | head
 ```
 
-Check that the skills entrypoints exist:
+检查 skills 入口文件存在：
 
 ```bash
 tar -tzf mathodology-skills-<timestamp>.tar.gz | rg '^(AGENTS\.md|\.claude/skills/mathodology-whole-project/SKILL\.md)$'
 ```
 
-Check that old application paths are absent:
+检查旧应用路径不存在：
 
 ```bash
 tar -tzf mathodology-skills-<timestamp>.tar.gz | rg '^(\.git/|apps/|crates/|packages/|scripts/|config/|installer/|tests/|data/|\.github/|node_modules/|target/|\.venv/|\.env$|\.claude/worktrees/)'
 ```
 
-The last command should produce no matches.
+最后一条命令应当没有任何匹配。
 
-## Restore
+## 恢复
 
 ```bash
 mkdir -p /tmp/mathodology-skills-restore
@@ -82,7 +82,7 @@ tar -xzf ../mathodology_skills_backups/<timestamp>/mathodology-skills-<timestamp
 cd /tmp/mathodology-skills-restore
 ```
 
-Then read:
+然后阅读：
 
 ```text
 AGENTS.md
@@ -91,4 +91,4 @@ AGENTS.md
 docs/INSTALL.md
 ```
 
-No build step is required for a skills-only restore.
+skills-only 恢复不需要任何构建步骤。

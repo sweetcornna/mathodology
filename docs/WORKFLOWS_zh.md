@@ -14,7 +14,7 @@ Mathodology 支持两种编排模式：
 用这些信号校准工作流。它们不是固定模板，而是要转成 gate 的规则和评审预期。
 
 - COMAP MCM/ICM 说明：Summary Sheet 是第一页且权重很高；解答以单个 PDF 提交；当前规则使用 25 页 solution 限制；参考文献、附录、代码和题目特别要求都计入 solution 页数；使用 AI 时必须披露并按要求附 AI 使用报告；匿名和来源引用是硬要求。来源：`https://www.contest.comap.com/undergraduate/contests/mcm/instructions.php`。
-- COMAP 评奖描述：Meritorious 及以上要求模型、分析、结论和表达清晰、有支撑、组织良好；Finalist 不只是满足题目要求，还要逻辑完整、易读、全面；Outstanding 是建模、求解、分析和表达整体最强的论文。来源：`https://www.contest.comap.com/undergraduate/contests/mcm/instructions.php`。
+- COMAP 评奖描述：Meritorious 及以上要求模型、分析、结论和表达清晰、有支撑、组织良好；Finalist 要超越仅仅满足题目要求；Outstanding 是建模、求解、分析和表达整体最强的论文。来源：`https://www.contest.comap.com/undergraduate/contests/mcm/instructions.php`。
 - COMAP 写作指导：高水平论文通常在 summary、问题分析、变量与假设、模型设计、测试、误差分析、敏感性或稳定性、优缺点、明确结论和来源记录上明显更强。来源：`https://www.contest.comap.com/undergraduate/contests/mcm/instructions.php`。
 - 国赛格式和评阅规则：论文和支撑材料分开处理；可运行源程序和支撑材料必须与论文相符；全国奖评阅使用独立评委和相似度查验；申报全国一等奖的论文会面对更严格的独立评阅。来源：`https://www.mcm.edu.cn/upload_cn/node/775/cQMeL0YY905244c8bd4b9af832f1699446d8385e.pdf`，`https://www.mcm.edu.cn/html_cn/node/b1f48689659f0660e80a2d6279d7b37d.html`。
 - 国赛评阅要点示例：强论文应针对具体问题自主建模、体现创新、得到真实有效结果；弱论文常见问题是堆砌通用方法、简单复制算法、形式好看但内容空；有条件时应验证程序和结果。来源：`https://aimg8.dlssyht.cn/u/2179378/ueditor/file/1090/2179378/1663049277111493.pdf`。
@@ -35,7 +35,7 @@ Mathodology 支持两种编排模式：
 | 4. 实验计算 | 生成可复现结果 | 代码、原始输出、表格、图、敏感性、鲁棒性、结果密度映射、偏离规格记录 | 论文中的数字可复现，核心结果有图表支撑；对比共用随机数、by-construction 结果如实标注 |
 | 5. 解释结果 | 把结果接回题目 | 结论、图表说明、建议、局限、图表覆盖映射 | 每个结果回答题目问题 |
 | 6. 论文初稿 | 形成完整论文 | 摘要、方法、结果、图表、参考文献、附录、单一权威推荐、创新清单（INN-n）和 scope ledger（MECH-n）收口 | 没有孤立结果、稀疏结果区、无支撑论断、推荐不一致或论文与代码不符；每个 INN-n 和 MECH-n 条目要么在正文承重要么被显式 descope |
-| 7. 独立审稿 | 删除可修缺陷、确认获奖档位 | critic 审计外加三个并行盲评 `mathodology-award-judge` 评分表 | 无高严重度未解决问题；lead 聚合三席，只有每席位隐含档位达标、最低总分过线、无单项低于下限、且无未解决的单项 >20 分歧时判审团才通过 |
+| 7. 独立审稿 | 删除可修缺陷、确认获奖档位 | critic 审计外加三个并行盲评 `mathodology-award-judge` 评分表 | 无高严重度未解决问题；lead 聚合三席，只有每席位隐含档位达标、最低总分过线、无单项低于下限、且无未解决的共享评分项 >20 分歧时判审团才通过 |
 | 8. 最终提交 | 组装提交包 | 论文、源码、代码、数据说明、README、AI 使用说明、清单 | 用户可直接提交 |
 
 ## 细化 Phase-Agent-Critic 矩阵
@@ -51,7 +51,7 @@ Mathodology 支持两种编排模式：
 | 4. 实验计算 | coder, modeler, critic | 产出可复现脚本或 notebook、随机种子、环境说明、原始输出、整理表格、图、baseline、ablation、敏感性、鲁棒性、运行日志，以及覆盖模型结构、核心比较、敏感性、鲁棒性、权衡和建议的结果密度映射。 | 论文数字可重新生成或手工追踪；图有源数据；失败也被记录；不接受挑一次最好结果；图表稀疏或装饰性图表不能通过。 |
 | 5. 解释结果 | modeler, evidence researcher, paper editor, critic | 把结果转成逐问回答、图表标题、建议、局限、不确定性说明、claim-source 链接，以及说明每个主要结论由哪张图或表支撑的覆盖映射。 | 每个结果都回答题目任务；每个论断都有数据、推导、图表、引用或明确假设支撑；局限不推翻主结论；重要结论不能只停留在文字断言。 |
 | 6. 论文初稿 | paper editor, modeler, coder, critic | 完成摘要、引言、假设、方法、结果、敏感性、优缺点、结论、参考文献、必要的 AI 使用说明、页数约束内的最终图表布局，以及对照引用收口的创新清单（INN-n）和 scope ledger（MECH-n）收口。 | 摘要说明方法和最重要结论；论文不是实验流水账；符号、图注、引用、图表密度和需求覆盖一致；每个创新清单（INN-n）和 scope ledger（MECH-n）条目要么在正文承重要么在局限里被显式 descope。 |
-| 7. 独立审稿 | critic, 三个盲评 `mathodology-award-judge` 席位, lead, 相关专家 rerun | critic 分别审计题目覆盖、数学有效性、原创性、论文与代码一致性、头条鲁棒性、推荐一致性、证据、复现、写作、格式和最终评分风险，并带 skill 归因；lead 在无共享上下文下并行分派三个盲评 `mathodology-award-judge` 席位（A 旗舰通用、B 创新与决策有用性、C 只评正确性与可复现性），各出一份评分表。 | 无 blocker/high 问题；每个 medium 问题已修复或有明确接受理由；lead lint 每份评分表并按阈值聚合（Outstanding/国一 总分 ≥ 85、下限 70；Finalist/国一边缘 80/65；Meritorious/国二 75/60），只有每席位隐含档位达标、最低总分过线、无单项低于下限、且无未解决的单项 >20 分歧时判审团才通过；re-score 封顶 2 轮，然后出 decision_memo；critic 和判审都不能是原产出 agent。 |
+| 7. 独立审稿 | critic, 三个盲评 `mathodology-award-judge` 席位, lead, 相关专家 rerun | critic 分别审计题目覆盖、数学有效性、原创性、论文与代码一致性、头条鲁棒性、推荐一致性、证据、复现、写作、格式和最终评分风险，并带 skill 归因；lead 在无共享上下文下并行分派三个盲评 `mathodology-award-judge` 席位（三席共享 summary/modeling/results 评分项；A 另加 writing/completeness、B 另加 innovation/evidence、C 另加权重最重的 correctness/reproducibility），不给目标奖级，各出一份评分表。 | 无 blocker/high 问题；每个 medium 问题已修复或有明确接受理由；lead lint 每份评分表并按阈值聚合（Outstanding/国一 总分 ≥ 85、下限 70；Finalist/国一边缘 80/65；Meritorious/国二 75/60），只有每席位隐含档位达标、最低总分过线、无单项低于下限、且无未解决的共享评分项 >20 分歧时判审团才通过；re-score 封顶 2 轮，然后出 decision_memo；critic 和判审都不能是原产出 agent。 |
 | 8. 最终提交 | submission packager, paper editor, critic | 组装最终 PDF、必要的可编辑源文件、代码、数据或来源说明、图表、复现 README、AI 使用报告和 requirement-to-file 清单。 | 提交包符合规则、必要时匿名、无密钥和草稿文件、满足大小和页数限制，且未参与工作的人也能提交。 |
 
 ## Agent Handoff 契约
@@ -103,9 +103,9 @@ gate:
 修复循环有硬性预算，避免无限打磨：
 
 - 每个 per-phase critic gate 最多 2 轮修复（共 3 次评估）。
-- Phase 7 最多 2 轮 re-score。
+- Phase 7 最多 2 轮 re-score。re-score 轮不计入整轮 8 轮修复封顶：初始判审团是 round 1，两次允许的 re-score 是 round 2 和 round 3（r 最大为 3）。
 - 整轮运行封顶 8 轮修复。
-- 一旦某轮相比上一轮没有改进就提前停止。
+- 某轮没有改进就提前停止。改进的度量：gate 修复轮的改进 = 未关闭 blocker+high 问题数严格减少；Phase 7 re-score 的改进 = 最低席位 weighted_total 严格上升。
 - 任一预算耗尽时，lead 不会静默继续：它输出 `decision_memo:` yaml block 并停下等人工决策。
 
 ```yaml
@@ -162,7 +162,7 @@ coder 在 Phase 5 前必须产出图表 inventory。packager 必须把 inventory
 
 默认遵守以下规则，除非竞赛或期刊格式另有要求：
 
-- 折线图、流程图、网络图、地图和密集标签图优先输出矢量格式 `.pdf` 或 `.svg`。仅在管线要求时使用 `.png`；草稿至少 180 dpi，最终至少 300 dpi。
+- 折线图、流程图、网络图、地图和密集标签图优先输出矢量格式 `.pdf` 或 `.svg`。仅对栅格图像（如照片、位图底图）或管线要求时使用 `.png`；草稿至少 180 dpi，最终至少 300 dpi。
 - 多面板图使用 `layout="constrained"` 或显式 `GridSpec` 间距。含长标签、colorbar、legend、annotation 或 suptitle 的图，不能只依赖 `tight_layout()`。
 - 图宽应匹配论文位置。常规全宽图约 6.5-7.2 英寸；多面板 dashboard 可到 7.2-9.0 英寸，但嵌入 PDF 后文字和 caption 必须可读。
 - 最终 PDF 中的刻度、图例、节点标签、热力图单元格和注释通常不小于 8 pt。
@@ -213,7 +213,7 @@ coder 在 Phase 5 前必须产出图表 inventory。packager 必须把 inventory
 - 使用 booktabs 风格或同等清晰边线；除矩阵外避免满格线。
 - 表头尽量短，把解释放入表注。
 - 统一舍入，不展示超过模型和数据支撑的位数。
-- 宽表或换行混乱的表应拆分；旋转表只能作为最后方案。
+- 宽表或换行混乱的表应拆分，或移入支撑材料；旋转表只能作为最后方案。
 
 ### 生成代码规则
 
@@ -241,7 +241,7 @@ Matplotlib 额外规则：
 
 paper editor 必须检查最终渲染 PDF，而不仅是 Markdown/LaTeX 源码：
 
-- 图应出现在引入它的段落附近，除非明确是附录图
+- 图应出现在引入它的段落一页以内，除非明确是附录图
 - 图不能被裁切、空白、像素化或不合理拆页
 - 图或表内部无文字重叠
 - 坐标轴、刻度、图例、colorbar、表头和 caption 不被裁切
@@ -259,12 +259,14 @@ python3 .claude/skills/mathodology-award-gates/scripts/make_contact_sheet.py wor
 bash    .claude/skills/mathodology-award-gates/scripts/pdf_qa.sh work/<run-id>/paper/solution.pdf --max-pages 25 --anonymous
 ```
 
+`--max-pages 25` 是当前 MCM 规则；其他竞赛按 `variant:` block 的 `limits.pages` 设置。MCM 的 AI 使用报告不计入 25 页（`--max-pages` 只约束 solution 正文）。
+
 这些脚本的通过输出就是必需证据；本次运行收集的产物必须包含：
 
 - 生成图数量和表数量
 - 从编译后 PDF 生成的 contact sheet，而不是源图
 - 渲染后 PDF 页数和一份干净的 `pdf_qa.sh` 报告
-- 每张生成图的 `figqa.py` 零碰撞退出
+- 每张生成图的零碰撞证据：重跑 `run_all.py`（内嵌 `assert_no_overlap`）并观察 exit 0 —— `figqa.py --self-test` 证明 gate 本身有效
 - 最终包 checksum 或干净重建证明
 
 critic 仍必须目检 contact sheet，并至少检查含密集图表的页面。程序化 gate 不能替代目检，因为 layout engine 可能给出数学上合法但阅读上失败的结果。
@@ -336,7 +338,7 @@ Subagents（9 个）：
 - `mathodology-award-judge`：Phase 7 的一个独立盲评席位（lead 并行分派三个）
 - `mathodology-submission-packager`：最终提交包和复现 README
 
-`mathodology-lead`、`mathodology-problem-analyst`、`mathodology-modeler`、`mathodology-coder`、`mathodology-critic`、`mathodology-paper-editor` 和 `mathodology-award-judge` 在 frontmatter 里固定为 `model: opus`；`mathodology-evidence-researcher` 和 `mathodology-submission-packager` 继承会话模型。`CLAUDE_CODE_SUBAGENT_MODEL` 环境变量或按次调用的 model 参数会覆盖 frontmatter 固定（env/按次调用 > frontmatter）。lead 始终作为 Claude Code 主线程运行，绝不作为被分派的 subagent，因为被分派的 subagent 无法再生成本 workflow 所需的专家 subagent。
+全部 9 个 subagent 都在 frontmatter 里固定为 `model: opus`。`CLAUDE_CODE_SUBAGENT_MODEL` 环境变量或按次调用的 model 参数会覆盖 frontmatter 固定（env/按次调用 > frontmatter）。lead 始终作为 Claude Code 主线程运行，绝不作为被分派的 subagent，因为被分派的 subagent 无法再生成本 workflow 所需的专家 subagent。
 
 执行方式：
 
@@ -373,7 +375,7 @@ Codex agent 角色：
 - 三个独立的 Phase 7 判审 agent（盲评团）
 - 提交打包 agent
 
-在 Codex 里，Phase 7 盲评判审团被模拟成三个互不共享上下文的独立 agent 调用。每个只拿到自己的 seat brief —— A 席旗舰通用评委、B 席侧重创新与决策有用性、C 席只评正确性与可复现性的怀疑型裁判 —— 外加渲染后 PDF 和 artifact manifest，各自返回恰好一份 `scorecard:` block。lead 校验每份 block，然后按 `mathodology-award-gates` 阈值聚合三席（Outstanding/国一 总分 ≥ 85、下限 70；Finalist/国一边缘 80/65；Meritorious/国二 75/60），单项分歧超过 20 时绝不取平均抹平。
+在 Codex 里，Phase 7 盲评判审团被模拟成三个互不共享上下文的独立 agent 调用。每个只拿到自己的 seat brief —— 三席共享 summary/modeling/results 评分项；A 席（旗舰通用评委）另加 writing 与 completeness，B 席（创新与决策有用性）另加 innovation 与 evidence，C 席（怀疑型裁判）另加权重最重的 correctness 与 reproducibility —— 外加渲染后 PDF 和 `package/manifest.md`，绝不给目标奖级或阈值。各自返回恰好一份 `scorecard:` block。lead 校验每份 block，然后按 `mathodology-award-gates` 阈值聚合三席（Outstanding/国一 总分 ≥ 85、下限 70；Finalist/国一边缘 80/65；Meritorious/国二 75/60），共享评分项分歧超过 20 时绝不取平均抹平。
 
 ### Codex 确认与连续执行
 

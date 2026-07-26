@@ -88,11 +88,11 @@ Mathodology 分别提供 Codex 和 Claude Code 的竞赛编排指导：
 | Skill | 适用场景 |
 |---|---|
 | [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | 整个 skills 仓库的备份、迁移、恢复、整体理解，或 Codex/Claude Code 竞赛工作流编排 |
-| [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | 在 skills-only checkout 中开始工作，或验证仓库边界 |
+| [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | 在 skills-only checkout 中开始工作，或检查仓库边界 |
 | [`mathodology-award-gates`](.claude/skills/mathodology-award-gates/SKILL.md) | 运行竞赛时执行获奖级 phase gate、判审团、结构化 handoff、图表 QA 或渲染 PDF QA |
-| [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | 维护原 agent pipeline 的归档知识 |
-| [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | 维护原 gateway 和 API 的归档知识 |
-| [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | 维护原 Web UI 的归档知识 |
+| [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | 编排 9-phase 获奖工作流（phase 职责、专家名册、prize-level gates），并保留原 agent pipeline 的归档知识 |
+| [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | 工作流的导出/打包/API 推理，并保留原 gateway 和 API 的归档知识 |
+| [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | 工作流的图表呈现推理，并保留原 Web UI 的归档知识 |
 | [`mathodology-dev-test-release`](.claude/skills/mathodology-dev-test-release/SKILL.md) | 验证 skills 仓库，或保留 dev、test、release 归档指导 |
 | [`mathodology-skill-authoring`](.claude/skills/mathodology-skill-authoring/SKILL.md) | 新增、更新、验证或 review 项目 skills |
 
@@ -135,7 +135,7 @@ bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
 
 归档使用 skills 白名单，只包含当前保留的 skills 仓库文件。它会排除 `.git/`、secret、构建产物、运行时状态，以及本地可能残留的旧应用目录。
 
-恢复细节见 [docs/BACKUP.md](docs/BACKUP.md)。
+恢复细节见 [docs/BACKUP_zh.md](docs/BACKUP_zh.md)。
 
 ## 验证
 
@@ -153,7 +153,7 @@ python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py sync
 ```
 
-`all` 覆盖 skill 与 agent 的 frontmatter、`agents/openai.yaml` 元数据、markdown 链接与 `.claude/...` 路径解析、tracked 文件白名单，以及中英文档孪生同步。`mathodology-award-gates` 与 `mathodology-dev-test-release` 携带的脚本各自带 `--self-test`。
+`all` 覆盖 skill 与 agent 的 frontmatter、`agents/openai.yaml` 元数据、markdown 链接与 `.claude/...` 路径解析、tracked 文件白名单，以及中英文档孪生同步。`mathodology-award-gates` 携带的脚本各自带 `--self-test`；`validate_repo.py` 用 `selftest` 子命令。
 
 ## 仓库策略
 

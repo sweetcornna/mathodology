@@ -16,8 +16,10 @@ definitions; this skill owns the shared schema every role must satisfy.
 ## 1. Structured Run Blocks
 
 Every specialist ends with a `handoff:` block. Free-text handoffs are rejected.
-Lint each block with `lint_run.py handoff` (see Scripts); every `artifacts[].path`
-must resolve under `work/<run-id>/`.
+The lead lints each block with `lint_run.py handoff --agent <agent-name>` (see
+Scripts) -- the `--agent` flag additionally enforces that role's extra keys
+(e.g. `mathodology-coder` requires `collision_gate_result`); every
+`artifacts[].path` must resolve under `work/<run-id>/`.
 
 ```yaml
 handoff:
@@ -37,7 +39,9 @@ handoff:
 ```
 
 The critic writes a `gate:` block per phase. `verdict: fail` on any unresolved
-`blocker`/`high`. Lint with `lint_run.py gate`.
+`blocker`/`high`. Lint with `lint_run.py gate`. Every issue carries a stable
+`id` (`G<phase>-<n>`), reused unchanged when the finding recurs in a later loop
+so the lead can mechanically detect a stalled fix.
 
 ```yaml
 gate:
@@ -45,26 +49,31 @@ gate:
   loop: 0
   verdict: pass                # pass | fail
   issues:
-    - {severity: high, summary: ..., artifact: ..., required_fix: ..., owner: mathodology-coder}
+    - {id: G4-1, severity: high, summary: ..., artifact: ..., required_fix: ..., owner: mathodology-coder}
   evidence_checked: []
   missing_evidence: []
 ```
 
 Each Phase-7 judge seat returns one `scorecard:` block. Weights sum to 1.0;
-scores are 0-100. Lint with `lint_run.py scorecard`.
+scores are 0-100. Lint with `lint_run.py scorecard`. `target_tier` is optional
+and judge seats leave it out -- seats are blind to the target (the lead supplies
+`--target` only at aggregation). `implied_tier` follows the weighted-total band
+(>=85 outstanding, 80-84.9 finalist, 75-79.9 meritorious, <75 below); a seat may
+place it below its own band only with a `tier_justification` field.
 
 ```yaml
 scorecard:
   contest: MCM
-  target_tier: outstanding
   seat: A                      # A | B | C
   round: 1
   criteria:                    # one row per criterion; weights sum to 1.0, scores 0-100
-    - {name: modeling, weight: 0.4, score: 82}
-    - {name: results, weight: 0.35, score: 80}
-    - {name: writing, weight: 0.25, score: 88}
-  weighted_total: 82.8
-  implied_tier: meritorious
+    - {name: summary, weight: 0.25, score: 82}
+    - {name: modeling, weight: 0.25, score: 80}
+    - {name: results, weight: 0.20, score: 84}
+    - {name: writing, weight: 0.15, score: 85}
+    - {name: completeness, weight: 0.15, score: 83}
+  weighted_total: 82.4
+  implied_tier: finalist
   fix_one_thing: "..."
   ranked_gaps: []
   do_not_regress: []
@@ -103,7 +112,10 @@ The panel PASSES only when all of:
 
 Two seats differing by more than 20 on one criterion is an **evidence conflict**:
 it is surfaced and adjudicated by the lead, never averaged away, and blocks a
-clean pass until resolved.
+clean pass until resolved. **Adjudication procedure**: the lead examines the two
+seats' cited artifact evidence, re-dispatches ONLY the outlier seat once with the
+specific evidence question, and counts it as one re-score round; the outcome is
+recorded in the decision_memo.
 
 | Target tier | Total >= | Criterion floor >= |
 |---|---|---|
@@ -111,15 +123,29 @@ clean pass until resolved.
 | Finalist / 国一边缘 | 80 | 65 |
 | Meritorious / 国二 | 75 | 60 |
 
+`--target` accepts the canonical tokens (`outstanding|finalist|meritorious`) and
+documented aliases including `国一`, `国二`, `国一边缘`, `一等奖`, `二等奖`; judge
+seats use the same tokens in `implied_tier`.
+
 Calibrate against real rarity: Outstanding is roughly the top 1-2%, 国一 roughly
 the top 5-8%. Do not inflate scores to force a pass.
+
+This table -- and everything else in this skill -- is **lead/critic context
+only**. Per-criterion band anchors are defined in
+`.claude/agents/mathodology-award-judge.md`, deliberately not here: judge seats
+must never see the pass thresholds above, or scores cluster at the bar.
 
 ## 4. Iteration Budgets
 
 - Each per-phase critic gate: at most 2 fix loops (3 evaluations total).
-- Phase 7: at most 2 re-score rounds.
+- Phase 7: at most 2 re-score rounds. These do not count against the whole-run
+  cap: the initial panel is round 1, the two permitted re-scores are rounds 2
+  and 3 (max r = 3).
 - Whole run: capped at 8 fix loops across all phases.
-- Stop early whenever a loop shows no improvement over the previous one.
+- Stop early when a loop fails to improve. Improvement metric: a gate fix loop
+  improves iff the count of open blocker+high issues strictly decreases (match
+  findings by their stable `id`); a Phase 7 re-score improves iff the minimum
+  seat weighted_total strictly increases.
 - On exhaustion of any budget: emit a `decision_memo:` and stop for a human.
 
 ## 5. Run Layout
@@ -133,33 +159,39 @@ work/<run-id>/
   gates/                       # gates/phase-<n>-loop-<k>.yaml
   scorecards/                  # scorecards/phase7-seat-<A|B|C>-round-<r>.yaml
   evidence/
+  code/                        # the coder's code and run_all.py
   outputs/
     figures/
     tables/
     data/
   paper/
-  package/
+  package/                     # incl. manifest.md, compiled by the lead at Phase 6 close
 ```
 
 ## 6. Blind Judge Panel
 
 Phase 7 dispatches three parallel `mathodology-award-judge` seats in a single
 message with no shared context. Each seat receives ONLY its seat brief, the
-rendered PDF, and the artifact manifest -- no phase log, no other seat's
-scorecard, no cross-seat contact -- so the three scorecards are independent.
+rendered PDF, and `work/<run-id>/package/manifest.md` (the artifact manifest the
+lead compiles at Phase 6 close: rendered PDF path plus figures, tables, data,
+and code paths) -- no phase log, no other seat's scorecard, no cross-seat
+contact, and **no target tier or thresholds** -- so the three scorecards are
+independent and un-anchored.
 
-- **Seat A** -- the contest's flagship-tier general judge (MCM/ICM Outstanding,
-  CUMCM 国一评审): scores overall award-worthiness against named criteria.
-- **Seat B** -- a flagship-tier seat weighting innovation and decision-usefulness:
-  is there a genuine modeling contribution, and does the recommendation help the
-  named stakeholder?
-- **Seat C** -- a skeptical applied-math referee scoring ONLY correctness and
-  reproducibility: do the numbers regenerate and the math hold up?
+**Canonical seat rubrics** (the lead builds seat briefs from these; all seats
+share `summary`, `modeling`, `results` so cross-seat conflict detection has
+overlap -- `summary` is the MCM summary sheet / CUMCM 摘要 quality):
 
-Each seat scores contest-specific criteria 0-100 with weights, produces a
-weighted total, maps it to a calibrated tier, and names the single most
-award-limiting weakness ("if you fix only one thing"). The lead lints and
-aggregates the three scorecards per Section 3.
+| Seat | Role | Criteria (weight) |
+|---|---|---|
+| A | contest flagship-tier general judge | summary .25, modeling .25, results .20, writing .15, completeness .15 |
+| B | innovation & decision-usefulness | summary .15, modeling .20, results .15, innovation .30, evidence .20 |
+| C | skeptical applied-math referee | correctness .35, reproducibility .25, summary .10, modeling .15, results .15 |
+
+Each seat scores its criteria 0-100 against the band anchors in the judge agent
+brief, produces a weighted total, maps it to the implied tier by band, and names
+the single most award-limiting weakness ("if you fix only one thing"). The lead
+lints and aggregates the three scorecards per Section 3.
 
 ## 7. Scripts
 
@@ -168,31 +200,47 @@ All four scripts ship with this skill and self-test with `--self-test`.
 cloned repo use the repo-relative path; from a global skill install the same
 files live under `scripts/` in this skill's directory.
 
-- `figqa.py` (matplotlib) -- bbox-collision gate. Importable
-  (`from figqa import assert_no_overlap; assert_no_overlap(fig)`) and CLI. Wire
-  `assert_no_overlap(fig)` into the figure factory and `run_all` so any
-  text/annotation/legend overlap with data artists, or any clipped artist,
-  **fails the run**. The coder copies `figqa.py` into the run's code directory so
-  the submission package is self-contained and reruns the gate without the skill
-  installed.
+- `figqa.py` (matplotlib) -- bbox-collision gate. **Import-only by design**: the
+  CLI runs only `--self-test` (proving the gate works); it cannot inspect saved
+  figure files. Wire `assert_no_overlap(fig)`
+  (`from figqa import assert_no_overlap`) into the figure factory and `run_all`
+  so any text/annotation/legend overlap with data artists, or any clipped
+  artist, **fails the run**. A zero-collision pass is therefore evidenced by
+  re-running `run_all.py` and observing exit 0 -- the critic re-runs it
+  independently rather than trusting the coder's `collision_gate_result` key.
+  The coder copies `figqa.py` into `work/<run-id>/code/` so the submission
+  package is self-contained and reruns the gate without the skill installed.
 - `pdf_qa.sh` (poppler-utils: pdfinfo/pdftoppm/pdftotext) -- rendered-PDF QA:
-  page-count, duplicate `Figure N:`/`Table N:` caption prefixes, metadata
-  anonymity (`--anonymous`), and a blank-page heuristic, run against the
-  **compiled PDF**.
+  page-count, duplicate caption prefixes (`Figure N:`/`Table N:`/`Fig. N`/
+  `图 N`/`表 N`), anonymity (`--anonymous`: metadata identity including CJK
+  names in Author/Creator/Producer, plus a page-1 body-text scan for emails,
+  institution shapes, author lines, and 姓名/学校/指导教师-style labels -- a bare
+  control number is expected and not flagged), and a blank-page heuristic, run
+  against the **compiled PDF**.
 - `make_contact_sheet.py` (poppler-utils + matplotlib) -- builds the chart-QA
   contact sheet FROM the compiled PDF via pdftoppm, never from source images.
-- `lint_run.py` (PyYAML) -- validates the Section 1 blocks and runs the Section 3
-  judge aggregation.
+  The coder's Phase-4 draft sheet from source renders is coverage QA only; the
+  authoritative sheet is regenerated from the compiled PDF at Phase 6+.
+- `lint_run.py` (PyYAML) -- validates the Section 1 blocks (`handoff --agent
+  <name>` also enforces role-specific keys) and runs the Section 3 judge
+  aggregation.
 
 Repo-relative invocations:
 
 ```bash
 python3 .claude/skills/mathodology-award-gates/scripts/figqa.py --self-test
-python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py handoff work/<run-id>/phase-logs/phase4.md
-python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py aggregate work/<run-id>/scorecards/phase7-seat-*.yaml --target outstanding
+python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py handoff work/<run-id>/phase-logs/phase4.md --agent mathodology-coder
+python3 .claude/skills/mathodology-award-gates/scripts/lint_run.py aggregate work/<run-id>/scorecards/phase7-seat-*-round-1.yaml --target outstanding
 bash    .claude/skills/mathodology-award-gates/scripts/pdf_qa.sh work/<run-id>/paper/solution.pdf --max-pages 25 --anonymous
 python3 .claude/skills/mathodology-award-gates/scripts/make_contact_sheet.py work/<run-id>/paper/solution.pdf -o work/<run-id>/outputs/figures/contact_sheet.png
 ```
+
+Aggregate one round at a time (the round-suffixed glob): after a re-score, round
+2's files are `phase7-seat-*-round-2.yaml` -- a bare `phase7-seat-*.yaml` glob
+would mix rounds and be rejected as duplicate seats. `--max-pages 25` is the
+current MCM rule; set it from the `variant:` block's `limits.pages` for other
+contests, and note the MCM AI-use report is excluded from the 25-page count
+(`--max-pages` applies to the solution body).
 
 Skill-relative wording (global install): run `scripts/figqa.py`,
 `scripts/pdf_qa.sh`, `scripts/make_contact_sheet.py`, and `scripts/lint_run.py`

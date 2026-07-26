@@ -1,6 +1,6 @@
 ---
 name: mathodology-agent-pipeline
-description: Use when maintaining archived knowledge about Mathodology's former Python agent pipeline, worker roles, prompts, Coder execution, HMML, MATLAB, search, or critic behavior.
+description: Use when orchestrating the Mathodology nine-phase award workflow (phase responsibilities, specialist roster, prize-level gates) or consulting archived knowledge about the former Python agent pipeline.
 ---
 
 # Mathodology Agent Pipeline Archive
@@ -60,28 +60,16 @@ For all other ambiguity, record the assumption in the phase log and proceed. If 
 - Phase 2: at least two model agents propose alternatives; lead compares at least three routes and selects one with rejection reasons; critic checks route fit, novelty, time feasibility, and absence of generic method stacking.
 - Phase 3: modeler writes notation, assumptions, units, objectives, constraints, algorithms, pseudocode, validation metrics, baseline, ablation, sensitivity, and robustness plan; critic checks implementability and mathematical coherence.
 - Phase 4: coder produces reproducible computation, environment notes, raw outputs, tables, figures, baseline, ablations, sensitivity, robustness outputs, and run logs; the figure/table set must cover model structure, primary results, sensitivity, robustness, decision tradeoffs, and final recommendations; critic checks number traceability, source data, density, and no cherry-picking.
-- Phase 5: modeler and paper editor translate results into prompt-level answers, captions, recommendations, limitations, uncertainty notes, claim-source links, and a figure/table coverage map; critic checks answer coverage, support, and whether visual and tabular evidence is sufficient for a top-tier paper.
-- Phase 6: paper editor builds summary, coherent paper narrative, references, appendix, AI-use statement when required, and final figure/table placement; critic checks summary quality, paper coherence, notation, citations, page/format risk, and whether results feel substantive rather than sparse.
-- Phase 7: critic audits prompt coverage, math, evidence, reproducibility, writing, formatting, originality, and final scoring risk; lead reruns specialists until no blocker or high issue remains.
+- Phase 5: modeler, evidence researcher, and paper editor translate results into prompt-level answers, captions, recommendations, limitations, uncertainty notes, claim-source links, and a figure/table coverage map; critic checks answer coverage, support, and whether visual and tabular evidence is sufficient for a top-tier paper.
+- Phase 6: paper editor builds summary, coherent paper narrative, references, appendix, AI-use statement when required, and final figure/table placement, compiles the PDF, and runs the rendered-PDF QA; critic checks summary quality, paper coherence, notation, citations, page/format risk, and whether results feel substantive rather than sparse.
+- Phase 7: critic audits prompt coverage, math, evidence, reproducibility, writing, formatting, originality, and final scoring risk, and the lead reruns specialists until no blocker or high issue remains; then the lead dispatches the mandatory three-seat blind `mathodology-award-judge` panel and aggregates the scorecards against the target-tier thresholds (protocol and aggregation rule in `mathodology-award-gates`).
 - Phase 8: packager assembles final paper, source, code, data notes, figures, tables, README, AI-use statement, and checklist; critic checks compliance, anonymity, size/page limits, secrets, scratch artifacts, and submit-readiness.
 
 ## Agent Handoff Format
 
-Every specialist must end with:
-
-```text
-Agent handoff:
-- Phase:
-- Agent:
-- Files or artifacts produced:
-- Decisions made:
-- Assumptions introduced:
-- Evidence used:
-- Commands or computations run:
-- Known weaknesses:
-- Questions for lead or user:
-- Critic focus requested:
-```
+Every specialist ends each phase with the structured `handoff:` yaml block
+defined in `mathodology-award-gates` (this applies in Codex mode too). Free-text
+handoffs are rejected; the lead lints every block with `lint_run.py handoff`.
 
 ## Prize-Level Gates
 
