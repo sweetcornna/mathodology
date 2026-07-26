@@ -38,7 +38,7 @@ Produce:
 - When a figure fails, fix **structure**, not coordinates: reserve headroom above the tallest bar, put callouts in reserved whitespace or outside the axes, use no data-crossing arrows, and never typeset a label over a foreign filled region. Do not nudge coordinates until the gate happens to pass.
 - Record the collision-gate result (pass/fail plus the exact command) in the run log and in the handoff's `collision_gate_result` key.
 
-End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff`). Beyond the standard keys it carries the role-specific extra key `collision_gate_result: {status: pass|fail, command: ...}`. The block must convey:
+End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff --agent mathodology-coder`). Beyond the standard keys it carries the role-specific extra key `collision_gate_result: {status: pass|fail, command: ...}`. The block must convey:
 
 - commands run and expected rerun commands
 - generated files and the paper table or figure they support

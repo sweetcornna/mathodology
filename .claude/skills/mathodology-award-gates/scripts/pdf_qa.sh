@@ -39,11 +39,15 @@ STOPWORDS='via and for with the personal edition pro professional version using 
 
 # Page-1 body-text identity shapes. A control number is REQUIRED on an MCM
 # summary sheet, so digit runs are deliberately not flagged in body text --
-# only affiliation/author shapes and emails are.
+# only affiliation/author shapes and emails are. Ambiguous shapes (an English
+# institution pattern, a bare 学校/学院) can legitimately appear when the
+# PROBLEM is about schools, so they WARN for review instead of failing;
+# unambiguous identity (emails, author lines, 姓名/指导教师-style labels) fails.
 AFFIL_RE='(University|College|Institute|Academy) of [A-Z][a-z]+|[A-Z][a-z]+ (University|College)|School of [A-Z][a-z]+'
 AUTHORLINE_RE='^[[:space:]]*(Author|Authors|Submitted by|Prepared by)[[:space:]]*:'
 # Chinese identity labels (matched as literal UTF-8 byte sequences under LC_ALL=C).
-CN_ID_LABELS='姓名 学校 学院 指导教师 参赛队员 参赛学校 联系电话 队员'
+CN_ID_LABELS_HARD='姓名 指导教师 参赛队员 参赛学校 联系电话 队员'
+CN_ID_LABELS_SOFT='学校 学院'
 
 die() { echo "pdf_qa: $*" >&2; exit 2; }
 
@@ -221,19 +225,23 @@ check_anonymity() {  # <pdf>  (only called under --anonymous)
             fail=1
         fi
         if printf '%s\n' "$page1" | grep -qE "$AFFIL_RE"; then
-            echo "  FAIL anonymity: page 1 body text names an institution:"
+            echo "  WARN anonymity: page 1 body text has an institution-shaped phrase -- confirm it is problem content, not an affiliation:"
             printf '%s\n' "$page1" | grep -oE "$AFFIL_RE" | head -n3 | sed 's/^/          /'
-            fail=1
         fi
         if printf '%s\n' "$page1" | grep -qE "$AUTHORLINE_RE"; then
             echo "  FAIL anonymity: page 1 body text has an author/attribution line:"
             printf '%s\n' "$page1" | grep -E "$AUTHORLINE_RE" | head -n3 | sed 's/^/          /'
             fail=1
         fi
-        for lbl in $CN_ID_LABELS; do
+        for lbl in $CN_ID_LABELS_HARD; do
             if printf '%s\n' "$page1" | grep -q "$lbl"; then
                 echo "  FAIL anonymity: page 1 body text contains the identity label '$lbl'"
                 fail=1
+            fi
+        done
+        for lbl in $CN_ID_LABELS_SOFT; do
+            if printf '%s\n' "$page1" | grep -q "$lbl"; then
+                echo "  WARN anonymity: page 1 body text mentions '$lbl' -- confirm it is problem content, not an identity block"
             fi
         done
     fi

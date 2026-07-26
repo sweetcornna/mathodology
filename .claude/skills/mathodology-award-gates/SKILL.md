@@ -213,9 +213,11 @@ files live under `scripts/` in this skill's directory.
 - `pdf_qa.sh` (poppler-utils: pdfinfo/pdftoppm/pdftotext) -- rendered-PDF QA:
   page-count, duplicate caption prefixes (`Figure N:`/`Table N:`/`Fig. N`/
   `图 N`/`表 N`), anonymity (`--anonymous`: metadata identity including CJK
-  names in Author/Creator/Producer, plus a page-1 body-text scan for emails,
-  institution shapes, author lines, and 姓名/学校/指导教师-style labels -- a bare
-  control number is expected and not flagged), and a blank-page heuristic, run
+  names in Author/Creator/Producer, plus a page-1 body-text scan -- emails,
+  author lines, and 姓名/指导教师-style labels FAIL, while ambiguous shapes (an
+  English institution pattern, a bare 学校/学院) WARN for review since the
+  problem itself may be about schools; a bare control number is expected and
+  not flagged), and a blank-page heuristic, run
   against the **compiled PDF**.
 - `make_contact_sheet.py` (poppler-utils + matplotlib) -- builds the chart-QA
   contact sheet FROM the compiled PDF via pdftoppm, never from source images.

@@ -123,6 +123,16 @@ AGENT_EXTRA_KEYS = {
     "mathodology-paper-editor": ["ledger_closeout"],
 }
 
+# Every specialist name ``--agent`` accepts. A typo'd --agent must fail loudly:
+# AGENT_EXTRA_KEYS.get(<typo>, []) would otherwise enforce nothing while
+# reporting PASS, silently disabling the role-key gate.
+KNOWN_AGENTS = set(AGENT_EXTRA_KEYS) | {
+    "mathodology-lead",
+    "mathodology-critic",
+    "mathodology-award-judge",
+    "mathodology-submission-packager",
+}
+
 KNOWN_WRAPPERS = {"handoff", "gate", "scorecard", "decision_memo"}
 
 
@@ -854,6 +864,12 @@ def _self_test():
     else:
         ok = False
         print("FAIL self-test[handoff--agent-with-key] should have PASSED")
+    # a typo'd --agent must be rejected at the CLI, not silently enforce nothing
+    if main(["handoff", "--agent", "mathodology-codr", coder_plain]) != 0:
+        print("PASS self-test[handoff--agent-typo] -> unknown agent rejected")
+    else:
+        ok = False
+        print("FAIL self-test[handoff--agent-typo] typo'd --agent silently accepted")
 
     # gate issues without a stable id must WARN (not fail)
     g_errors, g_warnings = validate_gate(yaml.safe_load(GOOD_GATE)["gate"])
@@ -1048,8 +1064,15 @@ def main(argv=None):
     agg.add_argument("--target", required=True, help="target tier (e.g. outstanding)")
 
     args = parser.parse_args(argv)
+    agent = getattr(args, "agent", None)
+    if agent and agent not in KNOWN_AGENTS:
+        print(
+            f"FAIL --agent: unknown agent {agent!r} "
+            f"(known: {', '.join(sorted(KNOWN_AGENTS))})"
+        )
+        return 1
     if args.cmd in VALIDATORS:
-        return validate_files(args.cmd, args.files, agent=getattr(args, "agent", None))
+        return validate_files(args.cmd, args.files, agent=agent)
     if args.cmd == "aggregate":
         passed, report = aggregate(args.files, args.target)
         print("\n".join(report))

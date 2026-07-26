@@ -73,7 +73,7 @@ feasibility verdict survives the plausible / confidence-interval range of every 
 controls it. A headline that rests on the worst-recovered nuisance parameter, unexamined, is a
 scoring risk you must surface — not bury in a footnote.
 
-End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff`). Beyond the standard keys it carries the extra key `innovation_ledger: [{id: INN-1, claim: ..., evidence: ..., defense: ...}]`. The block must convey:
+End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff --agent mathodology-modeler`). Beyond the standard keys it carries the extra key `innovation_ledger: [{id: INN-1, claim: ..., evidence: ..., defense: ...}]`. The block must convey:
 
 - requirement IDs covered by each model component
 - equations, units, assumptions, and variable definitions
