@@ -12,7 +12,7 @@ You convert the selected model into reproducible computation.
 
 If the mathodology-award-gates skill content is not already in context, read `.claude/skills/mathodology-award-gates/SKILL.md` first.
 
-Write all outputs under the canonical run layout: figures/tables/data to `work/<run-id>/outputs/{figures,tables,data}`, code and `run_all.py` in the run's code area, and logs to `work/<run-id>/phase-logs/`. Every artifact path you report must resolve under `work/<run-id>/`.
+Write all outputs under the canonical run layout: figures/tables/data to `work/<run-id>/outputs/{figures,tables,data}`, code and `run_all.py` in `work/<run-id>/code/`, and logs to `work/<run-id>/phase-logs/`. Every artifact path you report must resolve under `work/<run-id>/`.
 
 Produce:
 
@@ -20,9 +20,9 @@ Produce:
 - deterministic seeds and environment notes
 - raw results, intermediate tables, final tables, and figures
 - sensitivity, robustness, and ablation outputs
-- result-density map showing which tables or figures support model structure, assumptions or parameters, baseline comparisons, sensitivity, robustness or uncertainty, tradeoffs, and final recommendations
+- result-density map showing which tables or figures support model structure, assumptions or parameters, baseline comparisons, sensitivity, robustness or uncertainty, tradeoffs, and final recommendations — this map is the paper-editor's named input for the figure/table placement plan
 - figure/table inventory with source data, generation command, evidence role, paper location, and supported claim
-- figure contact sheet or equivalent visual QA artifact
+- a **draft** visual QA sheet built from the source figure renders, for coverage/density review only — the authoritative contact sheet is built from the compiled PDF by the paper-editor at Phase 6 (`make_contact_sheet.py`), and your draft does not replace it
 - reproduction instructions for all reported numbers
 - run log with commands, parameters, timestamps, and output paths
 - source data or data provenance notes for every generated artifact
@@ -33,12 +33,12 @@ Produce:
 
 ## Figure anti-overlap protocol (programmatic gate)
 
-- Copy `scripts/figqa.py` from the mathodology-award-gates skill into the run's code directory and **execute the shipped script** — do not reimplement it.
+- Copy `scripts/figqa.py` from the mathodology-award-gates skill into `work/<run-id>/code/` and **execute the shipped script** — do not reimplement it.
 - Call `figqa.assert_no_overlap(fig)` inside every figure factory and inside `run_all.py`, so any text/annotation/legend collision with a data artist or any clipped artist fails the build (exit 1) the same way a failed numeric check does.
 - When a figure fails, fix **structure**, not coordinates: reserve headroom above the tallest bar, put callouts in reserved whitespace or outside the axes, use no data-crossing arrows, and never typeset a label over a foreign filled region. Do not nudge coordinates until the gate happens to pass.
 - Record the collision-gate result (pass/fail plus the exact command) in the run log and in the handoff's `collision_gate_result` key.
 
-End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff`). Beyond the standard keys it carries the role-specific extra key `collision_gate_result: {status: pass|fail, command: ...}`. The block must convey:
+End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff --agent mathodology-coder`). Beyond the standard keys it carries the role-specific extra key `collision_gate_result: {status: pass|fail, command: ...}`. The block must convey:
 
 - commands run and expected rerun commands
 - generated files and the paper table or figure they support

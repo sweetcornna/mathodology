@@ -115,7 +115,7 @@ Restart Codex or Claude Code after updating.
 Codex:
 
 ```bash
-ls ~/.agents/skills | rg '^mathodology-'
+ls ~/.codex/skills | rg '^mathodology-'
 ```
 
 Claude Code:

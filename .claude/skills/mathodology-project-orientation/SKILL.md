@@ -1,6 +1,6 @@
 ---
 name: mathodology-project-orientation
-description: Use when maintaining, validating, or checking boundaries of the Mathodology skills repository itself, or deciding whether a change belongs on this branch.
+description: Use when maintaining or checking boundaries of the Mathodology skills repository itself, or deciding whether a change belongs on this branch.
 ---
 
 # Mathodology Project Orientation
@@ -28,6 +28,7 @@ Current work should normally edit only:
 - `docs/WORKFLOWS.md`
 - `docs/WORKFLOWS_zh.md`
 - `docs/BACKUP.md`
+- `docs/BACKUP_zh.md`
 - `.gitignore`
 
 `LICENSE` is retained but should not change unless the license changes.

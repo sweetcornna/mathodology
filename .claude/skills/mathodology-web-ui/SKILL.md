@@ -1,6 +1,6 @@
 ---
 name: mathodology-web-ui
-description: Use when maintaining archived knowledge about Mathodology's former web UI, run dashboard, API clients, streaming behavior, rendering, or frontend verification.
+description: Use when a Mathodology workflow needs figure/table presentation reasoning, or when consulting archived knowledge about the former web UI subsystem.
 ---
 
 # Mathodology Web UI Archive

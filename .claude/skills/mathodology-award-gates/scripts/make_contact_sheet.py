@@ -34,15 +34,37 @@ def _require_pdftoppm():
         )
 
 
+def _import_matplotlib():
+    try:
+        import matplotlib
+    except ImportError:
+        sys.exit(
+            "make_contact_sheet: matplotlib is required. "
+            "Install with: python3 -m pip install matplotlib "
+            "(or run under 'uv run --with matplotlib python3 ...')"
+        )
+    matplotlib.use("Agg")
+    return matplotlib
+
+
 def _render_pages(pdf_path, dpi, out_dir):
     """Rasterise every page of the PDF into out_dir; return sorted PNG paths."""
     prefix = os.path.join(out_dir, "page")
-    subprocess.run(
-        ["pdftoppm", "-png", "-r", str(dpi), pdf_path, prefix],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-    )
+    try:
+        subprocess.run(
+            ["pdftoppm", "-png", "-r", str(dpi), pdf_path, prefix],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+    except subprocess.CalledProcessError as exc:
+        # Without this, a corrupt/encrypted PDF reports only the exit status
+        # and poppler's actual diagnostic is swallowed.
+        detail = (exc.stderr or b"").decode("utf-8", "replace").strip()
+        sys.exit(
+            f"make_contact_sheet: pdftoppm failed on '{pdf_path}' "
+            f"(exit {exc.returncode})" + (f": {detail}" if detail else "")
+        )
     return sorted(glob.glob(prefix + "-*.png"))
 
 
@@ -50,10 +72,11 @@ def make_contact_sheet(pdf_path, out_path, dpi=60, cols=None):
     """Render ``pdf_path`` to a single labeled contact sheet at ``out_path``."""
     _require_pdftoppm()
     if not os.path.isfile(pdf_path):
-        raise FileNotFoundError(pdf_path)
+        sys.exit(f"make_contact_sheet: no such file: {pdf_path}")
+    if cols is not None and cols < 1:
+        sys.exit(f"make_contact_sheet: --cols must be >= 1 (got {cols})")
 
-    import matplotlib
-    matplotlib.use("Agg")
+    _import_matplotlib()
     import matplotlib.image as mpimg
     import matplotlib.pyplot as plt
 
@@ -99,8 +122,7 @@ def make_contact_sheet(pdf_path, out_path, dpi=60, cols=None):
 
 
 def _self_test():
-    import matplotlib
-    matplotlib.use("Agg")
+    _import_matplotlib()
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_pdf import PdfPages
 
@@ -147,6 +169,8 @@ def main(argv=None):
     parser.add_argument("--dpi", type=int, default=60, help="render DPI (default 60)")
     parser.add_argument("--cols", type=int, default=None, help="columns in the grid")
     args = parser.parse_args(argv)
+    if args.cols is not None and args.cols < 1:
+        parser.error(f"--cols must be >= 1 (got {args.cols})")
 
     out = make_contact_sheet(args.pdf, args.output, dpi=args.dpi, cols=args.cols)
     print(f"contact sheet written: {out}")

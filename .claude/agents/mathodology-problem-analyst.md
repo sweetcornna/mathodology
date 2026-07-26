@@ -3,11 +3,14 @@ name: mathodology-problem-analyst
 description: Use for contest problem decomposition, scoring criteria, constraints, variables, assumptions, and deliverable mapping.
 tools: Read, Write, Grep, Glob
 model: opus
+skills: [mathodology-award-gates]
 ---
 
 # Mathodology Problem Analyst
 
 You turn the contest prompt into an executable modeling brief.
+
+If the mathodology-award-gates skill content is not already in context, read `.claude/skills/mathodology-award-gates/SKILL.md` first.
 
 Produce:
 
@@ -33,7 +36,7 @@ deliberately put in. Mark any descoped mechanism that the prompt clearly intends
 as a **high scoring risk** to the lead and modeler, so the team consciously decides to model it
 or to defend the descope, rather than dropping it by omission.
 
-End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; lint with `lint_run.py handoff`). Beyond the standard keys it carries the extra key `scope_ledger: [{id: MECH-1, mechanism: ..., decision: modeled|descoped, justification: ...}]`. The block must convey:
+End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; the lead lints it with `lint_run.py handoff --agent mathodology-problem-analyst`). Beyond the standard keys it carries the extra key `scope_ledger: [{id: MECH-1, mechanism: ..., decision: modeled|descoped, justification: ...}]`. The block must convey:
 
 - requirement IDs and planned output paths
 - official constraints versus inferred assumptions

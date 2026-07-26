@@ -35,7 +35,7 @@ Use these signals to calibrate the workflow. They are not templates to copy; the
 | 4. Experiments | Generate reproducible results | code, raw outputs, tables, figures, sensitivity, robustness, result-density map, deviations-from-spec notes | reported numbers are reproducible and core results are visually or tabularly supported; shared random numbers and by-construction labeling honored |
 | 5. Interpretation | Connect results to the prompt | findings, captions, recommendations, limitations, figure/table coverage map | each result answers a prompt question |
 | 6. Paper draft | Produce a coherent paper | abstract, methods, results, figures/tables, references, appendix, single canonical recommendation, innovation-ledger (INN-n) and scope-ledger (MECH-n) closeout | no orphan result, sparse result section, unsupported claim, recommendation inconsistency, or paper-vs-code drift; every INN-n and MECH-n ledger entry is load-bearing or explicitly descoped |
-| 7. Independent review | Remove fixable weaknesses, confirm award tier | critic audits plus three parallel blind `mathodology-award-judge` scorecards | no high-severity issue remains; the lead aggregates the three seats and the panel passes only when every seat's implied tier meets the target, the min total clears the threshold, no criterion is below its floor, and no unresolved >20 single-criterion conflict remains |
+| 7. Independent review | Remove fixable weaknesses, confirm award tier | critic audits plus three parallel blind `mathodology-award-judge` scorecards | no high-severity issue remains; the lead aggregates the three seats and the panel passes only when every seat's implied tier meets the target, the min total clears the threshold, no criterion is below its floor, and no unresolved >20 shared-criterion conflict remains |
 | 8. Final package | Assemble submission | paper, source, code, data notes, README, AI-use statement, checklist | package is submit-ready |
 
 ## Detailed Phase-Agent-Critic Matrix
@@ -51,7 +51,7 @@ Every phase has three layers: specialist work, lead synthesis, and independent c
 | 4. Computation and experiments | coder, modeler, critic | Create reproducible scripts or notebooks, deterministic seeds, environment notes, raw outputs, cleaned tables, figures, baseline, ablations, sensitivity, robustness, run log, and a result-density map covering model structure, primary comparisons, sensitivity, robustness, tradeoffs, and recommendations. | Reported numbers can be regenerated or manually traced; figures have source data; failures are logged; no cherry-picked single run is accepted; sparse or decorative visuals fail the gate. |
 | 5. Interpretation | modeler, evidence researcher, paper editor, critic | Convert numerical and analytical results into prompt-by-prompt answers, figure/table captions, recommendations, limitations, uncertainty notes, claim-source links, and a coverage map showing which visual or table supports each major conclusion. | Each result answers a task; every claim is supported by data, derivation, figure, table, citation, or explicit assumption; limitations do not undermine the main conclusion; major conclusions are not left as text-only assertions. |
 | 6. Paper draft | paper editor, modeler, coder, critic | Draft summary, introduction, assumptions, methods, results, sensitivity, strengths and weaknesses, conclusion, references, appendices, AI-use statement when needed, final figure/table placement under the page limit, and an innovation-ledger (INN-n) and scope-ledger (MECH-n) closeout mirroring the citation closeout. | Summary states method and most important conclusions; paper is coherent and not a transcript; notation, captions, references, figure/table density, and requirement coverage are consistent; every innovation-ledger (INN-n) and scope-ledger (MECH-n) entry is load-bearing in the draft or explicitly descoped in the limitations. |
-| 7. Independent review | critic, three blind `mathodology-award-judge` seats, lead, relevant specialist reruns | Critic runs separate audits for prompt coverage, mathematical validity, originality, paper-vs-code conformance, headline robustness, recommendation consistency, evidence, reproducibility, writing, formatting, and final scoring risk, with skill attribution; the lead dispatches three parallel blind `mathodology-award-judge` seats (A flagship-general, B innovation and decision-usefulness, C correctness and reproducibility only) with no shared context, each returning one scorecard. | No high-severity issue remains; each medium issue is fixed or explicitly accepted with rationale; the lead lints every scorecard and aggregates per the thresholds (Outstanding/国一 total ≥ 85, floor 70; Finalist/国一边缘 80/65; Meritorious/国二 75/60), the panel passing only when every seat's implied tier meets the target, the min total clears the threshold, no criterion falls below its floor, and no unresolved >20 single-criterion conflict remains; re-score is capped at 2 rounds, then a decision_memo; the critic and judges are never the agent that produced the artifact. |
+| 7. Independent review | critic, three blind `mathodology-award-judge` seats, lead, relevant specialist reruns | Critic runs separate audits for prompt coverage, mathematical validity, originality, paper-vs-code conformance, headline robustness, recommendation consistency, evidence, reproducibility, writing, formatting, and final scoring risk, with skill attribution; the lead dispatches three parallel blind `mathodology-award-judge` seats (all seats score summary/modeling/results; A adds writing/completeness, B adds innovation/evidence, C adds correctness/reproducibility weighted heaviest) with no shared context and no target tier, each returning one scorecard. | No high-severity issue remains; each medium issue is fixed or explicitly accepted with rationale; the lead lints every scorecard and aggregates per the thresholds (Outstanding/国一 total ≥ 85, floor 70; Finalist/国一边缘 80/65; Meritorious/国二 75/60), the panel passing only when every seat's implied tier meets the target, the min total clears the threshold, no criterion falls below its floor, and no unresolved >20 shared-criterion conflict remains; re-score is capped at 2 rounds, then a decision_memo; the critic and judges are never the agent that produced the artifact. |
 | 8. Final package | submission packager, paper editor, critic | Assemble final PDF, editable source if required, code, data or provenance notes, figures, tables, reproduction README, AI-use report, and requirement-to-file checklist. | Package matches contest rules, is anonymous where required, has no secrets or scratch files, satisfies size/page limits, and can be submitted by someone outside the working session. |
 
 ## Agent Handoff Contract
@@ -103,9 +103,9 @@ gate:
 Fix loops are bounded so a run cannot churn indefinitely:
 
 - Each per-phase critic gate allows at most 2 fix loops (3 evaluations total).
-- Phase 7 allows at most 2 re-score rounds.
+- Phase 7 allows at most 2 re-score rounds. These do not count against the whole-run cap: the initial panel is round 1, the two permitted re-scores are rounds 2 and 3 (max r = 3).
 - The whole run is capped at 8 fix loops across all phases.
-- Stop early whenever a loop shows no improvement over the previous one.
+- Stop early when a loop fails to improve. Improvement metric: a gate fix loop improves iff the count of open blocker+high issues strictly decreases; a Phase 7 re-score improves iff the minimum seat weighted_total strictly increases.
 - On exhaustion of any budget the lead does NOT silently continue: it emits a `decision_memo:` yaml block and stops for a human decision.
 
 ```yaml
@@ -259,12 +259,14 @@ python3 .claude/skills/mathodology-award-gates/scripts/make_contact_sheet.py wor
 bash    .claude/skills/mathodology-award-gates/scripts/pdf_qa.sh work/<run-id>/paper/solution.pdf --max-pages 25 --anonymous
 ```
 
+`--max-pages 25` is the current MCM rule; set it from the `variant:` block's `limits.pages` for other contests. The MCM AI-use report is excluded from the 25-page count (`--max-pages` applies to the solution body).
+
 The passing output of these scripts is the required evidence; the run's collected artifacts must include:
 
 - generated figure count and table count
 - the contact sheet built from the compiled PDF, never from source images
 - rendered PDF page count and a clean `pdf_qa.sh` report
-- a zero-collision `figqa.py` exit for every generated figure
+- a zero-collision pass for every generated figure, evidenced by re-running `run_all.py` (which embeds `assert_no_overlap`) and observing exit 0 — `figqa.py --self-test` proves the gate itself works
 - checksum or clean rebuild proof for the final package
 
 The critic must still visually inspect the contact sheet and at least the pages containing dense figures/tables. The programmatic gates do not replace the visual pass because layout engines can produce mathematically valid but unreadable results.
@@ -336,7 +338,7 @@ Subagents (9):
 - `mathodology-award-judge`: one independent blind Phase 7 judge seat (the lead dispatches three in parallel)
 - `mathodology-submission-packager`: final package and reproducibility README
 
-`mathodology-lead`, `mathodology-problem-analyst`, `mathodology-modeler`, `mathodology-coder`, `mathodology-critic`, `mathodology-paper-editor`, and `mathodology-award-judge` are pinned to `model: opus` in their frontmatter; `mathodology-evidence-researcher` and `mathodology-submission-packager` inherit the session model. A `CLAUDE_CODE_SUBAGENT_MODEL` env var or a per-invocation model parameter overrides the frontmatter pin (env/per-invocation > frontmatter). The lead always runs as the main Claude Code thread, never as a dispatched subagent, because a dispatched subagent cannot spawn the specialist subagents this workflow requires.
+All 9 subagents pin `model: opus` in their frontmatter. A `CLAUDE_CODE_SUBAGENT_MODEL` env var or a per-invocation model parameter overrides the frontmatter pin (env/per-invocation > frontmatter). The lead always runs as the main Claude Code thread, never as a dispatched subagent, because a dispatched subagent cannot spawn the specialist subagents this workflow requires.
 
 Execution pattern:
 
@@ -373,7 +375,7 @@ Codex agent roles:
 - Three independent Phase 7 judge agents (blind panel)
 - Submission packaging agent
 
-In Codex the Phase 7 blind judge panel is emulated as three INDEPENDENT agent invocations with no shared context. Each receives only its seat brief — Seat A flagship-tier general judge, Seat B weighting innovation and decision-usefulness, Seat C a skeptical referee scoring only correctness and reproducibility — plus the rendered PDF and the artifact manifest, and each returns exactly one `scorecard:` block. The lead validates each block, then aggregates the three per the `mathodology-award-gates` thresholds (Outstanding/国一 total ≥ 85, floor 70; Finalist/国一边缘 80/65; Meritorious/国二 75/60), never averaging a >20 single-criterion disagreement away.
+In Codex the Phase 7 blind judge panel is emulated as three INDEPENDENT agent invocations with no shared context. Each receives only its seat brief — all seats score the shared criteria summary/modeling/results; Seat A (flagship-tier general judge) adds writing and completeness, Seat B (innovation and decision-usefulness) adds innovation and evidence, Seat C (skeptical referee) adds correctness and reproducibility, weighted heaviest — plus the rendered PDF and `package/manifest.md`, never the target tier or thresholds. Each returns exactly one `scorecard:` block. The lead validates each block, then aggregates the three per the `mathodology-award-gates` thresholds (Outstanding/国一 total ≥ 85, floor 70; Finalist/国一边缘 80/65; Meritorious/国二 75/60), never averaging a >20 shared-criterion disagreement away.
 
 ### Codex Clarification And Continuation
 

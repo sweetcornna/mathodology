@@ -7,7 +7,10 @@ decision_memo) whether they arrive as a bare ``.yaml`` file or as fenced
 scorecards per the judge-panel rule.
 
 Subcommands:
-    handoff   <file...>            validate handoff blocks
+    handoff   <file...> [--agent <name>]
+                                   validate handoff blocks; --agent also
+                                   requires that role's extra keys (e.g.
+                                   mathodology-coder -> collision_gate_result)
     gate      <file...>            validate critic-gate blocks
     scorecard <file...>            validate judge scorecard blocks
     memo      <file...>            validate decision_memo blocks
@@ -15,6 +18,7 @@ Subcommands:
                                    run the judge-panel rule; print PASS/FAIL,
                                    min-seat total, weakest criterion, conflicts
     --self-test                    run embedded good/bad fixtures
+                                   (honoured only as the first argument)
 
 Requires PyYAML.
 """
@@ -67,7 +71,10 @@ THRESHOLDS = {
 }
 TARGET_RANK = {"outstanding": 4, "finalist": 3, "meritorious": 2}
 
-# accepted --target aliases -> canonical target key
+# accepted --target aliases -> canonical target key. Contest-local labels
+# (一等奖 for a variant contest's top tier, 国一边缘 for the documented
+# finalist-equivalent) resolve to their threshold row so a lead can pass the
+# label the variant docs use.
 TARGET_ALIASES = {
     "outstanding": "outstanding",
     "national_first": "outstanding",
@@ -80,6 +87,50 @@ TARGET_ALIASES = {
     "guoer": "meritorious",
     "国一": "outstanding",   # 国一
     "国二": "meritorious",   # 国二
+    "一等奖": "outstanding",  # variant-contest top tier (e.g. MathorCup 一等奖)
+    "二等奖": "meritorious",  # variant-contest second tier
+    "国一边缘": "finalist",   # documented finalist-equivalent label
+}
+
+# Every spelling accepted anywhere (KNOWN_TIER_RANK plus every --target alias)
+# must rank: a judge who writes ``implied_tier: o`` mirrors an accepted target
+# spelling and must not sink the panel as an unknown tier.
+TIER_RANK_UNION = dict(KNOWN_TIER_RANK)
+for _alias, _canon in TARGET_ALIASES.items():
+    TIER_RANK_UNION.setdefault(_alias, TARGET_RANK[_canon])
+
+# weighted_total band -> tier rank (documented mapping: >=85 outstanding,
+# 80-84.9 finalist, 75-79.9 meritorious, <75 below award tiers). Used only to
+# WARN when a scorecard's holistic implied_tier departs from its own total
+# without a tier_justification.
+def _band_rank_for_total(total):
+    if total >= 85:
+        return 4
+    if total >= 80:
+        return 3
+    if total >= 75:
+        return 2
+    return 1
+
+
+# role-specific handoff keys enforced by ``handoff --agent <name>``; the prose
+# contract lives in the corresponding .claude/agents/<name>.md brief.
+AGENT_EXTRA_KEYS = {
+    "mathodology-problem-analyst": ["scope_ledger"],
+    "mathodology-modeler": ["innovation_ledger"],
+    "mathodology-evidence-researcher": ["citations_to_verify"],
+    "mathodology-coder": ["collision_gate_result"],
+    "mathodology-paper-editor": ["ledger_closeout"],
+}
+
+# Every specialist name ``--agent`` accepts. A typo'd --agent must fail loudly:
+# AGENT_EXTRA_KEYS.get(<typo>, []) would otherwise enforce nothing while
+# reporting PASS, silently disabling the role-key gate.
+KNOWN_AGENTS = set(AGENT_EXTRA_KEYS) | {
+    "mathodology-lead",
+    "mathodology-critic",
+    "mathodology-award-judge",
+    "mathodology-submission-packager",
 }
 
 KNOWN_WRAPPERS = {"handoff", "gate", "scorecard", "decision_memo"}
@@ -165,7 +216,7 @@ def _require_list(body, key, errors):
         errors.append(f"key '{key}' must be a list")
 
 
-def validate_handoff(body):
+def validate_handoff(body, agent=None):
     errors, warnings = [], []
     if not isinstance(body, dict):
         return ["handoff block is not a mapping"], warnings
@@ -174,6 +225,16 @@ def validate_handoff(body):
         "assumptions", "evidence", "commands", "weaknesses", "questions",
         "critic_focus",
     ], errors)
+    # --agent <name>: also require that role's extra keys (the shared schema
+    # cannot see them, so e.g. a coder handoff without collision_gate_result
+    # would otherwise lint clean and the figure-gate evidence would be lost).
+    if agent:
+        for k in AGENT_EXTRA_KEYS.get(agent, []):
+            if k not in body:
+                errors.append(f"missing role-specific key for {agent}: {k}")
+        declared = body.get("agent")
+        if isinstance(declared, str) and declared.strip() and declared.strip() != agent:
+            errors.append(f"handoff agent {declared!r} does not match --agent {agent!r}")
     if "phase" in body and not _is_int(body["phase"]):
         errors.append("phase must be an integer")
     if "loop" in body and not _is_int(body["loop"]):
@@ -230,6 +291,11 @@ def validate_gate(body):
             errors.append(f"issues[{i}] severity must be blocker|high|medium|low (got {sev!r})")
         if not iss.get("summary"):
             errors.append(f"issues[{i}] missing 'summary'")
+        if not iss.get("id"):
+            warnings.append(
+                f"issues[{i}] has no stable 'id' (G<phase>-<n>); without one the "
+                "lead cannot match findings across loops to detect non-improvement"
+            )
         for want in ("required_fix", "owner"):
             if want not in iss:
                 warnings.append(f"issues[{i}] has no '{want}'")
@@ -240,7 +306,10 @@ def validate_scorecard(body):
     errors, warnings = [], []
     if not isinstance(body, dict):
         return ["scorecard block is not a mapping"], warnings
-    _require_keys(body, ["contest", "target_tier", "seat", "round", "criteria",
+    # target_tier is deliberately NOT required: judge seats are blind to the
+    # target (the lead supplies --target only at aggregation). It is still
+    # accepted when present for backward compatibility.
+    _require_keys(body, ["contest", "seat", "round", "criteria",
                          "weighted_total", "implied_tier", "fix_one_thing",
                          "ranked_gaps", "do_not_regress"], errors)
     if "seat" in body and body["seat"] not in {"A", "B", "C"}:
@@ -280,17 +349,32 @@ def validate_scorecard(body):
             errors.append(f"criteria[{i}] score must be within 0-100 (got {s})")
         if _is_number(w) and _is_number(s):
             computed += w * s
-    if crit and abs(wsum - 1.0) > 0.01:
-        errors.append(f"criteria weights must sum to 1.0 +/-0.01 (got {round(wsum, 4)})")
+    # 0.015 tolerance: a natural equal three-way split (0.33 * 3 = 0.99) must
+    # pass; a genuinely wrong sum (0.8, 1.1) still fails.
+    if crit and abs(wsum - 1.0) > 0.015:
+        errors.append(f"criteria weights must sum to 1.0 +/-0.015 (got {round(wsum, 4)})")
     it = body.get("implied_tier")
-    if isinstance(it, str) and it not in KNOWN_TIER_RANK:
+    if isinstance(it, str) and it.strip().lower() not in TIER_RANK_UNION:
         warnings.append(f"implied_tier '{it}' is not a known tier (open enum, not rejected)")
-    if _is_number(body.get("weighted_total")) and crit and abs(wsum - 1.0) <= 0.01:
+    if _is_number(body.get("weighted_total")) and crit and abs(wsum - 1.0) <= 0.015:
         if abs(body["weighted_total"] - computed) > 1.5:
             warnings.append(
                 f"weighted_total {body['weighted_total']} differs from weight*score sum "
                 f"{round(computed, 1)} by >1.5"
             )
+    # holistic-override guard: implied_tier may depart from the band its own
+    # weighted_total implies (>=85 outstanding, 80-84.9 finalist, 75-79.9
+    # meritorious, <75 below) only with an explicit tier_justification.
+    it_rank = None
+    if isinstance(it, str):
+        it_rank = TIER_RANK_UNION.get(it.strip().lower())
+    if (it_rank is not None and _is_number(body.get("weighted_total"))
+            and it_rank != _band_rank_for_total(float(body["weighted_total"]))
+            and not body.get("tier_justification")):
+        warnings.append(
+            f"implied_tier '{it}' departs from the band implied by "
+            f"weighted_total {body['weighted_total']} without a tier_justification"
+        )
     return errors, warnings
 
 
@@ -345,9 +429,12 @@ VALIDATORS = {
 # --------------------------------------------------------------------------
 # file-level driver for the validate subcommands
 # --------------------------------------------------------------------------
-def validate_files(kind, paths):
+def validate_files(kind, paths, agent=None):
     """Return exit code (0 ok, 1 failure) and print per-file PASS/FAIL lines."""
     wrapper_key, validator = VALIDATORS[kind]
+    if kind == "handoff" and agent:
+        base = validator
+        validator = lambda body: base(body, agent=agent)  # noqa: E731
     rc = 0
     for path in paths:
         if not os.path.isfile(path):
@@ -383,7 +470,7 @@ def validate_files(kind, paths):
 # --------------------------------------------------------------------------
 def _tier_rank(tier):
     if isinstance(tier, str):
-        return KNOWN_TIER_RANK.get(tier.strip().lower())
+        return TIER_RANK_UNION.get(tier.strip().lower())
     return None
 
 
@@ -478,12 +565,19 @@ def aggregate(paths, target):
 
     # panel pass/fail conditions
     reasons = []
-    # (a) every seat implied_tier >= target
-    below_tier = [(s[0], s[2]) for s in seats if s[3] is None or s[3] < need_rank]
-    cond_a = not below_tier
+    # (a) every seat implied_tier >= target. An unrankable tier is its own
+    # failure ("cannot be ranked"), not mislabelled as "below target".
+    below_tier = [(s[0], s[2]) for s in seats if s[3] is not None and s[3] < need_rank]
+    unranked = [(s[0], s[2]) for s in seats if s[3] is None]
+    cond_a = not below_tier and not unranked
     if not cond_a:
         for label, implied in below_tier:
             reasons.append(f"Seat {label} implied tier '{implied}' is below target {canon}")
+        for label, implied in unranked:
+            reasons.append(
+                f"Seat {label} implied_tier '{implied}' cannot be ranked (unknown tier; "
+                f"use outstanding|finalist|meritorious or a documented alias)"
+            )
     # (b) min total >= threshold
     cond_b = min_total >= thr["total"]
     if not cond_b:
@@ -638,6 +732,42 @@ scorecard:
   do_not_regress: []
 """
 
+# No target_tier (judges are blind to the target) and an equal three-way
+# split: 0.33 * 3 = 0.99 must clear the 0.015 weight tolerance.
+BLIND_EQUAL_WEIGHTS_SCORECARD = """
+scorecard:
+  contest: MCM
+  seat: B
+  round: 1
+  criteria:
+    - {name: summary, weight: 0.33, score: 86}
+    - {name: modeling, weight: 0.33, score: 88}
+    - {name: results, weight: 0.34, score: 87}
+  weighted_total: 87.0
+  implied_tier: outstanding
+  fix_one_thing: x
+  ranked_gaps: []
+  do_not_regress: []
+"""
+
+CODER_HANDOFF_WITH_GATE_KEY = """
+handoff:
+  phase: 4
+  agent: mathodology-coder
+  loop: 0
+  status: complete
+  artifacts:
+    - {path: work/run-1/outputs/figures/sens.pdf, role: sensitivity}
+  decisions: []
+  assumptions: []
+  evidence: []
+  commands: ["python3 run_all.py"]
+  weaknesses: []
+  questions: []
+  critic_focus: []
+  collision_gate_result: {status: pass, command: python3 run_all.py}
+"""
+
 GOOD_MEMO = """
 decision_memo:
   phase: 7
@@ -716,6 +846,57 @@ def _self_test():
     check("memo-good", True, _write(tmp, "m_good.yaml", GOOD_MEMO), "memo")
     check("memo-bad(missing-options)", False,
           _write(tmp, "m_bad.yaml", BAD_MEMO), "memo")
+    check("scorecard-blind-equal-weights(no-target_tier, 0.33x3)", True,
+          _write(tmp, "s_blind.yaml", BLIND_EQUAL_WEIGHTS_SCORECARD), "scorecard")
+
+    # --agent role-key enforcement: the same coder handoff passes plain lint,
+    # fails under --agent without collision_gate_result, passes with it.
+    coder_plain = _write(tmp, "h_coder_plain.yaml", GOOD_HANDOFF)
+    coder_keyed = _write(tmp, "h_coder_keyed.yaml", CODER_HANDOFF_WITH_GATE_KEY)
+    if validate_files("handoff", [coder_plain], agent="mathodology-coder") != 0:
+        print("PASS self-test[handoff--agent-missing-key] -> rejected as expected")
+    else:
+        ok = False
+        print("FAIL self-test[handoff--agent-missing-key] should have FAILED "
+              "(no collision_gate_result)")
+    if validate_files("handoff", [coder_keyed], agent="mathodology-coder") == 0:
+        print("PASS self-test[handoff--agent-with-key] -> valid as expected")
+    else:
+        ok = False
+        print("FAIL self-test[handoff--agent-with-key] should have PASSED")
+    # a typo'd --agent must be rejected at the CLI, not silently enforce nothing
+    if main(["handoff", "--agent", "mathodology-codr", coder_plain]) != 0:
+        print("PASS self-test[handoff--agent-typo] -> unknown agent rejected")
+    else:
+        ok = False
+        print("FAIL self-test[handoff--agent-typo] typo'd --agent silently accepted")
+
+    # gate issues without a stable id must WARN (not fail)
+    g_errors, g_warnings = validate_gate(yaml.safe_load(GOOD_GATE)["gate"])
+    if not g_errors and any("'id'" in w or "stable" in w for w in g_warnings):
+        print("PASS self-test[gate-issue-id-warn] -> warned, not rejected")
+    else:
+        ok = False
+        print(f"FAIL self-test[gate-issue-id-warn] errors={g_errors} warnings={g_warnings}")
+
+    # band-mismatch without tier_justification must WARN; with it, no warn
+    mism = yaml.safe_load(GOOD_SCORECARD)["scorecard"]
+    mism["implied_tier"] = "meritorious"  # holistic override below the 88-total band
+    s_errors, s_warnings = validate_scorecard(mism)
+    if not s_errors and any("tier_justification" in w for w in s_warnings):
+        print("PASS self-test[scorecard-band-mismatch-warn]")
+    else:
+        ok = False
+        print(f"FAIL self-test[scorecard-band-mismatch-warn] errors={s_errors} "
+              f"warnings={s_warnings}")
+    mism["tier_justification"] = "correctness flaw caps the tier despite the total"
+    s_errors, s_warnings = validate_scorecard(mism)
+    if not s_errors and not any("tier_justification" in w for w in s_warnings):
+        print("PASS self-test[scorecard-band-mismatch-justified]")
+    else:
+        ok = False
+        print(f"FAIL self-test[scorecard-band-mismatch-justified] errors={s_errors} "
+              f"warnings={s_warnings}")
 
     print("--- aggregate: passing panel (expect PASS) ---")
     pass_paths = [
@@ -789,6 +970,42 @@ def _self_test():
         ok = False
         print("FAIL self-test[aggregate-cn-tier] should have PASSED with 国一 labels")
 
+    print("--- aggregate: alias tiers ('o' seats, target 国一边缘) ---")
+    # 'o' mirrors an accepted --target spelling and must rank as outstanding;
+    # 国一边缘 must resolve to the finalist threshold row (80/65).
+    alias_paths = [
+        _write(tmp, "alA.yaml", _panel("A", 82, "o",
+               [("summary", 0.4, 82), ("modeling", 0.3, 83), ("results", 0.3, 81)])),
+        _write(tmp, "alB.yaml", _panel("B", 83, "o",
+               [("summary", 0.4, 83), ("modeling", 0.3, 84), ("results", 0.3, 82)])),
+        _write(tmp, "alC.yaml", _panel("C", 81, "o",
+               [("summary", 0.4, 81), ("modeling", 0.3, 82), ("results", 0.3, 80)])),
+    ]
+    passed, rep = aggregate(alias_paths, "国一边缘")
+    print("\n".join(rep))
+    if passed:
+        print("PASS self-test[aggregate-alias-tiers]")
+    else:
+        ok = False
+        print("FAIL self-test[aggregate-alias-tiers] 'o' seats vs 国一边缘 should PASS")
+
+    print("--- aggregate: unrankable implied_tier (expect FAIL, clear reason) ---")
+    unk_paths = [
+        _write(tmp, "ukA.yaml", _panel("A", 88, "outstanding_winner",
+               [("summary", 0.4, 88), ("modeling", 0.3, 90), ("results", 0.3, 86)])),
+        _write(tmp, "ukB.yaml", _panel("B", 86, "outstanding",
+               [("summary", 0.4, 84), ("modeling", 0.3, 88), ("results", 0.3, 87)])),
+        _write(tmp, "ukC.yaml", _panel("C", 90, "outstanding",
+               [("summary", 0.4, 90), ("modeling", 0.3, 92), ("results", 0.3, 88)])),
+    ]
+    passed, rep = aggregate(unk_paths, "outstanding")
+    print("\n".join(rep))
+    if not passed and any("cannot be ranked" in line for line in rep):
+        print("PASS self-test[aggregate-unrankable-tier]")
+    else:
+        ok = False
+        print("FAIL self-test[aggregate-unrankable-tier] should FAIL with 'cannot be ranked'")
+
     print("--- aggregate: incomplete panel (single seat, expect FAIL) ---")
     passed, rep = aggregate([pass_paths[0]], "outstanding")
     print("\n".join(rep))
@@ -826,7 +1043,9 @@ def _self_test():
 # --------------------------------------------------------------------------
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    if "--self-test" in argv:
+    # Only honoured as the first argument: `lint_run.py scorecard --self-test
+    # file.yaml` must validate the file, not silently run the self-test.
+    if argv and argv[0] == "--self-test":
         return _self_test()
 
     parser = argparse.ArgumentParser(description="Validate Mathodology run blocks.")
@@ -834,13 +1053,26 @@ def main(argv=None):
     for name in ("handoff", "gate", "scorecard", "memo"):
         p = sub.add_parser(name, help=f"validate {name} block(s)")
         p.add_argument("files", nargs="+")
+        if name == "handoff":
+            p.add_argument(
+                "--agent",
+                help="also require this agent's role-specific handoff keys "
+                     "(e.g. mathodology-coder -> collision_gate_result)",
+            )
     agg = sub.add_parser("aggregate", help="run the judge-panel rule")
     agg.add_argument("files", nargs="+")
     agg.add_argument("--target", required=True, help="target tier (e.g. outstanding)")
 
     args = parser.parse_args(argv)
+    agent = getattr(args, "agent", None)
+    if agent and agent not in KNOWN_AGENTS:
+        print(
+            f"FAIL --agent: unknown agent {agent!r} "
+            f"(known: {', '.join(sorted(KNOWN_AGENTS))})"
+        )
+        return 1
     if args.cmd in VALIDATORS:
-        return validate_files(args.cmd, args.files)
+        return validate_files(args.cmd, args.files, agent=agent)
     if args.cmd == "aggregate":
         passed, report = aggregate(args.files, args.target)
         print("\n".join(report))

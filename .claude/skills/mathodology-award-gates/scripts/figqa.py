@@ -38,13 +38,26 @@ from __future__ import annotations
 
 import sys
 
-import numpy as np
-from matplotlib.collections import Collection  # noqa: F401  (documented surface)
-from matplotlib.legend import Legend  # noqa: F401
-from matplotlib.lines import Line2D  # noqa: F401
-from matplotlib.patches import FancyArrowPatch
-from matplotlib.text import Annotation, Text  # noqa: F401
-from matplotlib.transforms import Bbox
+try:
+    import numpy as np
+    from matplotlib.collections import Collection  # noqa: F401  (documented surface)
+    from matplotlib.legend import Legend  # noqa: F401
+    from matplotlib.lines import Line2D  # noqa: F401
+    from matplotlib.patches import FancyArrowPatch
+    from matplotlib.text import Annotation, Text  # noqa: F401
+    from matplotlib.transforms import Bbox, IdentityTransform
+except ImportError as exc:  # pragma: no cover - environment-dependent
+    print(
+        f"figqa: missing prerequisite: {exc}.\n"
+        "Install with: python3 -m pip install matplotlib\n"
+        "(or run under an environment that has matplotlib, e.g. "
+        "'uv run --with matplotlib python3 ...')",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+# Line2D linestyle values that draw no connecting stroke; only markers show.
+_NO_LINESTYLE = ("None", "none", "", " ")
 
 # Pixel tolerances. Kept small so a genuine 1px edge touch is not a "defect"
 # while a real overlap (many px^2) always trips.
@@ -65,12 +78,18 @@ def _renderer(fig):
             return getter()
         except Exception:
             pass
-    # Headless / non-Agg backend fallback: rasterise once via Agg.
+    # Headless / non-Agg backend fallback: rasterise once via Agg. The
+    # FigureCanvasAgg constructor re-parents fig.canvas as a side effect, which
+    # would silently rebind a GUI-backend caller's figure -- restore it.
     from matplotlib.backends.backend_agg import FigureCanvasAgg
 
+    orig_canvas = fig.canvas
     canvas = FigureCanvasAgg(fig)
     canvas.draw()
-    return canvas.get_renderer()
+    renderer = canvas.get_renderer()
+    if orig_canvas is not None and orig_canvas is not canvas:
+        fig.set_canvas(orig_canvas)
+    return renderer
 
 
 def _win_extent(artist, renderer):
@@ -190,7 +209,14 @@ def _collection_points(coll):
         trans = coll.get_offset_transform()
     except Exception:
         trans = coll.get_transform()
-    disp = trans.transform(np.asarray(offs, dtype=float))
+    arr = np.asarray(offs, dtype=float)
+    # LineCollections built by vlines/errorbar report a phantom single offset
+    # at (0, 0) with an identity offset transform even though no point exists
+    # there; mapped to display pixel (0, 0) it would false-positive any text
+    # box at the figure's bottom-left corner.
+    if len(arr) == 1 and np.allclose(arr, 0.0) and isinstance(trans, IdentityTransform):
+        return np.empty((0, 2))
+    disp = trans.transform(arr)
     return disp[np.isfinite(disp).all(axis=1)]
 
 
@@ -215,22 +241,52 @@ def collisions(fig, tol=TOL, min_area=MIN_AREA, inset=INSET):
 
     Each dict has ``kind`` (one of ``text-over-patch``, ``legend-over-patch``,
     ``line-through-text``, ``point-under-text``, ``text-over-text``,
-    ``clipped-out-of-figure``), the axes index, and the two artists involved.
+    ``clipped-out-of-figure``), the axes index (``-1`` for figure-level text
+    such as the suptitle), and the two artists involved. Titles, axis labels,
+    figure-level text, and the suptitle participate in the text checks; tick
+    labels participate only in the legend-overlap check.
     """
     renderer = _renderer(fig)
     fig_bbox = fig.bbox
     found = []
 
+    def _visible_text(t):
+        try:
+            return t is not None and t.get_visible() and (t.get_text() or "").strip()
+        except Exception:
+            return False
+
+    # --- figure-level text (fig.text(...) entries and the suptitle, which
+    # lives on fig._suptitle, NOT in fig.texts) ---
+    fig_text_items = []
+    for t in list(fig.texts) + [getattr(fig, "_suptitle", None)]:
+        if not _visible_text(t):
+            continue
+        bb = _win_extent(t, renderer)
+        if _usable(bb):
+            fig_text_items.append((_label(t), bb))
+
     for ai, ax in enumerate(fig.axes):
         if not ax.get_visible():
             continue
 
-        # --- text-like artists (Text + Annotation live in ax.texts) ---
+        # --- text-like artists: Text + Annotation live in ax.texts; the
+        # title and axis labels are separate artists and are exactly where
+        # dense contest figures collide (legend over title, suptitle over an
+        # axis label), so they join the text set too. ---
         text_items = []
         for t in ax.texts:
             if not t.get_visible():
                 continue
             bb = _win_extent(t, renderer)   # Annotation -> text box only
+            if _usable(bb):
+                text_items.append((t, bb, _label(t)))
+        for t in (ax.title, getattr(ax, "_left_title", None),
+                  getattr(ax, "_right_title", None),
+                  ax.xaxis.label, ax.yaxis.label):
+            if not _visible_text(t):
+                continue
+            bb = _win_extent(t, renderer)
             if _usable(bb):
                 text_items.append((t, bb, _label(t)))
 
@@ -280,8 +336,24 @@ def collisions(fig, tol=TOL, min_area=MIN_AREA, inset=INSET):
                                      _describe(p, pi), area))
 
         # 3) lines vs text boxes -- exact segment-vs-box test (NOT the line bbox,
-        #    and NOT fixed-count point sampling which steps over long segments)
+        #    and NOT fixed-count point sampling which steps over long segments).
+        #    A marker-only line (linestyle 'None', e.g. plot(..., 'o')) draws no
+        #    connecting stroke, so its vertices are tested as points instead of
+        #    testing the phantom segments between them.
         for li, ln in enumerate(lines):
+            if str(ln.get_linestyle()) in _NO_LINESTYLE:
+                if str(ln.get_marker()) in ("", "None"):
+                    continue  # draws nothing at all
+                xy = ln.get_xydata()
+                if xy is None or len(xy) == 0:
+                    continue
+                pts = ln.get_transform().transform(np.asarray(xy, dtype=float))
+                pts = _finite_points(pts)
+                for (lbl, tb) in text_boxes:
+                    if any(_point_in(tb, x, y, inset) for x, y in pts):
+                        found.append(_mk("point-under-text", ai, lbl,
+                                         _describe(ln, li)))
+                continue
             segs = _line_segments(ln)
             if not segs:
                 continue
@@ -302,13 +374,36 @@ def collisions(fig, tol=TOL, min_area=MIN_AREA, inset=INSET):
                     found.append(_mk("point-under-text", ai, lbl,
                                      _describe(c, ci)))
 
-        # 5) text vs text (legend included)
+        # 5) text vs text (legend included; figure-level text such as the
+        #    suptitle is checked against this axes' text set here, and against
+        #    itself once after the axes loop)
         for i in range(len(text_boxes)):
             for j in range(i + 1, len(text_boxes)):
                 area = _inter_area(text_boxes[i][1], text_boxes[j][1])
                 if area > min_area:
                     found.append(_mk("text-over-text", ai, text_boxes[i][0],
                                      text_boxes[j][0], area))
+        for (flbl, fb) in fig_text_items:
+            for (lbl, tb) in text_boxes:
+                area = _inter_area(fb, tb)
+                if area > min_area:
+                    found.append(_mk("text-over-text", ai, flbl, lbl, area))
+
+        # 5b) tick labels vs legend ONLY. Tick labels legitimately sit dense
+        #    and close to data, so they stay out of the general text set; a
+        #    legend parked on top of them is still always a defect.
+        if legend_item is not None:
+            lb = legend_item[1]
+            for t in ax.get_xticklabels() + ax.get_yticklabels():
+                if not _visible_text(t):
+                    continue
+                bb = _win_extent(t, renderer)
+                if not _usable(bb):
+                    continue
+                area = _inter_area(lb, bb)
+                if area > min_area:
+                    found.append(_mk("text-over-text", ai, "legend",
+                                     _label(t), area))
 
         # 6) clipped: text-like artist STRADDLING the figure edge (genuinely
         #    cut off). A box fully outside the canvas is an intentional
@@ -320,6 +415,21 @@ def collisions(fig, tol=TOL, min_area=MIN_AREA, inset=INSET):
             if _inter_area(bb, fig_bbox) <= min_area:
                 continue  # fully off-canvas -> intentional outside placement
             found.append(_mk("clipped-out-of-figure", ai, lbl, "figure-bounds"))
+
+    # --- figure-level text vs itself + figure bounds (outside the axes loop
+    # so multi-axes figures do not repeat the same pair per axes) ---
+    for i in range(len(fig_text_items)):
+        for j in range(i + 1, len(fig_text_items)):
+            area = _inter_area(fig_text_items[i][1], fig_text_items[j][1])
+            if area > min_area:
+                found.append(_mk("text-over-text", -1, fig_text_items[i][0],
+                                 fig_text_items[j][0], area))
+    for (lbl, bb) in fig_text_items:
+        if _fully_inside(bb, fig_bbox, tol):
+            continue
+        if _inter_area(bb, fig_bbox) <= min_area:
+            continue
+        found.append(_mk("clipped-out-of-figure", -1, lbl, "figure-bounds"))
 
     return found
 
@@ -389,6 +499,67 @@ def _build_clean_figure():
     return fig
 
 
+def _build_marker_only_figure():
+    """Scatter-via-plot('o') with a mid-plot label the phantom segment crossed.
+
+    Regression: linestyle 'None' draws no stroke between vertices, but the
+    segment test used to connect them anyway, so any marker chart with a
+    centred annotation falsely failed the gate.
+    """
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(4, 4))
+    ax.plot([0, 10], [0, 100], "o", linestyle="None")  # two corner markers
+    ax.text(5, 50, "centered label", ha="center", va="center")
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 100)
+    return fig
+
+
+def _build_marker_under_label_figure():
+    """A marker sitting under a label must still be flagged (as a point)."""
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(4, 4))
+    ax.plot([5], [50], "o", linestyle="None", markersize=10)
+    ax.text(5, 50, "label on marker", ha="center", va="center")
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 100)
+    return fig
+
+
+def _build_legend_over_title_figure():
+    """A legend parked on the axes title -- invisible to the old text set."""
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(4, 3))
+    ax.plot([0, 1, 2], [1, 3, 2], label="Series A")
+    ax.set_title("Axes title under the legend")
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 0.98))  # on the title
+    return fig
+
+
+def _build_suptitle_over_label_figure():
+    """A figure suptitle dropped onto the axes title (suptitle is not in
+    fig.texts, so it needs its own collection path).
+
+    The suptitle takes figure coordinates while the axes title renders in axes
+    coordinates, so the title is measured after a draw and the suptitle is
+    centred exactly on it to guarantee the overlap the test needs.
+    """
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(4, 3))
+    ax.plot([0, 1, 2], [1, 3, 2])
+    ax.set_title("Axes title")
+    fig.canvas.draw()
+    bb = ax.title.get_window_extent(fig.canvas.get_renderer())
+    cx = (bb.x0 + bb.x1) / 2.0 / fig.bbox.width
+    cy = (bb.y0 + bb.y1) / 2.0 / fig.bbox.height
+    fig.suptitle("Figure suptitle", x=cx, y=cy, va="center")
+    return fig
+
+
 def _self_test():
     import matplotlib
     matplotlib.use("Agg")
@@ -421,6 +592,42 @@ def _self_test():
         ok = False
         print("FAIL reference-line-through-label -> line crossing a label not detected")
     plt.close(crossing)
+
+    marker_only = _build_marker_only_figure()
+    hits = collisions(marker_only)
+    if any(d["kind"] == "line-through-text" for d in hits):
+        ok = False
+        print("FAIL marker-only plot -> phantom segment falsely flagged line-through-text")
+    else:
+        print("PASS marker-only plot -> no phantom line-through-text")
+    plt.close(marker_only)
+
+    marker_under = _build_marker_under_label_figure()
+    hits = collisions(marker_under)
+    if any(d["kind"] == "point-under-text" for d in hits):
+        print("PASS marker under a label -> point-under-text detected")
+    else:
+        ok = False
+        print("FAIL marker under a label -> not detected")
+    plt.close(marker_under)
+
+    over_title = _build_legend_over_title_figure()
+    hits = collisions(over_title)
+    if any(d["kind"] == "text-over-text" for d in hits):
+        print("PASS legend over the axes title -> text-over-text detected")
+    else:
+        ok = False
+        print("FAIL legend over the axes title -> not detected")
+    plt.close(over_title)
+
+    sup = _build_suptitle_over_label_figure()
+    hits = collisions(sup)
+    if any(d["kind"] == "text-over-text" for d in hits):
+        print("PASS suptitle over the axes title -> text-over-text detected")
+    else:
+        ok = False
+        print("FAIL suptitle over the axes title -> not detected")
+    plt.close(sup)
 
     clean = _build_clean_figure()
     hits = collisions(clean)
@@ -457,9 +664,14 @@ def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if "--self-test" in argv:
         return _self_test()
-    if not argv or "-h" in argv or "--help" in argv:
+    if "-h" in argv or "--help" in argv:
         _usage()
         return 0
+    if not argv:
+        # A bare invocation in an `&&`-chained gate script must not read as a
+        # passed check, so it is an error, unlike an explicit --help.
+        _usage()
+        return 2
     print(f"figqa: unknown argument(s): {' '.join(argv)}", file=sys.stderr)
     _usage()
     return 2

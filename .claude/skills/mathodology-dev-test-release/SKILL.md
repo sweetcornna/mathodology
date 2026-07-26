@@ -72,8 +72,8 @@ Then check the printed backup directory:
 
 ```bash
 shasum -a 256 -c SHA256SUMS
-tar -tzf mathodology-skills-<timestamp>.tar.gz | rg '^(AGENTS.md|\\.claude/skills/)'
-tar -tzf mathodology-skills-<timestamp>.tar.gz | rg '^(apps/|crates/|packages/|scripts/|config/|installer/|tests/|data/|\\.github/)'
+tar -tzf mathodology-skills-<timestamp>.tar.gz | rg '^(AGENTS\.md|\.claude/skills/)'
+tar -tzf mathodology-skills-<timestamp>.tar.gz | rg '^(apps/|crates/|packages/|scripts/|config/|installer/|tests/|data/|\.github/)'
 ```
 
 The last command should produce no matches.
