@@ -43,13 +43,15 @@ npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agen
 
 ### 更新项目级安装
 
-在项目根目录运行。一条命令刷新 skills、subagents 和 workflow 模板，并且仅当项目还没有 `.mcp.json` 时才写入：
+在项目根目录运行。一条命令刷新 skills、subagents、workflow 模板和 `search` MCP server 本体，并且仅当项目还没有 `.mcp.json` 时才写入配置：
 
 ```bash
-npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
+npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; } && { uvx free-search-mcp@latest --help >/dev/null 2>&1 || echo 'note: search MCP server not refreshed (is uv installed?)'; }
 ```
 
-更新不会重写已存在的 `.mcp.json`，所以自带 MCP 配置的项目不会被悄悄塞进新 server。若你的配置里还没有 `search` 条目，用 `claude mcp add search -- uvx free-search-mcp` 补上。MCP server 本身的更新是独立的，见[证据检索用的 Search MCP](#证据检索用的-search-mcp)。
+更新不会重写已存在的 `.mcp.json`，所以自带 MCP 配置的项目不会被悄悄塞进新 server。若你的配置里还没有 `search` 条目，用 `claude mcp add search -- uvx free-search-mcp` 补上。
+
+最后一段刷新的是 MCP server 包本身——否则 `uvx` 会一直用缓存里已有的版本。它刻意设计成非致命：没装 `uv` 的机器只打印一行提示，不会让整个更新失败，因为 skills 和 subagents 已经更新成功了。
 
 ### 验证项目级安装
 
