@@ -26,7 +26,7 @@ is the primary evidence toolchain. Its tools appear as `mcp__search__<tool>`:
 | `extract_structured(url)` | Pull JSON-LD / OpenGraph / microdata — DOI, authors, journal, volume, pages, date. The mechanical path to citation specifics. |
 | `cache_search(query, limit?)` | Full-text search over pages already fetched in this run. Cheap; use before re-fetching. |
 | `engines()` | Check which engines are available before blaming a query for thin results. |
-| `download(url)` | Do not use in an award run. See *Reproducibility Boundary*. |
+| `download(url)` | Keep an actual file — a contest data attachment, a dataset archive, a PDF the coder must read. Staging only: see *Reproducibility Boundary*. |
 
 Filters on `search` / `research`: `freshness` (`day`/`week`/`month`/`year`),
 `include_domains`, `exclude_domains`, `category`, `include_text`, `exclude_text`.
@@ -116,9 +116,15 @@ Interactive search is not a reproducible pipeline stage.
 - Any number that enters the model or the paper must be re-derivable from a file
   under `work/<run-id>/` or a scripted download that `mathodology-coder` commits,
   not from an unrepeatable tool call.
-- Do not use `download`. It is disabled by default, auto-expires after 24 hours,
-  and produces artifacts the packager cannot account for. Record the URL and let a
-  committed script fetch it.
+- `download` writes to a **staging** directory that purges itself after 24 hours. It is
+  the right tool when a real file is needed — contest attachments, dataset archives,
+  a PDF the coder parses — and the wrong one for reading content, where `read_doc`
+  and `fetch` touch no filesystem at all.
+- Anything downloaded must be copied into `work/<run-id>/data/` in the same turn, and
+  the ledger records its URL plus the SHA-256 the tool prints. A file left only in the
+  staging directory is gone by the next day and the packager cannot account for it.
+- The URL and hash are what make the download reproducible: a committed script can
+  re-acquire the file and verify it is the same bytes the results were computed from.
 - Respect licensing. Note license or usage constraints on any dataset in the ledger;
   a dataset that cannot be redistributed must not end up inside the submission package.
 

@@ -197,6 +197,13 @@ Verify the server is reachable, then restart the client:
 claude mcp list
 ```
 
+The shipped `.mcp.json` also sets `SEARCH_MCP_DOWNLOAD_DIR`, which turns on the
+`download` tool — off in the server's own default, since writing to someone's disk
+is opt-in. Files land in `~/.cache/search-mcp/downloads`, are capped at 100 MB each,
+and are purged after 24 hours, so the workflow treats that directory as staging and
+copies anything it keeps into the run directory. Delete the `env` block from
+`.mcp.json` to turn downloads back off; the rest of the server is unaffected.
+
 `uvx` serves whatever version its cache already holds, so a machine that ran
 `free-search-mcp` before a new release keeps the old one indefinitely. Refresh it
 with one command — `--help` exits immediately, and the next server start picks up
