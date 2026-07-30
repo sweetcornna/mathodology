@@ -30,12 +30,20 @@ Current work should normally edit only:
 - `docs/BACKUP.md`
 - `docs/BACKUP_zh.md`
 - `.gitignore`
+- `.mcp.json`
+
+`.mcp.json` is a deliberate exception to the "no project config" rule: it registers the
+keyless `search` MCP server (`uvx free-search-mcp`) that `mathodology-evidence-search`
+depends on, so a fresh clone has working evidence search with no per-user setup. It must
+stay a client-configuration file — no secrets, no API keys, no local absolute paths. A user
+who wants a different server (a local checkout, a keyed engine set) overrides it at local
+scope, which takes precedence over the project file.
 
 `LICENSE` is retained but should not change unless the license changes.
 
 ## What Is Absent
 
-The current GitHub tree should not contain application source, generated clients, CI, deployment, package-manager, installer, data, or test trees.
+The current GitHub tree should not contain application source, generated clients, CI, deployment, package-manager, installer, data, or test trees. `.mcp.json` is the one configuration file that is present, and it is whitelisted for the reason given above.
 
 If a task requires historical implementation detail, use Git history or another branch in a separate worktree. Do not add those files back to this branch as part of ordinary skills maintenance.
 

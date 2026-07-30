@@ -25,6 +25,7 @@ Mathodology 是一套**专为数学建模竞赛设计的数模 Agent Skills**，
 - `.claude/workflows/` 中的 Claude Code 竞赛 workflow 模板
 - 每个 skill 自带 `agents/openai.yaml`，方便 Codex 风格工具展示和调用
 - 根目录 `AGENTS.md`，给不会自动发现 project skills 的工具使用
+- 根目录 `.mcp.json`，注册免 key 的 `search` MCP server，克隆后无需配置即可使用证据检索和引用核验
 - `docs/` 下的 skills 和 workflow 文档
 - `mathodology-whole-project` skill 中的 skills-only 备份脚本
 
@@ -32,7 +33,7 @@ Mathodology 是一套**专为数学建模竞赛设计的数模 Agent Skills**，
 
 ## 一键安装与更新
 
-推荐：在目标项目根目录运行一条命令，把全部内容（8 个 skills + 9 个 Claude Code subagents + 2 个 workflow 模板）只部署到当前文件夹，作为项目级 skill，不影响其他项目：
+推荐：在目标项目根目录运行一条命令，把全部内容（9 个 skills + 9 个 Claude Code subagents + 2 个 workflow 模板）只部署到当前文件夹，作为项目级 skill，不影响其他项目：
 
 ```bash
 npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows'
@@ -90,6 +91,7 @@ Mathodology 分别提供 Codex 和 Claude Code 的竞赛编排指导：
 | [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | 整个 skills 仓库的备份、迁移、恢复、整体理解，或 Codex/Claude Code 竞赛工作流编排 |
 | [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | 在 skills-only checkout 中开始工作，或检查仓库边界 |
 | [`mathodology-award-gates`](.claude/skills/mathodology-award-gates/SKILL.md) | 运行竞赛时执行获奖级 phase gate、判审团、结构化 handoff、图表 QA 或渲染 PDF QA |
+| [`mathodology-evidence-search`](.claude/skills/mathodology-evidence-search/SKILL.md) | 检索文献、数据集、benchmark、领域常数或核验引用（`search` MCP 工具栈、分类路由、引用核验协议、可复现边界与回退策略） |
 | [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | 编排 9-phase 获奖工作流（phase 职责、专家名册、prize-level gates），并保留原 agent pipeline 的归档知识 |
 | [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | 工作流的导出/打包/API 推理，并保留原 gateway 和 API 的归档知识 |
 | [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | 工作流的图表呈现推理，并保留原 Web UI 的归档知识 |

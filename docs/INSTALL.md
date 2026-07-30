@@ -9,7 +9,7 @@ There are two install scopes:
 
 ## Project-Level Install (Current Folder Only)
 
-Run from the root of the target project. One command deploys everything Mathodology ships — all 8 skills, the 9 Claude Code subagents, and the 2 contest workflow templates — into that folder only:
+Run from the root of the target project. One command deploys everything Mathodology ships — all 9 skills, the 9 Claude Code subagents, and the 2 contest workflow templates — into that folder only:
 
 ```bash
 npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows'
@@ -17,7 +17,7 @@ npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agen
 
 What it creates, all inside the current folder:
 
-- `./.claude/skills/mathodology-*` — the 8 skills (copied, no symlinks)
+- `./.claude/skills/mathodology-*` — the 9 skills (copied, no symlinks)
 - `./.claude/agents/mathodology-*.md` — the 9 project subagents
 - `./.claude/workflows/mathodology-*.md` — the 2 workflow templates
 - `./skills-lock.json` — the `skills` CLI project lockfile
@@ -76,7 +76,7 @@ npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '
 What it does:
 
 - downloads the skills from `github.com/sweetcornna/mathodology`
-- installs all 8 skills
+- installs all 9 skills
 - targets Codex and Claude Code
 - installs globally for the current user
 - copies files instead of symlinking
@@ -99,7 +99,7 @@ Do not use `skills add <repo> --help` as a help command. Current `skills` CLI ve
 Update only Mathodology skills:
 
 ```bash
-npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-evidence-search mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 Update all globally installed skills:
@@ -150,15 +150,61 @@ Expected skills:
 - `mathodology-agent-pipeline`
 - `mathodology-award-gates`
 - `mathodology-dev-test-release`
+- `mathodology-evidence-search`
 - `mathodology-gateway-api`
 - `mathodology-project-orientation`
 - `mathodology-skill-authoring`
 - `mathodology-web-ui`
 - `mathodology-whole-project`
 
+## Search MCP For Evidence Work
+
+`mathodology-evidence-search` drives its evidence and citation-verification protocol
+through an MCP server named `search` ([free-search-mcp](https://github.com/sweetcornna/free-search-mcp)):
+keyless multi-engine web search, page and PDF reading, publisher-metadata extraction,
+and routing to the literature and dataset databases (arXiv, OpenAlex, Crossref, PubMed, Zenodo).
+
+A clone needs no configuration. The repository ships a `.mcp.json` that registers the
+server at project scope, so Claude Code offers `search` the first time you open the
+folder — approve it once and the evidence tools are live. The only requirement is `uv`
+on `PATH`; the package itself is fetched from PyPI on first run:
+
+```bash
+uv --version
+```
+
+The one-command skills install does not copy `.mcp.json` into the target project.
+Register the server there with one command. Claude Code:
+
+```bash
+claude mcp add search -- uvx free-search-mcp
+```
+
+Codex:
+
+```bash
+codex mcp add search -- uvx free-search-mcp
+```
+
+Verify the server is reachable, then restart the client:
+
+```bash
+claude mcp list
+```
+
+To run a local checkout or a keyed engine set instead of the published package, register
+the same server name at local scope — local scope overrides the project `.mcp.json`.
+Browser-rendered engines additionally need Chromium once; without it, HTTP search and
+fetch still work.
+
+The server is optional. When `mcp__search__*` tools are absent, the evidence researcher
+falls back to `WebSearch`/`WebFetch` and records `search_backend: builtin` in its handoff,
+which the critic reports as reduced literature coverage.
+
 ## Requirements
 
 - Node.js and `npx`
+- `uv` for the `search` MCP server used by evidence work (optional; skills install without it)
 - `curl` and `tar` for the subagents/workflows half of the project-level install
 - network access to GitHub and npm
 - write access to the target skills directories

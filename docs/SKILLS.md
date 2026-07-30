@@ -12,6 +12,7 @@ Project skills live under `.claude/skills/`:
 ├── mathodology-project-orientation/
 ├── mathodology-award-gates/
 │   └── scripts/                 # figqa.py, pdf_qa.sh, make_contact_sheet.py, lint_run.py
+├── mathodology-evidence-search/
 ├── mathodology-agent-pipeline/
 ├── mathodology-gateway-api/
 ├── mathodology-web-ui/
@@ -53,6 +54,7 @@ Current workflow templates:
 - Full transfer or backup: start with `mathodology-whole-project`.
 - Repository cleanup or policy checks: start with `mathodology-project-orientation`.
 - Skill edits: start with `mathodology-skill-authoring`.
+- External evidence, literature, datasets, or citation verification: start with `mathodology-evidence-search`. It uses an MCP server named `search` (free-search-mcp), registered at project scope by the repository's `.mcp.json`, so a clone needs no setup — see `docs/INSTALL.md`.
 
 ## What Is Not Present
 
@@ -95,5 +97,6 @@ The GitHub project should present this repository as a skills package:
 - `AGENTS.md` is the tool-neutral entrypoint.
 - `.claude/skills/**` is committed.
 - `.claude/agents/**` and `.claude/workflows/**` are committed as Claude Code project orchestration assets.
+- `.mcp.json` is committed so a clone gets the keyless `search` MCP server without setup. It carries no secrets and no local paths.
 - `.claude/worktrees/` and local runtime state remain ignored.
 - Skills backup archives stay outside the repository in `../mathodology_skills_backups/`.

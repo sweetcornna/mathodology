@@ -9,7 +9,7 @@ Mathodology 使用 `vercel-labs/skills` 提供的开放 `skills` CLI 作为安�
 
 ## 项目级安装（只部署到当前文件夹）
 
-在目标项目根目录运行。一条命令把 Mathodology 的全部内容——8 个 skills、9 个 Claude Code subagents、2 个竞赛 workflow 模板——只部署到该文件夹：
+在目标项目根目录运行。一条命令把 Mathodology 的全部内容——9 个 skills、9 个 Claude Code subagents、2 个竞赛 workflow 模板——只部署到该文件夹：
 
 ```bash
 npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows'
@@ -17,7 +17,7 @@ npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agen
 
 它创建的所有文件都在当前文件夹内：
 
-- `./.claude/skills/mathodology-*` — 8 个 skills（复制模式，无 symlink）
+- `./.claude/skills/mathodology-*` — 9 个 skills（复制模式，无 symlink）
 - `./.claude/agents/mathodology-*.md` — 9 个项目 subagents
 - `./.claude/workflows/mathodology-*.md` — 2 个 workflow 模板
 - `./skills-lock.json` — `skills` CLI 的项目 lockfile
@@ -76,7 +76,7 @@ npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '
 这条命令会：
 
 - 从 `github.com/sweetcornna/mathodology` 下载 skills
-- 安装全部 8 个 skills
+- 安装全部 9 个 skills
 - 目标 agent 为 Codex 和 Claude Code
 - 安装到当前用户的全局 skills 目录
 - 使用复制模式，不创建 symlink
@@ -99,7 +99,7 @@ npx -y skills@latest --help
 只更新 Mathodology skills：
 
 ```bash
-npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-evidence-search mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 更新所有全局安装的 skills：
@@ -150,15 +150,58 @@ npx -y skills@latest add sweetcornna/mathodology --list
 - `mathodology-agent-pipeline`
 - `mathodology-award-gates`
 - `mathodology-dev-test-release`
+- `mathodology-evidence-search`
 - `mathodology-gateway-api`
 - `mathodology-project-orientation`
 - `mathodology-skill-authoring`
 - `mathodology-web-ui`
 - `mathodology-whole-project`
 
+## 证据检索用的 Search MCP
+
+`mathodology-evidence-search` 的证据采集与引用核验协议依赖一个名为 `search` 的 MCP server
+（[free-search-mcp](https://github.com/sweetcornna/free-search-mcp)）：无需 API key 的多引擎
+网页检索、页面与 PDF 阅读、出版方元数据抽取，以及到文献和数据集数据库的分类路由
+（arXiv、OpenAlex、Crossref、PubMed、Zenodo）。
+
+克隆下来无需任何配置：仓库自带 `.mcp.json`，在项目作用域注册该 server，第一次打开这个
+文件夹时 Claude Code 会提示是否启用 `search`，确认一次即可用。唯一前提是 `PATH` 里有
+`uv`；包本身首次运行时从 PyPI 拉取：
+
+```bash
+uv --version
+```
+
+一键 skills 安装不会把 `.mcp.json` 复制到目标项目，在那边用一条命令注册即可。Claude Code：
+
+```bash
+claude mcp add search -- uvx free-search-mcp
+```
+
+Codex：
+
+```bash
+codex mcp add search -- uvx free-search-mcp
+```
+
+确认 server 可连通后重启客户端：
+
+```bash
+claude mcp list
+```
+
+想换成本地 checkout 或带 key 的引擎组合时，用同一个 server 名字在 local 作用域注册——
+local 作用域会覆盖项目的 `.mcp.json`。浏览器渲染类引擎还需要装一次 Chromium；不装时
+HTTP 检索和抓取照常可用。
+
+该 server 是可选项。缺少 `mcp__search__*` 工具时，evidence researcher 会回退到
+`WebSearch`/`WebFetch`，并在 handoff 里记录 `search_backend: builtin`，critic 会把它作为
+文献覆盖度下降报告出来。
+
 ## 要求
 
 - Node.js 和 `npx`
+- 证据检索用的 `search` MCP server 需要 `uv`（可选；没有它 skills 照常安装）
 - 项目级安装的 subagents/workflows 半段需要 `curl` 和 `tar`
 - 能访问 GitHub 和 npm
 - 对目标 skills 目录有写权限
