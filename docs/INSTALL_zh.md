@@ -195,6 +195,12 @@ codex mcp add search -- uvx free-search-mcp
 claude mcp list
 ```
 
+仓库自带的 `.mcp.json` 还设置了 `SEARCH_MCP_DOWNLOAD_DIR`，用于打开 `download` 工具——server
+自身默认关闭它，因为往别人磁盘写文件属于需要显式同意的操作。文件落在
+`~/.cache/search-mcp/downloads`，单个上限 100 MB，24 小时后清理，所以工作流把该目录当作
+暂存区，要保留的文件会复制进 run 目录。不想要下载功能就删掉 `.mcp.json` 里的 `env` 块，
+server 其余功能不受影响。
+
 `uvx` 用的是缓存里已有的版本，所以在新版本发布前用过 `free-search-mcp` 的机器会一直停在旧版。
 用一条命令刷新——`--help` 会立即退出，下次启动 server 就是刚缓存下来的版本：
 

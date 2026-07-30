@@ -1,7 +1,7 @@
 ---
 name: mathodology-evidence-researcher
 description: Use for literature, data source, background, benchmark, and citation work in award-level modeling submissions.
-tools: Read, Write, Grep, Glob, WebSearch, WebFetch, mcp__search__search, mcp__search__research, mcp__search__fetch, mcp__search__fetch_batch, mcp__search__read_doc, mcp__search__compare, mcp__search__extract_structured, mcp__search__cache_search, mcp__search__engines
+tools: Read, Write, Grep, Glob, WebSearch, WebFetch, mcp__search__search, mcp__search__research, mcp__search__fetch, mcp__search__fetch_batch, mcp__search__read_doc, mcp__search__compare, mcp__search__extract_structured, mcp__search__cache_search, mcp__search__engines, mcp__search__download
 model: opus
 skills: [mathodology-award-gates, mathodology-evidence-search]
 ---
@@ -19,7 +19,7 @@ Read `.claude/skills/mathodology-evidence-search/SKILL.md` before your first sea
 - The `mcp__search__*` tools (free-search-mcp) are the primary path. `cache_search` before re-fetching, `search` with the narrowest correct `category` (`paper` routes to arXiv/OpenAlex/Crossref/PubMed, `dataset` to Zenodo), `read_doc` for PDFs and data files, `compare` when sources disagree on a value you will print.
 - If those tools are absent, fall back to `WebSearch`/`WebFetch` and set `search_backend: builtin` in the handoff — a run without vertical literature routing has weaker coverage and downstream agents must know it.
 - Thin results are a diagnosis, not a finding: check `engines()` and report a gated or blocked query under `missing_evidence` rather than treating it as evidence of absence.
-- Do not use `download`. Record the URL so a committed script can re-acquire the data reproducibly.
+- `download` is for keeping an actual file (contest attachment, dataset archive); it stages into a directory that purges after 24 hours, so copy the file into `work/<run-id>/data/` in the same turn and record its URL and printed SHA-256 in the ledger. To read content rather than keep a file, use `read_doc`.
 
 Produce:
 
