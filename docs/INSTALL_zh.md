@@ -49,7 +49,7 @@ npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agen
 npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
 ```
 
-更新不会重写已存在的 `.mcp.json`，所以自带 MCP 配置的项目不会被悄悄塞进新 server。若你的配置里还没有 `search` 条目，用 `claude mcp add search -- uvx free-search-mcp` 补上。
+更新不会重写已存在的 `.mcp.json`，所以自带 MCP 配置的项目不会被悄悄塞进新 server。若你的配置里还没有 `search` 条目，用 `claude mcp add search -- uvx free-search-mcp` 补上。MCP server 本身的更新是独立的，见[证据检索用的 Search MCP](#证据检索用的-search-mcp)。
 
 ### 验证项目级安装
 
@@ -191,6 +191,13 @@ codex mcp add search -- uvx free-search-mcp
 
 ```bash
 claude mcp list
+```
+
+`uvx` 用的是缓存里已有的版本，所以在新版本发布前用过 `free-search-mcp` 的机器会一直停在旧版。
+用一条命令刷新——`--help` 会立即退出，下次启动 server 就是刚缓存下来的版本：
+
+```bash
+uvx free-search-mcp@latest --help
 ```
 
 想换成本地 checkout 或带 key 的引擎组合时，用同一个 server 名字在 local 作用域注册——

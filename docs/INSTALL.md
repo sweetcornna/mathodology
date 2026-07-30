@@ -49,7 +49,7 @@ From the project root. One command refreshes the skills, the subagents, and the 
 npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
 ```
 
-An existing `.mcp.json` is never rewritten by an update, so a project that already had its own MCP config does not silently pick up new servers. If yours has no `search` entry yet, add it with `claude mcp add search -- uvx free-search-mcp`.
+An existing `.mcp.json` is never rewritten by an update, so a project that already had its own MCP config does not silently pick up new servers. If yours has no `search` entry yet, add it with `claude mcp add search -- uvx free-search-mcp`. The MCP server itself updates separately — see [Search MCP For Evidence Work](#search-mcp-for-evidence-work).
 
 ### Verify A Project-Level Install
 
@@ -193,6 +193,15 @@ Verify the server is reachable, then restart the client:
 
 ```bash
 claude mcp list
+```
+
+`uvx` serves whatever version its cache already holds, so a machine that ran
+`free-search-mcp` before a new release keeps the old one indefinitely. Refresh it
+with one command — `--help` exits immediately, and the next server start picks up
+the version it just cached:
+
+```bash
+uvx free-search-mcp@latest --help
 ```
 
 To run a local checkout or a keyed engine set instead of the published package, register
