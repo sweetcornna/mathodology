@@ -43,13 +43,13 @@ Restart Claude Code (or Codex) in that project after installation.
 
 ### Update A Project-Level Install
 
-From the project root:
+From the project root. One command refreshes the skills, the subagents, and the workflow templates, and writes `.mcp.json` only when the project has none:
 
 ```bash
-npx -y skills@latest update --project --yes
+npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
 ```
 
-To refresh the subagents and workflow templates, re-run the `curl ... | tar ...` half of the install command.
+An existing `.mcp.json` is never rewritten by an update, so a project that already had its own MCP config does not silently pick up new servers. If yours has no `search` entry yet, add it with `claude mcp add search -- uvx free-search-mcp`.
 
 ### Verify A Project-Level Install
 
