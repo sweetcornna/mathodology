@@ -2,6 +2,8 @@
 
 Mathodology uses the open `skills` CLI from `vercel-labs/skills` as its installer. The repository does not maintain a custom package manager.
 
+Evidence work additionally uses the keyless `search` MCP server, **[free-search-mcp](https://github.com/sweetcornna/free-search-mcp)**. The repository ships `.mcp.json`, and the project-level command below installs it alongside the skills, so no manual MCP setup is needed. See [Search MCP For Evidence Work](#search-mcp-for-evidence-work).
+
 There are two install scopes:
 
 - **Project-level (recommended)**: installs into the current folder only. Other projects and user-level directories are never touched.
@@ -9,10 +11,10 @@ There are two install scopes:
 
 ## Project-Level Install (Current Folder Only)
 
-Run from the root of the target project. One command deploys everything Mathodology ships — all 9 skills, the 9 Claude Code subagents, and the 2 contest workflow templates — into that folder only:
+Run from the root of the target project. One command deploys everything Mathodology ships — all 9 skills, the 9 Claude Code subagents, the 2 contest workflow templates, and the project-level `search` MCP config — into that folder only. An existing `.mcp.json` is left untouched:
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows'
+npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
 ```
 
 What it creates, all inside the current folder:
@@ -20,6 +22,7 @@ What it creates, all inside the current folder:
 - `./.claude/skills/mathodology-*` — the 9 skills (copied, no symlinks)
 - `./.claude/agents/mathodology-*.md` — the 9 project subagents
 - `./.claude/workflows/mathodology-*.md` — the 2 workflow templates
+- `./.mcp.json` — the `search` MCP server registration, written only when the project has no `.mcp.json` yet
 - `./skills-lock.json` — the `skills` CLI project lockfile
 
 Nothing is written to `~/.claude/`, `~/.agents/`, or any other project.
@@ -63,7 +66,7 @@ Project-level files are plain copies, so removal is a targeted delete inside the
 rm -rf .claude/skills/mathodology-* .claude/agents/mathodology-*.md .claude/workflows/mathodology-*.md
 ```
 
-If `skills-lock.json` contains only Mathodology entries, you can delete it too.
+If `skills-lock.json` contains only Mathodology entries, you can delete it too. Delete `.mcp.json` as well if the install created it and you keep no other MCP servers in that project.
 
 ## Global Install (All Projects On This Machine)
 

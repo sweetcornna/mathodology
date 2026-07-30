@@ -2,6 +2,8 @@
 
 Mathodology 使用 `vercel-labs/skills` 提供的开放 `skills` CLI 作为安装器。本仓库不维护自定义包管理器。
 
+证据相关工作还会用到免 API key 的 `search` MCP server —— **[free-search-mcp](https://github.com/sweetcornna/free-search-mcp)**。仓库自带 `.mcp.json`，下面的项目级命令会把它和 skills 一起装好，无需手动配置 MCP，细节见[证据检索用的 Search MCP](#证据检索用的-search-mcp)。
+
 安装有两种作用域：
 
 - **项目级（推荐）**：只安装到当前文件夹，不触碰其他项目和用户级目录。
@@ -9,10 +11,10 @@ Mathodology 使用 `vercel-labs/skills` 提供的开放 `skills` CLI 作为安�
 
 ## 项目级安装（只部署到当前文件夹）
 
-在目标项目根目录运行。一条命令把 Mathodology 的全部内容——9 个 skills、9 个 Claude Code subagents、2 个竞赛 workflow 模板——只部署到该文件夹：
+在目标项目根目录运行。一条命令把 Mathodology 的全部内容——9 个 skills、9 个 Claude Code subagents、2 个竞赛 workflow 模板、项目级 `search` MCP 配置——只部署到该文件夹。已有的 `.mcp.json` 不会被动：
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows'
+npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
 ```
 
 它创建的所有文件都在当前文件夹内：
@@ -20,6 +22,7 @@ npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agen
 - `./.claude/skills/mathodology-*` — 9 个 skills（复制模式，无 symlink）
 - `./.claude/agents/mathodology-*.md` — 9 个项目 subagents
 - `./.claude/workflows/mathodology-*.md` — 2 个 workflow 模板
+- `./.mcp.json` — `search` MCP server 注册；仅当项目还没有 `.mcp.json` 时写入
 - `./skills-lock.json` — `skills` CLI 的项目 lockfile
 
 不会写入 `~/.claude/`、`~/.agents/` 或任何其他项目。
@@ -63,7 +66,7 @@ ls .claude/agents .claude/workflows
 rm -rf .claude/skills/mathodology-* .claude/agents/mathodology-*.md .claude/workflows/mathodology-*.md
 ```
 
-如果 `skills-lock.json` 只包含 Mathodology 条目，也可以一并删除。
+如果 `skills-lock.json` 只包含 Mathodology 条目，也可以一并删除。若 `.mcp.json` 是这次安装创建的，且该项目没有别的 MCP server，也可以一并删除。
 
 ## 全局安装（影响本机所有项目）
 
