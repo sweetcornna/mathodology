@@ -9,6 +9,8 @@
 
 Mathodology 是一套**专为数学建模竞赛设计的数模 Agent Skills**，面向 Claude Code、Codex 等兼容 Agent Skills 的 AI 编程工具。它把获奖级数模方法论——问题拆解、模型构建、可复现实验、获奖级论文写作、提交包组装——沉淀为可直接加载的项目 skills、subagents 和 workflow 模板。
 
+证据检索与引用核验走内置的 `search` MCP server —— **[free-search-mcp](https://github.com/sweetcornna/free-search-mcp)**：免 API key 的多引擎网页检索、页面与 PDF 阅读、出版方元数据抽取，并按类别路由到 arXiv/OpenAlex/Crossref/PubMed/Zenodo。仓库自带 `.mcp.json`，一键安装命令会一并写入目标项目，克隆或安装后无需额外配置。
+
 覆盖的竞赛类型：
 
 - **MCM/ICM（美赛）**：面向 Outstanding/Finalist 级产出
@@ -33,10 +35,10 @@ Mathodology 是一套**专为数学建模竞赛设计的数模 Agent Skills**，
 
 ## 一键安装与更新
 
-推荐：在目标项目根目录运行一条命令，把全部内容（9 个 skills + 9 个 Claude Code subagents + 2 个 workflow 模板）只部署到当前文件夹，作为项目级 skill，不影响其他项目：
+推荐：在目标项目根目录运行一条命令，把全部内容（9 个 skills + 9 个 Claude Code subagents + 2 个 workflow 模板 + 项目级 `search` MCP 配置）只部署到当前文件夹，作为项目级 skill，不影响其他项目。目标项目已有 `.mcp.json` 时不会被覆盖：
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows'
+npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
 ```
 
 更新项目级安装（在项目根目录）：
@@ -54,7 +56,7 @@ npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '
 更新全局安装的 Mathodology skills：
 
 ```bash
-npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-evidence-search mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 这些命令使用 `vercel-labs/skills` 提供的开放 `skills` CLI，从 GitHub 安装 Agent Skills 到对应 agent 的 skills 目录。

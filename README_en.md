@@ -9,6 +9,8 @@
 
 Mathodology is a set of **Agent Skills purpose-built for math modeling contests**, targeting Claude Code, Codex, and other Agent Skills-compatible AI coding tools. It distills an award-level math modeling methodology — problem decomposition, model building, reproducible experiments, award-grade paper writing, and submission packaging — into loadable project skills, subagents, and workflow templates.
 
+Evidence search and citation verification run through the bundled `search` MCP server — **[free-search-mcp](https://github.com/sweetcornna/free-search-mcp)**: keyless multi-engine web search, page and PDF reading, publisher-metadata extraction, and category routing to arXiv/OpenAlex/Crossref/PubMed/Zenodo. The repository ships `.mcp.json` and the one-command install writes it into the target project, so no extra configuration is needed after cloning or installing.
+
 Supported contest types:
 
 - **MCM/ICM**: targeting Outstanding/Finalist-level output
@@ -33,10 +35,10 @@ No application source, CI workflows, deployment files, generated contracts, pack
 
 ## One-Command Install And Update
 
-Recommended: run one command from the target project root to deploy everything (9 skills + 9 Claude Code subagents + 2 workflow templates) into that folder only, as project-level skills, without affecting any other project:
+Recommended: run one command from the target project root to deploy everything (9 skills + 9 Claude Code subagents + 2 workflow templates + the project-level `search` MCP config) into that folder only, as project-level skills, without affecting any other project. An existing `.mcp.json` in the target project is never overwritten:
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows'
+npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
 ```
 
 Update a project-level install (from the project root):
@@ -54,7 +56,7 @@ npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '
 Update globally installed Mathodology skills:
 
 ```bash
-npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-evidence-search mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
 ```
 
 These commands use the open `skills` CLI from `vercel-labs/skills`, which installs Agent Skills from GitHub into the right agent directories.
