@@ -41,10 +41,10 @@ Mathodology 是一套**专为数学建模竞赛设计的数模 Agent Skills**，
 npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
 ```
 
-更新项目级安装（在项目根目录）：
+更新项目级安装（在项目根目录）。一条命令刷新 skills、subagents 和 workflow 模板，仅当项目还没有 `.mcp.json` 时才写入：
 
 ```bash
-npx -y skills@latest update --project --yes
+npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
 ```
 
 备选：一条命令把全部 Mathodology skills 全局安装到 Codex 和 Claude Code（影响本机所有项目）：
