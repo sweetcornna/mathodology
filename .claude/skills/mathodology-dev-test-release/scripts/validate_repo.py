@@ -38,6 +38,7 @@ import sys
 # --------------------------------------------------------------------------
 KEEP_EXACT = {
     ".gitignore",
+    ".mcp.json",
     "AGENTS.md",
     "README.md",
     "README_en.md",

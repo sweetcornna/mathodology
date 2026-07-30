@@ -147,7 +147,9 @@ Deliver:
 - domain constraints
 - citation notes
 
-Critic gate: every planned model input has data, proxy logic, or an explicit assumption with a sensitivity or robustness plan.
+Evidence acquisition follows `.claude/skills/mathodology-evidence-search/SKILL.md`: `mcp__search__*` (free-search-mcp) as the primary stack with `category=paper`/`dataset` routing to the literature and dataset databases, `WebSearch`/`WebFetch` as the declared fallback, and `search_backend` recorded in the handoff either way.
+
+Critic gate: every planned model input has data, proxy logic, or an explicit assumption with a sensitivity or robustness plan; blocked or gated searches are reported as `missing_evidence` rather than silently treated as evidence of absence.
 
 ## Phase 2: Candidate Model Routes
 

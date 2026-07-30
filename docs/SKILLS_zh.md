@@ -12,6 +12,7 @@
 ├── mathodology-project-orientation/
 ├── mathodology-award-gates/
 │   └── scripts/                 # figqa.py, pdf_qa.sh, make_contact_sheet.py, lint_run.py
+├── mathodology-evidence-search/
 ├── mathodology-agent-pipeline/
 ├── mathodology-gateway-api/
 ├── mathodology-web-ui/
@@ -53,6 +54,7 @@ Claude Code 项目编排资产放在：
 - 整体迁移或备份：从 `mathodology-whole-project` 开始。
 - 仓库清理或策略检查：从 `mathodology-project-orientation` 开始。
 - Skill 修改：从 `mathodology-skill-authoring` 开始。
+- 外部证据、文献、数据集或引用核验：从 `mathodology-evidence-search` 开始。它使用名为 `search` 的 MCP server（free-search-mcp），由仓库自带的 `.mcp.json` 在项目作用域注册，克隆后无需配置，见 `docs/INSTALL_zh.md`。
 
 ## 不再存在的内容
 
@@ -95,5 +97,6 @@ GitHub 项目应该呈现为 skills package：
 - `AGENTS.md` 是工具中立入口。
 - `.claude/skills/**` 必须提交。
 - `.claude/agents/**` 和 `.claude/workflows/**` 作为 Claude Code 项目编排资产提交。
+- `.mcp.json` 提交，让克隆者无需配置即可拿到免 key 的 `search` MCP server。其中不含任何密钥和本地路径。
 - `.claude/worktrees/` 和本地运行时状态保持 ignored。
 - skills 备份归档留在仓库外的 `../mathodology_skills_backups/`。

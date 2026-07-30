@@ -25,6 +25,7 @@ This repository is a skills-only branch: it intentionally does not ship the form
 - Claude Code contest workflow templates in `.claude/workflows/`
 - Codex-style metadata in each skill's `agents/openai.yaml`
 - A root `AGENTS.md` entrypoint for tools that do not auto-discover project skills
+- A root `.mcp.json` that registers the keyless `search` MCP server, so evidence search and citation verification work in a fresh clone with no setup
 - Skills and workflow documentation under `docs/`
 - A skills-only backup script under `mathodology-whole-project`
 
@@ -32,7 +33,7 @@ No application source, CI workflows, deployment files, generated contracts, pack
 
 ## One-Command Install And Update
 
-Recommended: run one command from the target project root to deploy everything (8 skills + 9 Claude Code subagents + 2 workflow templates) into that folder only, as project-level skills, without affecting any other project:
+Recommended: run one command from the target project root to deploy everything (9 skills + 9 Claude Code subagents + 2 workflow templates) into that folder only, as project-level skills, without affecting any other project:
 
 ```bash
 npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows'
@@ -90,6 +91,7 @@ Award-level quality control is implemented as executable, bounded machinery, all
 | [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | Backing up, transferring, restoring, orienting, or running Codex/Claude Code contest workflow orchestration |
 | [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | Starting work in this skills-only checkout or checking repository boundaries |
 | [`mathodology-award-gates`](.claude/skills/mathodology-award-gates/SKILL.md) | Running award-workflow phase gates, judge panels, structured handoffs, figure QA, or rendered-PDF QA during a contest run |
+| [`mathodology-evidence-search`](.claude/skills/mathodology-evidence-search/SKILL.md) | Searching literature, datasets, benchmarks, or domain constants and verifying citations (the `search` MCP tool stack, category routing, verification protocol, reproducibility boundary, and fallback) |
 | [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | Orchestrating the nine-phase award workflow (phase responsibilities, specialist roster, prize-level gates), plus archived agent-pipeline knowledge |
 | [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | Export/packaging/API reasoning for workflows, plus archived gateway and API knowledge |
 | [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | Figure/table presentation reasoning for workflows, plus archived web UI knowledge |
