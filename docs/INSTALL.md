@@ -43,13 +43,15 @@ Restart Claude Code (or Codex) in that project after installation.
 
 ### Update A Project-Level Install
 
-From the project root. One command refreshes the skills, the subagents, and the workflow templates, and writes `.mcp.json` only when the project has none:
+From the project root. One command refreshes the skills, the subagents, the workflow templates, and the `search` MCP server itself, and writes `.mcp.json` only when the project has none:
 
 ```bash
-npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
+npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; } && { uvx free-search-mcp@latest --help >/dev/null 2>&1 || echo 'note: search MCP server not refreshed (is uv installed?)'; }
 ```
 
-An existing `.mcp.json` is never rewritten by an update, so a project that already had its own MCP config does not silently pick up new servers. If yours has no `search` entry yet, add it with `claude mcp add search -- uvx free-search-mcp`. The MCP server itself updates separately — see [Search MCP For Evidence Work](#search-mcp-for-evidence-work).
+An existing `.mcp.json` is never rewritten by an update, so a project that already had its own MCP config does not silently pick up new servers. If yours has no `search` entry yet, add it with `claude mcp add search -- uvx free-search-mcp`.
+
+The final clause refreshes the MCP server package itself, which `uvx` otherwise pins to whatever its cache already holds. It is deliberately non-fatal: a machine without `uv` prints a note instead of failing the whole update, since the skills and subagents updated fine.
 
 ### Verify A Project-Level Install
 

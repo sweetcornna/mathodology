@@ -120,10 +120,10 @@ For end users, prefer the mature `skills` CLI installer. The recommended scope i
 npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
 ```
 
-Update a project-level install from the project root with one command. It refreshes the skills, the subagents, and the workflow templates, and writes `.mcp.json` only when the project has none — an existing MCP config is never overwritten:
+Update a project-level install from the project root with one command. It refreshes the skills, the subagents, the workflow templates, and the `search` MCP server package, and writes `.mcp.json` only when the project has none — an existing MCP config is never overwritten. The MCP refresh clause is non-fatal, so a machine without `uv` still gets everything else:
 
 ```bash
-npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
+npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; } && { uvx free-search-mcp@latest --help >/dev/null 2>&1 || echo 'note: search MCP server not refreshed (is uv installed?)'; }
 ```
 
 For a machine-wide install across all projects, use the global variant:
