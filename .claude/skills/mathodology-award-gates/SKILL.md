@@ -38,6 +38,22 @@ handoff:
   critic_focus: []
 ```
 
+The evidence researcher adds this role-specific contract:
+
+```yaml
+search_backend: combined          # combined | search-mcp | builtin | none
+queries_run:
+  - {query: "...", backend: search-mcp, category: paper, accepted: [], rejected: []}
+  - {query: "...", backend: builtin, category: paper, accepted: [], rejected: []}
+missing_evidence: []
+citations_to_verify: []           # each: {id, claim, source, url, verified: bool}
+```
+
+`combined` requires at least one query from each backend. `search-mcp` and
+`builtin` are single-source degradation modes: queries must match that backend
+and `missing_evidence` must explain the missing channel and coverage. `none`
+requires no queries, non-empty `missing_evidence`, and `status: blocked`.
+
 The critic writes a `gate:` block per phase. `verdict: fail` on any unresolved
 `blocker`/`high`. Lint with `lint_run.py gate`. Every issue carries a stable
 `id` (`G<phase>-<n>`), reused unchanged when the finding recurs in a later loop

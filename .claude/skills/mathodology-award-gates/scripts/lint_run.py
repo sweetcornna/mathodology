@@ -118,7 +118,9 @@ def _band_rank_for_total(total):
 AGENT_EXTRA_KEYS = {
     "mathodology-problem-analyst": ["scope_ledger"],
     "mathodology-modeler": ["innovation_ledger"],
-    "mathodology-evidence-researcher": ["citations_to_verify"],
+    "mathodology-evidence-researcher": [
+        "search_backend", "queries_run", "missing_evidence", "citations_to_verify",
+    ],
     "mathodology-coder": ["collision_gate_result"],
     "mathodology-paper-editor": ["ledger_closeout"],
 }
@@ -235,6 +237,79 @@ def validate_handoff(body, agent=None):
         declared = body.get("agent")
         if isinstance(declared, str) and declared.strip() and declared.strip() != agent:
             errors.append(f"handoff agent {declared!r} does not match --agent {agent!r}")
+        if agent == "mathodology-evidence-researcher":
+            backend = body.get("search_backend")
+            queries = body.get("queries_run")
+            missing = body.get("missing_evidence")
+            citations = body.get("citations_to_verify")
+            if backend not in {"combined", "search-mcp", "builtin", "none"}:
+                errors.append(
+                    "search_backend must be combined|search-mcp|builtin|none "
+                    f"(got {backend!r})"
+                )
+            _require_list(body, "queries_run", errors)
+            _require_list(body, "missing_evidence", errors)
+            _require_list(body, "citations_to_verify", errors)
+            query_backends = set()
+            if isinstance(queries, list):
+                for i, query in enumerate(queries):
+                    if not isinstance(query, dict):
+                        errors.append(f"queries_run[{i}] must be a mapping")
+                        continue
+                    query_text = query.get("query")
+                    if not isinstance(query_text, str) or not query_text.strip():
+                        errors.append(f"queries_run[{i}] query must be a non-empty string")
+                    for key in ("accepted", "rejected"):
+                        if not isinstance(query.get(key), list):
+                            errors.append(f"queries_run[{i}] {key} must be a list")
+                    query_backend = query.get("backend")
+                    if query_backend not in {"search-mcp", "builtin"}:
+                        errors.append(
+                            f"queries_run[{i}] backend must be search-mcp|builtin "
+                            f"(got {query_backend!r})"
+                        )
+                    else:
+                        query_backends.add(query_backend)
+            if isinstance(citations, list):
+                for i, citation in enumerate(citations):
+                    if not isinstance(citation, dict):
+                        errors.append(f"citations_to_verify[{i}] must be a mapping")
+                        continue
+                    for key in ("id", "claim", "source", "url"):
+                        value = citation.get(key)
+                        if not isinstance(value, str) or not value.strip():
+                            errors.append(
+                                f"citations_to_verify[{i}] {key} must be a non-empty string"
+                            )
+                    if not isinstance(citation.get("verified"), bool):
+                        errors.append(
+                            f"citations_to_verify[{i}] verified must be a boolean"
+                        )
+            if backend == "combined" and query_backends != {"search-mcp", "builtin"}:
+                errors.append("combined search_backend requires queries from both backends")
+            if backend in {"search-mcp", "builtin"}:
+                if query_backends != {backend}:
+                    errors.append(
+                        f"{backend} search_backend requires only {backend} queries"
+                    )
+                if not isinstance(missing, list) or not any(
+                    isinstance(reason, str) and reason.strip() for reason in missing
+                ):
+                    errors.append(
+                        f"{backend} search_backend requires a non-empty "
+                        "missing_evidence degradation reason"
+                    )
+            if backend == "none":
+                if body.get("status") != "blocked":
+                    errors.append("none search_backend requires status: blocked")
+                if isinstance(queries, list) and queries:
+                    errors.append("none search_backend requires queries_run to be empty")
+                if not isinstance(missing, list) or not any(
+                    isinstance(reason, str) and reason.strip() for reason in missing
+                ):
+                    errors.append(
+                        "none search_backend requires a non-empty missing_evidence reason"
+                    )
     if "phase" in body and not _is_int(body["phase"]):
         errors.append("phase must be an integer")
     if "loop" in body and not _is_int(body["loop"]):
@@ -864,6 +939,93 @@ def _self_test():
     else:
         ok = False
         print("FAIL self-test[handoff--agent-with-key] should have PASSED")
+    # Evidence-researcher role contract: combined and every explicit degradation
+    # mode have distinct, mechanically enforced provenance requirements.
+    def evidence_handoff(backend, query_backends, missing, status="complete"):
+        body = dict(yaml.safe_load(GOOD_HANDOFF)["handoff"])
+        body.update({
+            "agent": "mathodology-evidence-researcher",
+            "status": status,
+            "search_backend": backend,
+            "queries_run": [
+                {
+                    "query": f"query-{i}", "backend": query_backend,
+                    "accepted": [], "rejected": [],
+                }
+                for i, query_backend in enumerate(query_backends)
+            ],
+            "missing_evidence": missing,
+            "citations_to_verify": [],
+        })
+        return body
+
+    evidence_cases = [
+        ("combined-valid", evidence_handoff(
+            "combined", ["search-mcp", "builtin"], []), True),
+        ("search-mcp-valid", evidence_handoff(
+            "search-mcp", ["search-mcp"], ["builtin unavailable"]), True),
+        ("builtin-valid", evidence_handoff(
+            "builtin", ["builtin"], ["search MCP unavailable"]), True),
+        ("none-valid", evidence_handoff(
+            "none", [], ["both discovery channels unavailable"], "blocked"), True),
+        ("combined-missing-backend", evidence_handoff(
+            "combined", ["search-mcp"], []), False),
+        ("combined-empty-query", {
+            **evidence_handoff("combined", ["search-mcp", "builtin"], []),
+            "queries_run": [
+                {"backend": "search-mcp", "accepted": [], "rejected": []},
+                {"query": "web query", "backend": "builtin",
+                 "accepted": [], "rejected": []},
+            ],
+        }, False),
+        ("single-source-missing-reason", evidence_handoff(
+            "builtin", ["builtin"], []), False),
+        ("single-source-blank-reason", evidence_handoff(
+            "builtin", ["builtin"], [""]), False),
+        ("single-source-wrong-query", evidence_handoff(
+            "search-mcp", ["builtin"], ["builtin should be unavailable"]), False),
+        ("none-not-blocked", evidence_handoff(
+            "none", [], ["both unavailable"]), False),
+        ("citation-valid", {
+            **evidence_handoff("combined", ["search-mcp", "builtin"], []),
+            "citations_to_verify": [{
+                "id": "C1", "claim": "claim", "source": "publisher",
+                "url": "https://example.com/paper", "verified": False,
+            }],
+        }, True),
+        ("citation-not-mapping", {
+            **evidence_handoff("combined", ["search-mcp", "builtin"], []),
+            "citations_to_verify": ["C1"],
+        }, False),
+        ("citation-missing-url", {
+            **evidence_handoff("combined", ["search-mcp", "builtin"], []),
+            "citations_to_verify": [{
+                "id": "C1", "claim": "claim", "source": "publisher",
+                "verified": False,
+            }],
+        }, False),
+        ("citation-string-boolean", {
+            **evidence_handoff("combined", ["search-mcp", "builtin"], []),
+            "citations_to_verify": [{
+                "id": "C1", "claim": "claim", "source": "publisher",
+                "url": "https://example.com/paper", "verified": "false",
+            }],
+        }, False),
+    ]
+    for label, body, expect_pass in evidence_cases:
+        evidence_errors, _ = validate_handoff(
+            body, agent="mathodology-evidence-researcher"
+        )
+        got_pass = not evidence_errors
+        if got_pass == expect_pass:
+            print(f"PASS self-test[evidence-{label}]")
+        else:
+            ok = False
+            print(
+                f"FAIL self-test[evidence-{label}] errors={evidence_errors}, "
+                f"expected {'pass' if expect_pass else 'fail'}"
+            )
+
     # a typo'd --agent must be rejected at the CLI, not silently enforce nothing
     if main(["handoff", "--agent", "mathodology-codr", coder_plain]) != 0:
         print("PASS self-test[handoff--agent-typo] -> unknown agent rejected")

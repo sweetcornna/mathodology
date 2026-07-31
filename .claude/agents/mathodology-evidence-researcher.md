@@ -16,10 +16,10 @@ If the mathodology-award-gates skill content is not already in context, read `.c
 
 Read `.claude/skills/mathodology-evidence-search/SKILL.md` before your first search and follow its protocol. In short:
 
-- The `mcp__search__*` tools (free-search-mcp) are the primary path. `cache_search` before re-fetching, `search` with the narrowest correct `category` (`paper` routes to arXiv/OpenAlex/Crossref/PubMed, `dataset` to Zenodo), `read_doc` for PDFs and data files, `compare` when sources disagree on a value you will print.
-- If those tools are absent, fall back to `WebSearch`/`WebFetch` and set `search_backend: builtin` in the handoff — a run without vertical literature routing has weaker coverage and downstream agents must know it.
-- Thin results are a diagnosis, not a finding: check `engines()` and report a gated or blocked query under `missing_evidence` rather than treating it as evidence of absence.
-- `download` is for keeping an actual file (contest attachment, dataset archive); it stages into a directory that purges after 24 hours, so copy the file into `work/<run-id>/data/` in the same turn and record its URL and printed SHA-256 in the ledger. To read content rather than keep a file, use `read_doc`.
+- Enforce `dual-source-default: WebSearch + mcp__search__search` and apply MCP `paper`/`dataset` routing, then reconcile and deduplicate both result sets as the skill specifies.
+- Enforce `search_backend: combined` and `single-source-mode: explicit degradation`. Record every query's backend and the degradation reason under `missing_evidence`; if neither channel works, return a blocked handoff.
+- Choose one reader per accepted resource rather than fetching it through both stacks. Thin results are a diagnosis, not a finding.
+- A normal project install exposes `download`. If MCP search works but `download` is absent, report configuration degradation and do not reconfigure MCP. For kept files, preserve the skill's staging, same-turn copy, SHA-256, and licensing rules.
 
 Produce:
 
@@ -44,11 +44,11 @@ will print (page/volume/edition) goes on the `citations_to_verify` list with sta
 so the paper-editor cannot ship fabricated-looking specifics. Closing this list is a downstream
 gate, not an optional nicety.
 
-End your work with a `handoff:` yaml block (schema in the mathodology-award-gates skill; the lead lints it with `lint_run.py handoff --agent mathodology-evidence-researcher`). Beyond the standard keys it carries the extra key `citations_to_verify: [{id, claim, source, url, verified: bool}]`. The block must convey:
+End your work with a `handoff:` yaml block using the evidence-researcher role-specific contract in the mathodology-award-gates skill; the lead lints it with `lint_run.py handoff --agent mathodology-evidence-researcher`. The block must convey:
 
 - source ledger and local paths or URLs
-- `search_backend` (`search-mcp` or `builtin`) and the queries you ran, with accepted and rejected sources
-- extraction summary for each source
+- `search_backend` (`combined`, `search-mcp`, `builtin`, or `none`) and `queries_run` with per-query backend, accepted, and rejected sources; every non-combined mode includes its degradation in `missing_evidence`
+- canonical DOI/URL, `discovered_by`, and extraction summary for each source
 - credibility and recency notes
 - the structured `citations_to_verify` list with per-citation `verified` status
 - license or usage constraints when relevant

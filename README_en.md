@@ -9,7 +9,7 @@
 
 Mathodology is a set of **Agent Skills purpose-built for math modeling contests**, targeting Claude Code, Codex, and other Agent Skills-compatible AI coding tools. It distills an award-level math modeling methodology — problem decomposition, model building, reproducible experiments, award-grade paper writing, and submission packaging — into loadable project skills, subagents, and workflow templates.
 
-Evidence search and citation verification run through the bundled `search` MCP server — **[free-search-mcp](https://github.com/sweetcornna/free-search-mcp)**: keyless multi-engine web search, page and PDF reading, publisher-metadata extraction, and category routing to arXiv/OpenAlex/Crossref/PubMed/Zenodo. The repository ships `.mcp.json` and the one-command install writes it into the target project, so no extra configuration is needed after cloning or installing.
+Evidence discovery combines built-in `WebSearch` with the bundled `search` MCP server — **[free-search-mcp](https://github.com/sweetcornna/free-search-mcp)** — by default, then reconciles and verifies the resulting sources. The server adds keyless multi-engine search, page and PDF reading, publisher-metadata extraction, category routing to arXiv/OpenAlex/Crossref/PubMed/Zenodo, and staged downloads. The repository ships `.mcp.json`, and the full Claude Code project install writes it into a target project that has no MCP config, so cloning or that project install enables the combined workflow without per-user setup.
 
 Supported contest types:
 
@@ -93,7 +93,7 @@ Award-level quality control is implemented as executable, bounded machinery, all
 | [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | Backing up, transferring, restoring, orienting, or running Codex/Claude Code contest workflow orchestration |
 | [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | Starting work in this skills-only checkout or checking repository boundaries |
 | [`mathodology-award-gates`](.claude/skills/mathodology-award-gates/SKILL.md) | Running award-workflow phase gates, judge panels, structured handoffs, figure QA, or rendered-PDF QA during a contest run |
-| [`mathodology-evidence-search`](.claude/skills/mathodology-evidence-search/SKILL.md) | Searching literature, datasets, benchmarks, or domain constants and verifying citations (the `search` MCP tool stack, category routing, verification protocol, reproducibility boundary, and fallback) |
+| [`mathodology-evidence-search`](.claude/skills/mathodology-evidence-search/SKILL.md) | Searching literature, datasets, benchmarks, or domain constants and verifying citations (combined built-in and search MCP discovery, source reconciliation, category routing, reproducible downloads, and explicit degradation) |
 | [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | Orchestrating the nine-phase award workflow (phase responsibilities, specialist roster, prize-level gates), plus archived agent-pipeline knowledge |
 | [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | Export/packaging/API reasoning for workflows, plus archived gateway and API knowledge |
 | [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | Figure/table presentation reasoning for workflows, plus archived web UI knowledge |
@@ -151,13 +151,13 @@ Run every maintenance gate from the repository root:
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-Run one gate by naming it — `skills`, `metadata`, `links`, `whitelist`, `agents`, `sync`, or `selftest`:
+Run one gate by naming it — `skills`, `metadata`, `links`, `whitelist`, `agents`, `sync`, `evidence`, or `selftest`:
 
 ```bash
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py sync
 ```
 
-The `all` run covers skill and agent frontmatter, `agents/openai.yaml` metadata, markdown link and `.claude/...` path resolution, the tracked-file whitelist, and en/zh doc-twin sync. The scripts shipped in `mathodology-award-gates` each carry a `--self-test`; `validate_repo.py` uses its `selftest` subcommand.
+The `all` run covers skill and agent frontmatter, `agents/openai.yaml` metadata, markdown link and `.claude/...` path resolution, the tracked-file whitelist, en/zh doc-twin sync, and the dual-source evidence/download configuration contract. The scripts shipped in `mathodology-award-gates` each carry a `--self-test`; `validate_repo.py` uses its `selftest` subcommand.
 
 ## Repository Policy
 

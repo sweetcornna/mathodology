@@ -42,7 +42,7 @@ python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
 Run one gate by naming it: `skills`, `metadata`, `links`, `whitelist`, `agents`,
-`sync`, or `selftest`. The script prints per-check `PASS`/`FAIL` lines and exits
+`sync`, `evidence`, or `selftest`. The script prints per-check `PASS`/`FAIL` lines and exits
 non-zero on any failure.
 
 - `skills` / `metadata`: every `.claude/skills/*/SKILL.md` frontmatter (name ==
@@ -53,8 +53,11 @@ non-zero on any failure.
 - `whitelist`: only skills-repository files are tracked.
 - `agents`: every `.claude/agents/*.md` frontmatter (name == stem, description,
   tools, and any `model` in opus/sonnet/haiku/inherit).
-- `sync`: each en/zh doc twin agrees on heading and code-block counts, and code
-  blocks are byte-identical after dropping CJK lines.
+- `sync`: each en/zh doc twin agrees on heading and code-block counts, and
+  command-significant code is identical.
+- `evidence`: the project search MCP enables staged downloads; the evidence agent
+  loads both discovery channels and the evidence skill; skill, agent, and workflow
+  retain the combined-mode contract; manual Claude/Codex commands enable download.
 - `selftest`: proves each checker can both pass and fail on tempdir fixtures.
 
 From a global skill install, run `scripts/validate_repo.py` from this skill's

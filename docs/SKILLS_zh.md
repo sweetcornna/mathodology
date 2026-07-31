@@ -54,7 +54,7 @@ Claude Code 项目编排资产放在：
 - 整体迁移或备份：从 `mathodology-whole-project` 开始。
 - 仓库清理或策略检查：从 `mathodology-project-orientation` 开始。
 - Skill 修改：从 `mathodology-skill-authoring` 开始。
-- 外部证据、文献、数据集或引用核验：从 `mathodology-evidence-search` 开始。它使用名为 `search` 的 MCP server（free-search-mcp），由仓库自带的 `.mcp.json` 在项目作用域注册，克隆后无需配置，见 `docs/INSTALL_zh.md`。
+- 外部证据、文献、数据集或引用核验：从 `mathodology-evidence-search` 开始。它默认同时使用内置 `WebSearch` 与项目 `search` MCP server（free-search-mcp），综合两边来源，并显式记录任何单来源降级。仓库自带的 `.mcp.json` 会注册 server 并开启暂存下载，因此克隆后无需配置，见 `docs/INSTALL_zh.md`。
 
 ## 不再存在的内容
 
@@ -72,13 +72,13 @@ Claude Code 项目编排资产放在：
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-也可以只运行某个 gate —— `skills`、`metadata`、`links`、`whitelist`、`agents`、`sync` 或 `selftest`：
+也可以只运行某个 gate —— `skills`、`metadata`、`links`、`whitelist`、`agents`、`sync`、`evidence` 或 `selftest`：
 
 ```bash
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py sync
 ```
 
-`all` 覆盖 skill 和 agent frontmatter、`agents/openai.yaml` 元数据、markdown 链接和 `.claude/...` 路径解析、跟踪文件白名单，以及 en/zh 文档孪生同步（标题数与代码块数，代码块在剔除 CJK 行后逐字节一致）。从全局安装的 skill 运行时，用 skill 目录内的 `scripts/validate_repo.py` 代替仓库相对路径。
+`all` 覆盖 skill 和 agent frontmatter、`agents/openai.yaml` 元数据、markdown 链接和 `.claude/...` 路径解析、跟踪文件白名单、en/zh 文档孪生同步（标题数与代码块数，具有命令意义的代码保持一致），以及双来源证据检索与下载配置契约。从全局安装的 skill 运行时，用 skill 目录内的 `scripts/validate_repo.py` 代替仓库相对路径。
 
 ## 更新 Skill
 
