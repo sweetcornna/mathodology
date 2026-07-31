@@ -20,14 +20,17 @@ Subcommands (default: all):
                 and model (if present) in {opus,sonnet,haiku,inherit}.
     sync        en/zh doc twins agree on heading + code-block counts, and the
                 command-significant code (comments stripped) is identical.
+    evidence    search MCP download config, dual-source agent/skill contract,
+                workflow guidance, and manual install commands.
     selftest    construct pass/fail fixtures in a tempdir; prove each checker works.
-    all         run skills, metadata, links, whitelist, agents, sync.
+    all         run skills, metadata, links, whitelist, agents, sync, evidence.
 
 Exit status is non-zero if any run check fails.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -95,6 +98,17 @@ def parse_frontmatter(text):
             val = val[1:-1]
         fm[key] = val
     return fm
+
+
+def _frontmatter_tokens(value):
+    value = value.strip()
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+    return {
+        token.strip().strip("\"'")
+        for token in value.split(",")
+        if token.strip().strip("\"'")
+    }
 
 
 def _tracked_files(root):
@@ -410,6 +424,155 @@ def check_sync(root):
     return ok, lines
 
 
+def check_evidence(root):
+    lines, errors = [], []
+
+    mcp_path = os.path.join(root, ".mcp.json")
+    try:
+        with open(mcp_path, "r", encoding="utf-8") as fh:
+            mcp = json.load(fh)
+        search = mcp.get("mcpServers", {}).get("search", {})
+        if search.get("command") != "uvx":
+            errors.append(".mcp.json search command must be uvx")
+        if "free-search-mcp" not in search.get("args", []):
+            errors.append(".mcp.json search args must include free-search-mcp")
+        download_dir = search.get("env", {}).get("SEARCH_MCP_DOWNLOAD_DIR")
+        if not isinstance(download_dir, str) or not download_dir.strip():
+            errors.append(".mcp.json must set non-empty SEARCH_MCP_DOWNLOAD_DIR")
+    except (OSError, ValueError, TypeError) as exc:
+        errors.append(f".mcp.json is missing or invalid JSON: {exc}")
+
+    agent_path = os.path.join(
+        root, ".claude", "agents", "mathodology-evidence-researcher.md"
+    )
+    skill_path = os.path.join(
+        root, ".claude", "skills", "mathodology-evidence-search", "SKILL.md"
+    )
+    workflow_path = os.path.join(
+        root, ".claude", "workflows", "mathodology-award-submission.md"
+    )
+    try:
+        agent_text = _read(agent_path)
+        fm = parse_frontmatter(agent_text) or {}
+        skills = _frontmatter_tokens(fm.get("skills", ""))
+        tools = _frontmatter_tokens(fm.get("tools", ""))
+        if "mathodology-evidence-search" not in skills:
+            errors.append("evidence researcher must load mathodology-evidence-search")
+        for tool in (
+            "WebSearch", "WebFetch", "mcp__search__search", "mcp__search__download"
+        ):
+            if tool not in tools:
+                errors.append(f"evidence researcher tools missing {tool}")
+        skill_text = _read(skill_path)
+        workflow_text = _read(workflow_path)
+        contract_assertions = (
+            "dual-source-default: WebSearch + mcp__search__search",
+            "single-source-mode: explicit degradation",
+            "search_backend: combined",
+        )
+        for label, text in (
+            ("evidence skill", skill_text),
+            ("evidence researcher", agent_text),
+            ("award workflow", workflow_text),
+        ):
+            for assertion in contract_assertions:
+                if assertion not in text:
+                    errors.append(
+                        f"{label} missing evidence contract assertion: {assertion}"
+                    )
+        old_phrases = (
+            "use them as the primary path",
+            "fall back to `WebSearch`/`WebFetch`",
+            "WebSearch`/`WebFetch` as the declared fallback",
+        )
+        for label, text in (
+            ("evidence skill", skill_text),
+            ("evidence researcher", agent_text),
+            ("award workflow", workflow_text),
+        ):
+            for phrase in old_phrases:
+                if phrase in text:
+                    errors.append(f"{label} retains old fallback contract: {phrase}")
+            for line in text.splitlines():
+                normalized = " ".join(line.lower().split())
+                has_mcp = "mcp" in normalized
+                has_builtin = "websearch" in normalized or "built-in search" in normalized
+                if "fallback" in normalized or "fall back" in normalized:
+                    errors.append(f"{label} contains a fallback-first search directive")
+                    break
+                if (
+                    has_mcp
+                    and re.search(r"\b(?:primary|prefer|preferred)\b", normalized)
+                    and re.search(r"\b(?:discovery|search|channel|path)\b", normalized)
+                ):
+                    errors.append(f"{label} makes MCP a preferred discovery backend")
+                    break
+                if (
+                    has_mcp
+                    and has_builtin
+                    and re.search(r"\b(?:only if|only when|unless)\b", normalized)
+                ):
+                    errors.append(f"{label} conditionally suppresses one search backend")
+                    break
+            else:
+                normalized_lines = []
+                for line in text.splitlines():
+                    normalized = " ".join(line.lower().split())
+                    normalized = re.sub(r"^(?:>\s*)+", "", normalized)
+                    normalized = re.sub(
+                        r"^(?:(?:[-*+]|\d+[.)])\s+)+(?:\[[ x]\]\s+)?",
+                        "",
+                        normalized,
+                    )
+                    normalized_lines.append(normalized)
+                start_with_mcp = re.compile(
+                    r"^(?:start|begin|first|try)\b.{0,100}\bmcp\b"
+                )
+                switch_to_builtin = re.compile(
+                    r"^(?:[-*]\s+)?(?:if|when)\b.{0,60}"
+                    r"\b(?:it|mcp)\b.{0,40}"
+                    r"\b(?:unavailable|fails?|failure|not available)\b.{0,80}"
+                    r"\b(?:use|invoke|search)\b.{0,40}"
+                    r"(?:websearch|built-in(?: web)? search)"
+                )
+                for first, second in zip(normalized_lines, normalized_lines[1:]):
+                    if start_with_mcp.search(first) and switch_to_builtin.search(second):
+                        errors.append(
+                            f"{label} conditionally switches from MCP to built-in search"
+                        )
+                        break
+    except OSError as exc:
+        errors.append(f"evidence contract file missing: {exc}")
+
+    command_tokens = (
+        "claude mcp add --transport stdio --env "
+        '"SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" '
+        "search -- uvx free-search-mcp",
+        "codex mcp add --env "
+        '"SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" '
+        "search -- uvx free-search-mcp",
+    )
+    for rel in (
+        ".claude/skills/mathodology-evidence-search/SKILL.md",
+        "docs/INSTALL.md",
+        "docs/INSTALL_zh.md",
+    ):
+        try:
+            text = _read(os.path.join(root, rel))
+            for command in command_tokens:
+                if command not in text:
+                    errors.append(f"{rel} missing download-enabled command: {command}")
+        except OSError as exc:
+            errors.append(f"{rel} missing: {exc}")
+
+    if errors:
+        return False, ["FAIL evidence: " + error for error in errors]
+    lines.append("PASS evidence[search-mcp-download-config]")
+    lines.append("PASS evidence[dual-source-agent-contract]")
+    lines.append("PASS evidence[manual-install-commands]")
+    return True, lines
+
+
 CHECKS = {
     "skills": check_skills,
     "metadata": check_metadata,
@@ -417,8 +580,9 @@ CHECKS = {
     "whitelist": check_whitelist,
     "agents": check_agents,
     "sync": check_sync,
+    "evidence": check_evidence,
 }
-ALL_ORDER = ["skills", "metadata", "links", "whitelist", "agents", "sync"]
+ALL_ORDER = ["skills", "metadata", "links", "whitelist", "agents", "sync", "evidence"]
 
 
 # --------------------------------------------------------------------------
@@ -450,6 +614,44 @@ def _good_skill(root, name="mathodology-demo"):
 def _good_agent(root, name="mathodology-demo-agent"):
     _mk(os.path.join(root, ".claude", "agents", f"{name}.md"),
         f"---\nname: {name}\ndescription: Demo agent.\ntools: Read, Write\nmodel: opus\n---\n\n# A\n")
+
+
+def _good_evidence_tree(root):
+    contract = (
+        "dual-source-default: WebSearch + mcp__search__search\n"
+        "single-source-mode: explicit degradation\n"
+        "search_backend: combined\n"
+    )
+    agent = (
+        "---\n"
+        "name: mathodology-evidence-researcher\n"
+        "description: Demo evidence agent.\n"
+        "tools: Read, WebSearch, WebFetch, mcp__search__search, mcp__search__download\n"
+        "skills: [mathodology-evidence-search]\n"
+        "---\n\n" + contract
+    )
+    _mk(os.path.join(root, ".claude", "agents", "mathodology-evidence-researcher.md"),
+        agent)
+    commands = (
+        'claude mcp add --transport stdio --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" search -- uvx free-search-mcp\n'
+        'codex mcp add --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" search -- uvx free-search-mcp\n'
+    )
+    _mk(os.path.join(root, ".claude", "skills", "mathodology-evidence-search", "SKILL.md"),
+        contract + commands)
+    _mk(os.path.join(root, ".claude", "workflows", "mathodology-award-submission.md"),
+        contract)
+    mcp = {
+        "mcpServers": {
+            "search": {
+                "command": "uvx",
+                "args": ["free-search-mcp"],
+                "env": {"SEARCH_MCP_DOWNLOAD_DIR": "~/.cache/search-mcp/downloads"},
+            }
+        }
+    }
+    _mk(os.path.join(root, ".mcp.json"), json.dumps(mcp))
+    _mk(os.path.join(root, "docs", "INSTALL.md"), commands)
+    _mk(os.path.join(root, "docs", "INSTALL_zh.md"), commands)
 
 
 def _selftest():
@@ -546,6 +748,76 @@ def _selftest():
     _mk(os.path.join(t, "docs", "SKILLS.md"), "## H\n\n```bash\nls -la  # list files\n```\n")
     _mk(os.path.join(t, "docs", "SKILLS_zh.md"), "## 标题\n\n```bash\nls -R  # 列出文件\n```\n")
     expect("sync-fail(command-behind-cjk-comment)", check_sync, t, False)
+    shutil.rmtree(t, ignore_errors=True)
+
+    # evidence contract
+    t = tempfile.mkdtemp()
+    _good_evidence_tree(t)
+    expect("evidence-pass", check_evidence, t, True)
+    mcp = json.loads(_read(os.path.join(t, ".mcp.json")))
+    del mcp["mcpServers"]["search"]["env"]["SEARCH_MCP_DOWNLOAD_DIR"]
+    _mk(os.path.join(t, ".mcp.json"), json.dumps(mcp))
+    expect("evidence-fail(missing-download-env)", check_evidence, t, False)
+    _good_evidence_tree(t)
+    agent_path = os.path.join(t, ".claude", "agents", "mathodology-evidence-researcher.md")
+    _mk(agent_path, _read(agent_path).replace("mcp__search__download", ""))
+    expect("evidence-fail(missing-agent-tool)", check_evidence, t, False)
+    _good_evidence_tree(t)
+    agent_text = _read(agent_path).replace(
+        "skills: [mathodology-evidence-search]",
+        "skills: [not-mathodology-evidence-search-suffix]",
+    ).replace(
+        "tools: Read, WebSearch, WebFetch, mcp__search__search, mcp__search__download",
+        "tools: Read, NotWebSearch, NotWebFetch, "
+        "xmcp__search__searchx, xmcp__search__downloadx",
+    )
+    _mk(agent_path, agent_text)
+    expect("evidence-fail(frontmatter-substring-bypass)", check_evidence, t, False)
+    _good_evidence_tree(t)
+    workflow_path = os.path.join(t, ".claude", "workflows", "mathodology-award-submission.md")
+    _mk(workflow_path, "use them as the primary path\n")
+    expect("evidence-fail(old-fallback-contract)", check_evidence, t, False)
+    _good_evidence_tree(t)
+    fallback_text = _read(workflow_path) + (
+        "Prefer MCP discovery and use built-in search only when MCP is unavailable.\n"
+    )
+    _mk(workflow_path, fallback_text)
+    expect("evidence-fail(paraphrased-fallback-contract)", check_evidence, t, False)
+    _good_evidence_tree(t)
+    fallback_text = _read(workflow_path) + (
+        "Make MCP the primary discovery channel; invoke WebSearch only if MCP fails.\n"
+    )
+    _mk(workflow_path, fallback_text)
+    expect("evidence-fail(primary-only-if-contract)", check_evidence, t, False)
+    _good_evidence_tree(t)
+    fallback_text = _read(workflow_path) + (
+        "The MCP server is the primary discovery path. "
+        "Use WebSearch as a fallback if MCP is unavailable.\n"
+    )
+    _mk(workflow_path, fallback_text)
+    expect("evidence-fail(primary-fallback-contract)", check_evidence, t, False)
+    _good_evidence_tree(t)
+    fallback_text = _read(workflow_path) + (
+        "Start with MCP search.\nIf it is unavailable, use WebSearch.\n"
+    )
+    _mk(workflow_path, fallback_text)
+    expect("evidence-fail(two-line-fallback-contract)", check_evidence, t, False)
+    _good_evidence_tree(t)
+    fallback_text = _read(workflow_path) + (
+        "1. Start with MCP search.\n2. If it is unavailable, use WebSearch.\n"
+    )
+    _mk(workflow_path, fallback_text)
+    expect("evidence-fail(numbered-fallback-contract)", check_evidence, t, False)
+    _good_evidence_tree(t)
+    install_path = os.path.join(t, "docs", "INSTALL_zh.md")
+    _mk(install_path, _read(install_path).replace("SEARCH_MCP_DOWNLOAD_DIR", "DOWNLOAD_DIR"))
+    expect("evidence-fail(manual-command)", check_evidence, t, False)
+    _good_evidence_tree(t)
+    skill_path = os.path.join(
+        t, ".claude", "skills", "mathodology-evidence-search", "SKILL.md"
+    )
+    _mk(skill_path, _read(skill_path).replace("codex mcp add", "codex mcp missing"))
+    expect("evidence-fail(skill-manual-command)", check_evidence, t, False)
     shutil.rmtree(t, ignore_errors=True)
 
     print("validate_repo selftest:", "OK" if ok else "FAILED")

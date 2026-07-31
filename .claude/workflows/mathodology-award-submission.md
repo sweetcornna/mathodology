@@ -147,7 +147,7 @@ Deliver:
 - domain constraints
 - citation notes
 
-Evidence acquisition follows `.claude/skills/mathodology-evidence-search/SKILL.md`: `mcp__search__*` (free-search-mcp) as the primary stack with `category=paper`/`dataset` routing to the literature and dataset databases, `WebSearch`/`WebFetch` as the declared fallback, and `search_backend` recorded in the handoff either way.
+Evidence acquisition follows `.claude/skills/mathodology-evidence-search/SKILL.md` and enforces `dual-source-default: WebSearch + mcp__search__search`, `single-source-mode: explicit degradation`, and `search_backend: combined`. MCP `category=paper`/`dataset` routing supplies vertical coverage, results are reconciled before reading, and every handoff records per-query backend provenance or an explicit degradation.
 
 Critic gate: every planned model input has data, proxy logic, or an explicit assumption with a sensitivity or robustness plan; blocked or gated searches are reported as `missing_evidence` rather than silently treated as evidence of absence.
 

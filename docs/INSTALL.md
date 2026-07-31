@@ -49,7 +49,7 @@ From the project root. One command refreshes the skills, the subagents, the work
 npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; } && { uvx free-search-mcp@latest --help >/dev/null 2>&1 || echo 'note: search MCP server not refreshed (is uv installed?)'; }
 ```
 
-An existing `.mcp.json` is never rewritten by an update, so a project that already had its own MCP config does not silently pick up new servers. If yours has no `search` entry yet, add it with `claude mcp add search -- uvx free-search-mcp`.
+An existing `.mcp.json` is never rewritten by an update, so a project that already had its own MCP config does not silently pick up new servers. If yours has no `search` entry yet, use the download-enabled manual registration command in [Search MCP For Evidence Work](#search-mcp-for-evidence-work).
 
 The final clause refreshes the MCP server package itself, which `uvx` otherwise pins to whatever its cache already holds. It is deliberately non-fatal: a machine without `uv` prints a note instead of failing the whole update, since the skills and subagents updated fine.
 
@@ -178,17 +178,19 @@ on `PATH`; the package itself is fetched from PyPI on first run:
 uv --version
 ```
 
-The one-command skills install does not copy `.mcp.json` into the target project.
-Register the server there with one command. Claude Code:
+The skills-only commands do not copy `.mcp.json` into the target project; the full
+Claude Code project command above does, provided the project does not already have one.
+For a skills-only install or an existing MCP config, register the server with downloads
+enabled. Claude Code:
 
 ```bash
-claude mcp add search -- uvx free-search-mcp
+claude mcp add --transport stdio --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" search -- uvx free-search-mcp
 ```
 
 Codex:
 
 ```bash
-codex mcp add search -- uvx free-search-mcp
+codex mcp add --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" search -- uvx free-search-mcp
 ```
 
 Verify the server is reachable, then restart the client:
@@ -197,12 +199,15 @@ Verify the server is reachable, then restart the client:
 claude mcp list
 ```
 
-The shipped `.mcp.json` also sets `SEARCH_MCP_DOWNLOAD_DIR`, which turns on the
-`download` tool — off in the server's own default, since writing to someone's disk
-is opt-in. Files land in `~/.cache/search-mcp/downloads`, are capped at 100 MB each,
-and are purged after 24 hours, so the workflow treats that directory as staging and
-copies anything it keeps into the run directory. Delete the `env` block from
-`.mcp.json` to turn downloads back off; the rest of the server is unaffected.
+The shipped `.mcp.json` and both manual commands set `SEARCH_MCP_DOWNLOAD_DIR`,
+so `download` is expected in a normal Mathodology project install. The server itself
+keeps disk writes opt-in, which is why omitting that environment variable removes only
+the download tool. Files land in `~/.cache/search-mcp/downloads`, are capped at 100 MB
+each, and are purged after 24 hours, so the workflow treats that directory as staging
+and copies anything it keeps into the run directory. If search MCP tools are present
+but `download` is absent, treat that as a configuration degradation; agents report it
+rather than silently changing MCP configuration. Delete the `env` block from
+`.mcp.json` to turn downloads back off intentionally; the rest of the server is unaffected.
 
 `uvx` serves whatever version its cache already holds, so a machine that ran
 `free-search-mcp` before a new release keeps the old one indefinitely. Refresh it
@@ -218,9 +223,12 @@ the same server name at local scope — local scope overrides the project `.mcp.
 Browser-rendered engines additionally need Chromium once; without it, HTTP search and
 fetch still work.
 
-The server is optional. When `mcp__search__*` tools are absent, the evidence researcher
-falls back to `WebSearch`/`WebFetch` and records `search_backend: builtin` in its handoff,
-which the critic reports as reduced literature coverage.
+The server is optional, but a normal evidence run uses it together with built-in
+`WebSearch`: MCP category routing supplies literature and dataset coverage while the
+built-in channel independently broadens discovery, and the researcher reconciles both
+result sets. If either channel is unavailable, the handoff records a single-source
+`search_backend` plus the degradation reason; `none` blocks evidence work. The critic
+reports every non-`combined` run as reduced coverage.
 
 ## Requirements
 

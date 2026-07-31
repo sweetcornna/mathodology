@@ -1,6 +1,6 @@
 ---
 name: mathodology-evidence-search
-description: Use when an award run needs external evidence — literature, datasets, benchmarks, domain constants, prior-art checks, or citation verification — via the `search` MCP server (free-search-mcp), including engine/category routing, document reading, citation confirmation, token budgets, reproducibility rules, and the WebSearch/WebFetch fallback.
+description: Use when an award run needs external evidence — literature, datasets, benchmarks, domain constants, prior-art checks, or citation verification — with combined built-in WebSearch and search MCP discovery, source reconciliation, document reading, citation confirmation, token budgets, and reproducibility rules.
 ---
 
 # Mathodology Evidence Search
@@ -13,7 +13,7 @@ external evidence, so search work is repeatable instead of improvised per run.
 ## Tool Stack
 
 The `search` MCP server ([free-search-mcp](https://github.com/sweetcornna/free-search-mcp))
-is the primary evidence toolchain. Its tools appear as `mcp__search__<tool>`:
+complements built-in `WebSearch` as a peer discovery channel. Its tools appear as `mcp__search__<tool>`:
 
 | Tool | Use it for |
 |---|---|
@@ -28,29 +28,44 @@ is the primary evidence toolchain. Its tools appear as `mcp__search__<tool>`:
 | `engines()` | Check which engines are available before blaming a query for thin results. |
 | `download(url)` | Keep an actual file — a contest data attachment, a dataset archive, a PDF the coder must read. Staging only: see *Reproducibility Boundary*. |
 
+A normal project installation exposes the full MCP list, including `download`.
 Filters on `search` / `research`: `freshness` (`day`/`week`/`month`/`year`),
 `include_domains`, `exclude_domains`, `category`, `include_text`, `exclude_text`.
 
-## Availability And Fallback
+## Availability And Explicit Degradation
+
+Contract assertions:
+
+- `dual-source-default: WebSearch + mcp__search__search`
+- `single-source-mode: explicit degradation`
+- `search_backend: combined`
 
 A clone of this repository registers the server at project scope through its `.mcp.json`,
 so the tools are normally present after the user approves the server once. They can still
 be missing — a skills-only install into another project, a client that does not read
-project MCP config, or a machine without `uv`. Check once at the start of an evidence task:
+project MCP config, or a machine without `uv`. Inspect available tools once at the start of an evidence task and record one mode:
 
-1. If `mcp__search__*` tools are present, use them as the primary path.
-2. If they are absent, fall back to `WebSearch` / `WebFetch` and record
-   `search_backend: builtin` in the handoff so downstream agents know that
-   vertical-database routing (`category=paper`, `category=dataset`) was unavailable
-   and literature coverage is weaker than a normal run.
+- `combined` — the default. Use both `WebSearch` and `mcp__search__search` for discovery.
+- `search-mcp` — degraded mode when built-in `WebSearch` is unavailable.
+- `builtin` — degraded mode when MCP discovery is unavailable.
+- `none` — neither discovery channel is available; set the handoff status to `blocked`.
 
-Never silently degrade. A run that searched only the general web has a different
-evidence profile from one that queried arXiv, OpenAlex, Crossref, and PubMed.
+A `combined` run logs at least one query from each backend. Either single-source mode
+requires a reason and its coverage loss under `missing_evidence`. Never silently
+degrade or convert unavailable search into evidence of absence.
 
-Registering it elsewhere (one command, no API key):
+Treat MCP capabilities individually. If search works but `download` is absent,
+continue discovery and reading, record a configuration degradation under
+`missing_evidence`, and do not reconfigure MCP from an agent.
+
+Registering it elsewhere with downloads enabled (no API key):
 
 ```bash
-claude mcp add search -- uvx free-search-mcp
+# Claude Code
+claude mcp add --transport stdio --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" search -- uvx free-search-mcp
+
+# Codex
+codex mcp add --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" search -- uvx free-search-mcp
 ```
 
 ## Routing Rules
@@ -75,17 +90,23 @@ engines for a CUMCM/华数杯 domain term).
 
 Per evidence item in the source ledger:
 
-1. `cache_search` first. This run may already hold the page.
-2. `search` with the narrowest correct `category` and filters. Prefer two or three
-   sharply different queries over one broad one; log the queries you ran.
-3. Shortlist by title, host, and date — not by rank alone. Prefer primary sources
-   (publisher, standards body, statistical agency) over aggregators and blogs.
-4. `read_doc` for PDFs and data files; `fetch` for pages; `fetch_batch` when the
-   shortlist is longer than two.
-5. `compare` when sources disagree on a value you intend to print or feed into the
-   model. Record the disagreement and the value you chose, with a reason.
-6. Record every accepted source in the ledger with URL, date, access date,
-   credibility note, and the extracted quantity.
+1. Check the ledger and `cache_search` before fetching material already read.
+2. In `combined` mode, run complementary queries through both built-in `WebSearch`
+   and `mcp__search__search`; use the narrowest MCP `category` and filters. Do not
+   wait for one channel to fail before using the other.
+3. Log every query in `queries_run` with `backend: builtin` or `backend: search-mcp`.
+4. Merge results before reading. Deduplicate by canonical DOI when available;
+   otherwise canonicalize the URL by removing fragments and tracking parameters.
+   Preserve every contributing channel in each accepted source's `discovered_by` list.
+5. Shortlist by title, host, date, and claim fit — not rank alone. Prefer primary
+   sources (publisher, standards body, statistical agency) over aggregators and blogs.
+6. Choose one reader by resource type: `read_doc` for PDFs and data/office files;
+   MCP `fetch`/`fetch_batch` or built-in `WebFetch` for pages. Discovery by both
+   channels does not require duplicate fetches.
+7. Use `compare` when sources disagree on a value you will print or model. Record
+   the disagreement, chosen value, and reason.
+8. Record canonical DOI/URL, original URL, `discovered_by`, date, access date,
+   credibility note, and extracted quantity for every accepted source.
 
 Thin or empty results are a diagnosis, not an answer. Check `engines()` and the
 server's `rescued_via` note: a gated or CAPTCHA-walled engine looks identical to
@@ -98,10 +119,11 @@ A citation is verified only when the URL resolves to the *primary* work being
 cited — not a "cited-by" entry, not a neighbouring article in the same issue, not
 a preprint of a paper you cite by its journal pagination.
 
-1. `fetch` or `read_doc` the landing page or PDF and confirm the title and authors.
-2. `extract_structured` the landing page to read DOI, journal, volume, issue,
-   pages, and publication date from the publisher's own metadata rather than from
-   a search snippet.
+1. Read the landing page or document once with the type-appropriate reader:
+   `read_doc`, MCP `fetch`, or built-in `WebFetch`; confirm the title and authors.
+2. When available, use `extract_structured` on the landing page to read DOI,
+   journal, volume, issue, pages, and publication date from publisher metadata
+   rather than from a search snippet; otherwise verify them on the publisher page.
 3. Anything you cannot confirm down to the specifics the paper will print goes on
    `citations_to_verify` with `verified: false`. Do not print a page or volume
    number that no tool call confirmed.
@@ -143,19 +165,24 @@ Interactive search is not a reproducible pipeline stage.
 
 - `mathodology-evidence-researcher` — primary owner, Phase 1 and every later
   evidence request.
-- `mathodology-critic` — verification only: `fetch`, `extract_structured`, and
-  `cache_search` to close the citation gate against the researcher's ledger.
+- `mathodology-critic` — verification only against the researcher's ledger with
+  its existing readers, metadata, and cache tools; it does not start a new discovery pass.
 - `mathodology-award-judge` — **never**. Judge seats score the rendered PDF and the
   artifact list blind; external lookups break the blind protocol in
   `.claude/skills/mathodology-award-gates/SKILL.md`.
 
 ## Handoff Keys
 
-Evidence work carries these keys in addition to the standard handoff schema:
+The canonical role-specific contract lives in
+`.claude/skills/mathodology-award-gates/SKILL.md`. Evidence work carries:
 
 ```yaml
-search_backend: search-mcp        # search-mcp | builtin
-queries_run: []                   # each: {query, category, engines_note, accepted, rejected}
+search_backend: combined          # combined | search-mcp | builtin | none
+queries_run: []                   # each includes {query, backend, category, engines_note, accepted, rejected}; backend: search-mcp | builtin
 citations_to_verify: []           # each: {id, claim, source, url, verified}
-missing_evidence: []              # blocked, gated, paywalled, or nonexistent sources
+missing_evidence: []              # blocked/gated/paywalled gaps and every backend/configuration degradation reason
 ```
+
+Accepted sources are deduplicated by canonical DOI/URL and carry `discovered_by`.
+`combined` requires both query backends; either single-source mode requires a
+`missing_evidence` degradation reason; `none` requires a blocked handoff.

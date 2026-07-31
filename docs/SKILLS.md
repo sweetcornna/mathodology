@@ -54,7 +54,7 @@ Current workflow templates:
 - Full transfer or backup: start with `mathodology-whole-project`.
 - Repository cleanup or policy checks: start with `mathodology-project-orientation`.
 - Skill edits: start with `mathodology-skill-authoring`.
-- External evidence, literature, datasets, or citation verification: start with `mathodology-evidence-search`. It uses an MCP server named `search` (free-search-mcp), registered at project scope by the repository's `.mcp.json`, so a clone needs no setup — see `docs/INSTALL.md`.
+- External evidence, literature, datasets, or citation verification: start with `mathodology-evidence-search`. It combines built-in `WebSearch` with the project `search` MCP server (free-search-mcp) by default, reconciles their sources, and records any single-source degradation explicitly. The repository's `.mcp.json` registers the server and enables staged downloads, so a clone needs no setup — see `docs/INSTALL.md`.
 
 ## What Is Not Present
 
@@ -72,13 +72,13 @@ Run every maintenance gate from the repository root:
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-Run one gate by naming it — `skills`, `metadata`, `links`, `whitelist`, `agents`, `sync`, or `selftest`:
+Run one gate by naming it — `skills`, `metadata`, `links`, `whitelist`, `agents`, `sync`, `evidence`, or `selftest`:
 
 ```bash
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py sync
 ```
 
-The `all` run covers skill and agent frontmatter, `agents/openai.yaml` metadata, markdown link and `.claude/...` path resolution, the tracked-file whitelist, and en/zh doc-twin sync (heading and code-block counts, with code blocks byte-identical after dropping CJK lines). From a global skill install, run `scripts/validate_repo.py` from the skill's directory instead of the repo-relative path.
+The `all` run covers skill and agent frontmatter, `agents/openai.yaml` metadata, markdown link and `.claude/...` path resolution, the tracked-file whitelist, en/zh doc-twin sync (heading and code-block counts, with command-significant code identical), and the dual-source evidence/download configuration contract. From a global skill install, run `scripts/validate_repo.py` from the skill's directory instead of the repo-relative path.
 
 ## Updating a Skill
 

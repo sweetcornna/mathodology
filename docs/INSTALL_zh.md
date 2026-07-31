@@ -49,7 +49,7 @@ npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agen
 npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; } && { uvx free-search-mcp@latest --help >/dev/null 2>&1 || echo 'note: search MCP server not refreshed (is uv installed?)'; }
 ```
 
-更新不会重写已存在的 `.mcp.json`，所以自带 MCP 配置的项目不会被悄悄塞进新 server。若你的配置里还没有 `search` 条目，用 `claude mcp add search -- uvx free-search-mcp` 补上。
+更新不会重写已存在的 `.mcp.json`，所以自带 MCP 配置的项目不会被悄悄塞进新 server。若你的配置里还没有 `search` 条目，请使用[证据检索用的 Search MCP](#证据检索用的-search-mcp)中的默认开启下载手工注册命令。
 
 最后一段刷新的是 MCP server 包本身——否则 `uvx` 会一直用缓存里已有的版本。它刻意设计成非致命：没装 `uv` 的机器只打印一行提示，不会让整个更新失败，因为 skills 和 subagents 已经更新成功了。
 
@@ -177,16 +177,16 @@ npx -y skills@latest add sweetcornna/mathodology --list
 uv --version
 ```
 
-一键 skills 安装不会把 `.mcp.json` 复制到目标项目，在那边用一条命令注册即可。Claude Code：
+只安装 skills 的命令不会把 `.mcp.json` 复制到目标项目；上面的 Claude Code 完整项目安装命令会复制，但仅限项目原本没有该文件。对于 skills-only 安装或已有 MCP 配置的项目，请用默认开启下载的命令注册 server。Claude Code：
 
 ```bash
-claude mcp add search -- uvx free-search-mcp
+claude mcp add --transport stdio --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" search -- uvx free-search-mcp
 ```
 
 Codex：
 
 ```bash
-codex mcp add search -- uvx free-search-mcp
+codex mcp add --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" search -- uvx free-search-mcp
 ```
 
 确认 server 可连通后重启客户端：
@@ -195,11 +195,12 @@ codex mcp add search -- uvx free-search-mcp
 claude mcp list
 ```
 
-仓库自带的 `.mcp.json` 还设置了 `SEARCH_MCP_DOWNLOAD_DIR`，用于打开 `download` 工具——server
-自身默认关闭它，因为往别人磁盘写文件属于需要显式同意的操作。文件落在
-`~/.cache/search-mcp/downloads`，单个上限 100 MB，24 小时后清理，所以工作流把该目录当作
-暂存区，要保留的文件会复制进 run 目录。不想要下载功能就删掉 `.mcp.json` 里的 `env` 块，
-server 其余功能不受影响。
+仓库自带的 `.mcp.json` 和两条手工命令都会设置 `SEARCH_MCP_DOWNLOAD_DIR`，因此正常的
+Mathodology 项目安装应当提供 `download` 工具。server 本身仍把磁盘写入设计为 opt-in；省略
+该环境变量只会移除下载工具。文件落在 `~/.cache/search-mcp/downloads`，单个上限 100 MB，
+24 小时后清理，所以工作流把该目录当作暂存区，要保留的文件会复制进 run 目录。若 search
+MCP 工具存在但 `download` 缺失，应把它视为配置降级；agent 只报告，不会静默修改 MCP 配置。
+若有意关闭下载，删掉 `.mcp.json` 里的 `env` 块即可，server 其余功能不受影响。
 
 `uvx` 用的是缓存里已有的版本，所以在新版本发布前用过 `free-search-mcp` 的机器会一直停在旧版。
 用一条命令刷新——`--help` 会立即退出，下次启动 server 就是刚缓存下来的版本：
@@ -212,9 +213,10 @@ uvx free-search-mcp@latest --help
 local 作用域会覆盖项目的 `.mcp.json`。浏览器渲染类引擎还需要装一次 Chromium；不装时
 HTTP 检索和抓取照常可用。
 
-该 server 是可选项。缺少 `mcp__search__*` 工具时，evidence researcher 会回退到
-`WebSearch`/`WebFetch`，并在 handoff 里记录 `search_backend: builtin`，critic 会把它作为
-文献覆盖度下降报告出来。
+该 server 是可选项，但正常的证据任务会同时使用它与内置 `WebSearch`：MCP 分类路由负责
+文献和数据集覆盖，内置渠道独立拓宽发现范围，researcher 再综合两边结果。任一渠道不可用时，
+handoff 会记录单来源 `search_backend` 及降级原因；两边都不可用时以 `none` 阻塞证据工作。
+critic 会把所有非 `combined` 运行报告为覆盖度下降。
 
 ## 要求
 
