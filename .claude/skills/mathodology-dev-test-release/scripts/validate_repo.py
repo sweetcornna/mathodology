@@ -477,7 +477,13 @@ def check_updater(root):
         "uvx free-search-mcp@latest --help >/dev/null",
         "skills@latest update --global --yes mathodology-",
     )
+    # README and docs/ ship with the repository, not with an installed skill
+    # tree. Outside a repo checkout their absence means "nothing to check" rather
+    # than a broken repo; the SKILL.md entry travels with the skill either way.
+    in_repo_checkout = os.path.isfile(os.path.join(root, "README.md"))
     for rel in UPDATER_DOCS:
+        if not in_repo_checkout and not rel.startswith(".claude/"):
+            continue
         path = os.path.join(root, rel)
         try:
             text = _read(path)
@@ -965,6 +971,24 @@ def _selftest():
     expect("updater-fail(hardcoded-global-update)", check_updater, t, False)
     _mk(readme, UPDATER_BOOTSTRAP + "\n")
     expect("updater-fail(missing-global-reconciliation)", check_updater, t, False)
+    shutil.rmtree(t, ignore_errors=True)
+
+    # An installed skill tree carries .claude/ but none of the repository docs;
+    # the gate must still run there instead of failing on the absent files.
+    t = tempfile.mkdtemp()
+    fixture_updater = os.path.join(t, UPDATER_REL)
+    os.makedirs(os.path.dirname(fixture_updater), exist_ok=True)
+    shutil.copy2(updater, fixture_updater)
+    os.chmod(fixture_updater, 0o755)
+    for rel in UPDATER_DOCS:
+        if rel.startswith(".claude/"):
+            _mk(os.path.join(t, rel), valid_updater_guidance)
+    expect("updater-pass(installed-skill-tree-without-repo-docs)", check_updater, t, True)
+    _mk(
+        os.path.join(t, ".claude/skills/mathodology-whole-project/SKILL.md"),
+        UPDATER_BOOTSTRAP + "\n",
+    )
+    expect("updater-fail(installed-skill-md-drift)", check_updater, t, False)
     shutil.rmtree(t, ignore_errors=True)
 
     print("validate_repo selftest:", "OK" if ok else "FAILED")
