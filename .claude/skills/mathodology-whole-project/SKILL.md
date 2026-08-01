@@ -27,7 +27,7 @@ The retained repository surface is:
 - `AGENTS.md`: tool-neutral entrypoint.
 - `README.md` (Chinese-first) and `README_en.md` (English): public project overview.
 - `docs/SKILLS*.md`, `docs/INSTALL*.md`, `docs/WORKFLOWS*.md`, and `docs/BACKUP.md`: skill, install, workflow, and backup documentation.
-- `LICENSE` and `.gitignore`.
+- `LICENSE`, `.gitignore`, and `.mcp.json`.
 
 Do not expect app source, CI workflows, deployment config, generated contracts,
 datasets, package manifests, lockfiles, or installers in this branch. For the
@@ -114,17 +114,19 @@ of truth for the detailed matrix and gate guarantees.
 
 ## User Install And Update
 
-For end users, prefer the mature `skills` CLI installer. The recommended scope is project-level: run from the target project root, deploy everything (skills, Claude Code subagents, workflow templates) into that folder only, and leave other projects untouched:
+For end users, prefer the bundled transactional updater, which delegates skill installation to the mature `skills` CLI. The recommended scope is project-level: run from the target project root, deploy everything (skills, Claude Code subagents, workflow templates, and MCP configuration) into that folder only, and leave other projects untouched:
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
+curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
 ```
 
-Update a project-level install from the project root with one command. It refreshes the skills, the subagents, the workflow templates, and the `search` MCP server package, and writes `.mcp.json` only when the project has none — an existing MCP config is never overwritten. The MCP refresh clause is non-fatal, so a machine without `uv` still gets everything else:
+Use the same command to update a full Claude Code project install. It resolves one immutable commit for skills, subagents, workflows, and MCP configuration; reconciles skills missing from legacy locks; mirrors only `mathodology-*` managed assets; preserves unrelated project content; and restores managed files if an update fails:
 
 ```bash
-npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; } && { uvx free-search-mcp@latest --help >/dev/null 2>&1 || echo 'note: search MCP server not refreshed (is uv installed?)'; }
+curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
 ```
+
+Append `--check` for a read-only diagnosis or `--ref v0.12.0` for a reproducible release payload. The updater installs a missing `.mcp.json`, migrates only an identifiable legacy canonical search registration, and preserves custom, missing-search, or intentionally download-disabled configurations. MCP package refresh remains non-fatal.
 
 For a machine-wide install across all projects, use the global variant:
 
@@ -135,7 +137,7 @@ npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '
 Update globally installed Mathodology skills with:
 
 ```bash
-npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-evidence-search mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
 ```
 
 Use `npx -y skills@latest --help` for CLI help. Do not use `skills add <repo> --help` as a help command because current CLI versions may treat that form as an install command.
@@ -163,7 +165,7 @@ The script creates a timestamped backup directory outside the repo by default:
 └── untracked-files.txt
 ```
 
-The archive is whitelist-based. It includes only the retained skills repository files, even if old application directories still exist locally.
+The archive is whitelist-based. It includes only the retained skills repository files, including `.mcp.json` and the bundled updater, even if old application directories still exist locally.
 
 ## Restore Orientation
 

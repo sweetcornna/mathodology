@@ -72,13 +72,13 @@ Claude Code 项目编排资产放在：
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-也可以只运行某个 gate —— `skills`、`metadata`、`links`、`whitelist`、`agents`、`sync`、`evidence` 或 `selftest`：
+也可以只运行某个 gate —— `skills`、`metadata`、`links`、`whitelist`、`agents`、`sync`、`evidence`、`updater` 或 `selftest`：
 
 ```bash
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py sync
 ```
 
-`all` 覆盖 skill 和 agent frontmatter、`agents/openai.yaml` 元数据、markdown 链接和 `.claude/...` 路径解析、跟踪文件白名单、en/zh 文档孪生同步（标题数与代码块数，具有命令意义的代码保持一致），以及双来源证据检索与下载配置契约。从全局安装的 skill 运行时，用 skill 目录内的 `scripts/validate_repo.py` 代替仓库相对路径。
+`all` 覆盖 skill 和 agent frontmatter、`agents/openai.yaml` 元数据、markdown 链接和 `.claude/...` 路径解析、跟踪文件白名单、en/zh 文档孪生同步（标题数与代码块数，具有命令意义的代码保持一致）、双来源证据检索与下载配置契约，以及 canonical 事务型 updater/分发契约。`selftest` 还会运行 updater 的离线迁移与回滚 fixture。从全局安装的 skill 运行时，用 skill 目录内的 `scripts/validate_repo.py` 代替仓库相对路径。
 
 ## 更新 Skill
 

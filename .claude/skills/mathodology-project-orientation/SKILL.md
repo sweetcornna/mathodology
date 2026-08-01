@@ -18,6 +18,7 @@ Current work should normally edit only:
 - `.claude/agents/<agent-name>.md` (including `.claude/agents/mathodology-award-judge.md`)
 - `.claude/workflows/<workflow-name>.md`
 - `.claude/skills/mathodology-whole-project/scripts/create-source-backup.sh`
+- `.claude/skills/mathodology-whole-project/scripts/update-project.py`
 - `AGENTS.md`
 - `README.md`
 - `README_en.md`
@@ -57,7 +58,7 @@ python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py whi
 ```
 
 Run `validate_repo.py all` for the full set of maintenance gates (skills,
-metadata, links, whitelist, agents, sync). The whitelist logic lives only in
+metadata, links, whitelist, agents, sync, evidence, updater). The whitelist logic lives only in
 that script; do not re-inline it here.
 
 ## Text Check

@@ -37,6 +37,7 @@ The archive is built from a whitelist. It includes only:
 - `README_en.md`
 - `LICENSE`
 - `.gitignore`
+- `.mcp.json`
 
 This keeps old local source remnants out of the skills backup.
 

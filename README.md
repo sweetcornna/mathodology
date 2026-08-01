@@ -35,17 +35,19 @@ Mathodology 是一套**专为数学建模竞赛设计的数模 Agent Skills**，
 
 ## 一键安装与更新
 
-推荐：在目标项目根目录运行一条命令，把全部内容（9 个 skills + 9 个 Claude Code subagents + 2 个 workflow 模板 + 项目级 `search` MCP 配置）只部署到当前文件夹，作为项目级 skill，不影响其他项目。目标项目已有 `.mcp.json` 时不会被覆盖：
+推荐：在目标项目根目录运行事务型 updater，把全部内容（9 个 skills + 9 个 Claude Code subagents + 2 个 workflow 模板 + 项目级 `search` MCP 配置）只部署到当前文件夹，不影响其他项目。它只会安装缺失的 MCP 配置或迁移可明确识别的旧版标准配置；自定义配置和主动关闭的下载保持不变：
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
+curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
 ```
 
-更新项目级安装（在项目根目录）。一条命令刷新 skills、subagents、workflow 模板和 `search` MCP server 本体，仅当项目还没有 `.mcp.json` 时才写入配置。最后一段刷新 MCP server 是非致命的——没装 `uv` 只会打印一行提示：
+以后在项目根目录运行同一命令更新。更新器会把 ref 解析为同一个不可变提交，全量补齐 9 个 skills，镜像 Mathodology subagents/workflows，并对旧版标准 MCP 配置做保守迁移；失败时自动恢复受管文件。`uvx` 缺失只会跳过可选的 server package 刷新：
 
 ```bash
-npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; } && { uvx free-search-mcp@latest --help >/dev/null 2>&1 || echo 'note: search MCP server not refreshed (is uv installed?)'; }
+curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
 ```
+
+只诊断不写入可追加 `--check`；固定到发布版本可追加 `--ref v0.12.0`。已有自定义 `search` 配置和当前版本中主动关闭的下载不会被覆盖。
 
 备选：一条命令把全部 Mathodology skills 全局安装到 Codex 和 Claude Code（影响本机所有项目）：
 
@@ -56,7 +58,7 @@ npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '
 更新全局安装的 Mathodology skills：
 
 ```bash
-npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-evidence-search mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
 ```
 
 这些命令使用 `vercel-labs/skills` 提供的开放 `skills` CLI，从 GitHub 安装 Agent Skills 到对应 agent 的 skills 目录。
@@ -151,13 +153,13 @@ bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-按名字单独运行某个 gate —— `skills`、`metadata`、`links`、`whitelist`、`agents`、`sync`、`evidence` 或 `selftest`：
+按名字单独运行某个 gate —— `skills`、`metadata`、`links`、`whitelist`、`agents`、`sync`、`evidence`、`updater` 或 `selftest`：
 
 ```bash
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py sync
 ```
 
-`all` 覆盖 skill 与 agent 的 frontmatter、`agents/openai.yaml` 元数据、markdown 链接与 `.claude/...` 路径解析、tracked 文件白名单、中英文档孪生同步，以及双来源证据检索与下载配置契约。`mathodology-award-gates` 携带的脚本各自带 `--self-test`；`validate_repo.py` 用 `selftest` 子命令。
+`all` 覆盖 skill 与 agent 的 frontmatter、`agents/openai.yaml` 元数据、markdown 链接与 `.claude/...` 路径解析、tracked 文件白名单、中英文档孪生同步、双来源证据检索与下载配置契约，以及 canonical 事务型 updater 契约。`mathodology-award-gates` 携带的脚本各自带 `--self-test`；`validate_repo.py selftest` 还会运行 updater 的离线迁移与回滚 fixture。
 
 ## 仓库策略
 

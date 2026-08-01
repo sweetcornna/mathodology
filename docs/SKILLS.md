@@ -72,13 +72,13 @@ Run every maintenance gate from the repository root:
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-Run one gate by naming it — `skills`, `metadata`, `links`, `whitelist`, `agents`, `sync`, `evidence`, or `selftest`:
+Run one gate by naming it — `skills`, `metadata`, `links`, `whitelist`, `agents`, `sync`, `evidence`, `updater`, or `selftest`:
 
 ```bash
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py sync
 ```
 
-The `all` run covers skill and agent frontmatter, `agents/openai.yaml` metadata, markdown link and `.claude/...` path resolution, the tracked-file whitelist, en/zh doc-twin sync (heading and code-block counts, with command-significant code identical), and the dual-source evidence/download configuration contract. From a global skill install, run `scripts/validate_repo.py` from the skill's directory instead of the repo-relative path.
+The `all` run covers skill and agent frontmatter, `agents/openai.yaml` metadata, markdown link and `.claude/...` path resolution, the tracked-file whitelist, en/zh doc-twin sync (heading and code-block counts, with command-significant code identical), the dual-source evidence/download configuration contract, and the canonical transactional updater/distribution contract. `selftest` also runs the updater's offline migration and rollback fixtures. From a global skill install, run `scripts/validate_repo.py` from the skill's directory instead of the repo-relative path.
 
 ## Updating a Skill
 

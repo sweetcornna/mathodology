@@ -22,8 +22,9 @@ Subcommands (default: all):
                 command-significant code (comments stripped) is identical.
     evidence    search MCP download config, dual-source agent/skill contract,
                 workflow guidance, and manual install commands.
-    selftest    construct pass/fail fixtures in a tempdir; prove each checker works.
-    all         run skills, metadata, links, whitelist, agents, sync, evidence.
+    updater     canonical transactional updater and synchronized distribution guidance.
+    selftest    construct pass/fail fixtures and run shipped updater self-tests.
+    all         run skills, metadata, links, whitelist, agents, sync, evidence, updater.
 
 Exit status is non-zero if any run check fails.
 """
@@ -424,6 +425,104 @@ def check_sync(root):
     return ok, lines
 
 
+UPDATER_REL = ".claude/skills/mathodology-whole-project/scripts/update-project.py"
+UPDATER_DOCS = (
+    "README.md",
+    "README_en.md",
+    "docs/INSTALL.md",
+    "docs/INSTALL_zh.md",
+    ".claude/skills/mathodology-whole-project/SKILL.md",
+)
+UPDATER_BOOTSTRAP = (
+    'curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/'
+    + UPDATER_REL
+    + ' -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && '
+    + 'python3 /tmp/mathodology-update.py --project .'
+)
+GLOBAL_RECONCILE = (
+    "npx -y skills@latest add sweetcornna/mathodology --global --copy --yes "
+    "--skill '*' --agent codex claude-code"
+)
+
+
+def check_updater(root):
+    errors = []
+    updater = os.path.join(root, UPDATER_REL)
+    if not os.path.isfile(updater):
+        errors.append(f"missing canonical updater: {UPDATER_REL}")
+    else:
+        if not os.access(updater, os.X_OK):
+            errors.append(f"canonical updater is not executable: {UPDATER_REL}")
+        try:
+            text = _read(updater)
+            for token in (
+                "--project",
+                "--ref",
+                "--check",
+                "--self-test",
+                "skills@latest",
+                '"add"',
+                '"*"',
+                "transaction-rollback",
+                "DOWNLOAD_ENV",
+            ):
+                if token not in text:
+                    errors.append(f"canonical updater missing contract token: {token}")
+        except OSError as exc:
+            errors.append(f"cannot read canonical updater: {exc}")
+
+    legacy_tokens = (
+        "skills@latest update --project",
+        "archive/refs/heads/main.tar.gz | tar -xz --strip-components=1",
+        "uvx free-search-mcp@latest --help >/dev/null",
+        "skills@latest update --global --yes mathodology-",
+    )
+    for rel in UPDATER_DOCS:
+        path = os.path.join(root, rel)
+        try:
+            text = _read(path)
+        except OSError as exc:
+            errors.append(f"cannot read updater guidance {rel}: {exc}")
+            continue
+        if UPDATER_BOOTSTRAP not in text:
+            errors.append(f"{rel} missing canonical updater bootstrap")
+        if GLOBAL_RECONCILE not in text:
+            errors.append(f"{rel} missing wildcard global reconciliation command")
+        for token in legacy_tokens:
+            if token in text:
+                errors.append(f"{rel} retains legacy updater guidance: {token}")
+
+    if not errors:
+        try:
+            completed = subprocess.run(
+                [sys.executable, updater, "--self-test"],
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=120,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"canonical updater self-test could not complete: {exc}")
+        else:
+            if completed.returncode != 0:
+                detail = completed.stdout.strip() or completed.stderr.strip()
+                errors.append(
+                    "canonical updater self-test failed"
+                    + (f": {detail}" if detail else "")
+                )
+
+    if errors:
+        return False, ["FAIL updater: " + error for error in errors]
+    return True, [
+        "PASS updater[canonical-executable]",
+        "PASS updater[synchronized-bootstrap]",
+        "PASS updater[global-reconciliation]",
+        "PASS updater[legacy-pipeline-removed]",
+        "PASS updater[behavioral-self-test]",
+    ]
+
+
 def check_evidence(root):
     lines, errors = [], []
 
@@ -434,8 +533,8 @@ def check_evidence(root):
         search = mcp.get("mcpServers", {}).get("search", {})
         if search.get("command") != "uvx":
             errors.append(".mcp.json search command must be uvx")
-        if "free-search-mcp" not in search.get("args", []):
-            errors.append(".mcp.json search args must include free-search-mcp")
+        if search.get("args") != ["free-search-mcp"]:
+            errors.append(".mcp.json search args must equal ['free-search-mcp']")
         download_dir = search.get("env", {}).get("SEARCH_MCP_DOWNLOAD_DIR")
         if not isinstance(download_dir, str) or not download_dir.strip():
             errors.append(".mcp.json must set non-empty SEARCH_MCP_DOWNLOAD_DIR")
@@ -581,8 +680,18 @@ CHECKS = {
     "agents": check_agents,
     "sync": check_sync,
     "evidence": check_evidence,
+    "updater": check_updater,
 }
-ALL_ORDER = ["skills", "metadata", "links", "whitelist", "agents", "sync", "evidence"]
+ALL_ORDER = [
+    "skills",
+    "metadata",
+    "links",
+    "whitelist",
+    "agents",
+    "sync",
+    "evidence",
+    "updater",
+]
 
 
 # --------------------------------------------------------------------------
@@ -818,6 +927,44 @@ def _selftest():
     )
     _mk(skill_path, _read(skill_path).replace("codex mcp add", "codex mcp missing"))
     expect("evidence-fail(skill-manual-command)", check_evidence, t, False)
+    shutil.rmtree(t, ignore_errors=True)
+
+    updater = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "mathodology-whole-project",
+            "scripts",
+            "update-project.py",
+        )
+    )
+    t = tempfile.mkdtemp()
+    fixture_updater = os.path.join(t, UPDATER_REL)
+    os.makedirs(os.path.dirname(fixture_updater), exist_ok=True)
+    shutil.copy2(updater, fixture_updater)
+    os.chmod(fixture_updater, 0o755)
+    valid_updater_guidance = UPDATER_BOOTSTRAP + "\n" + GLOBAL_RECONCILE + "\n"
+    for rel in UPDATER_DOCS:
+        _mk(os.path.join(t, rel), valid_updater_guidance)
+    expect("updater-pass", check_updater, t, True)
+    readme = os.path.join(t, "README.md")
+    _mk(readme, valid_updater_guidance + "npx -y skills@latest update --project --yes\n")
+    expect("updater-fail(legacy-update-pipeline)", check_updater, t, False)
+    _mk(
+        readme,
+        valid_updater_guidance
+        + "curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1\n",
+    )
+    expect("updater-fail(legacy-install-pipeline)", check_updater, t, False)
+    _mk(
+        readme,
+        valid_updater_guidance
+        + "npx -y skills@latest update --global --yes mathodology-whole-project mathodology-evidence-search\n",
+    )
+    expect("updater-fail(hardcoded-global-update)", check_updater, t, False)
+    _mk(readme, UPDATER_BOOTSTRAP + "\n")
+    expect("updater-fail(missing-global-reconciliation)", check_updater, t, False)
     shutil.rmtree(t, ignore_errors=True)
 
     print("validate_repo selftest:", "OK" if ok else "FAILED")

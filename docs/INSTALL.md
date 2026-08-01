@@ -11,10 +11,10 @@ There are two install scopes:
 
 ## Project-Level Install (Current Folder Only)
 
-Run from the root of the target project. One command deploys everything Mathodology ships — all 9 skills, the 9 Claude Code subagents, the 2 contest workflow templates, and the project-level `search` MCP config — into that folder only. An existing `.mcp.json` is left untouched:
+Run from the root of the target project. The transactional updater deploys everything Mathodology ships — all 9 skills, the 9 Claude Code subagents, the 2 contest workflow templates, and the project-level `search` MCP config — into that folder only. It installs a missing MCP config or migrates only an identifiable legacy canonical config; custom configurations and intentional download opt-outs remain unchanged:
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
+curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
 ```
 
 What it creates, all inside the current folder:
@@ -22,12 +22,12 @@ What it creates, all inside the current folder:
 - `./.claude/skills/mathodology-*` — the 9 skills (copied, no symlinks)
 - `./.claude/agents/mathodology-*.md` — the 9 project subagents
 - `./.claude/workflows/mathodology-*.md` — the 2 workflow templates
-- `./.mcp.json` — the `search` MCP server registration, written only when the project has no `.mcp.json` yet
+- `./.mcp.json` — the `search` MCP server registration, created when missing and rewritten only for a positively identified legacy canonical migration
 - `./skills-lock.json` — the `skills` CLI project lockfile
 
 Nothing is written to `~/.claude/`, `~/.agents/`, or any other project.
 
-If you only want the skills (no subagents or workflow templates), drop the second half:
+For a skills-only install without subagents, workflow templates, or project MCP handling, invoke the underlying CLI directly:
 
 ```bash
 npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code
@@ -41,17 +41,38 @@ npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agen
 
 Restart Claude Code (or Codex) in that project after installation.
 
-### Update A Project-Level Install
-
-From the project root. One command refreshes the skills, the subagents, the workflow templates, and the `search` MCP server itself, and writes `.mcp.json` only when the project has none:
+If this directory is a clone of the Mathodology repository itself, update the checkout instead of running the copy updater:
 
 ```bash
-npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; } && { uvx free-search-mcp@latest --help >/dev/null 2>&1 || echo 'note: search MCP server not refreshed (is uv installed?)'; }
+git pull --ff-only
+python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-An existing `.mcp.json` is never rewritten by an update, so a project that already had its own MCP config does not silently pick up new servers. If yours has no `search` entry yet, use the download-enabled manual registration command in [Search MCP For Evidence Work](#search-mcp-for-evidence-work).
+### Update A Project-Level Install
 
-The final clause refreshes the MCP server package itself, which `uvx` otherwise pins to whatever its cache already holds. It is deliberately non-fatal: a machine without `uv` prints a note instead of failing the whole update, since the skills and subagents updated fine.
+From the project root. The updater first resolves `main` (or `--ref`) to an immutable commit, then uses that same commit to reconcile all 9 skills, mirror Mathodology subagents/workflows, and handle MCP configuration:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
+```
+
+Diagnose without writing:
+
+```bash
+python3 /tmp/mathodology-update.py --project . --check
+```
+
+Install a reproducible release payload:
+
+```bash
+python3 /tmp/mathodology-update.py --project . --ref v0.12.0
+```
+
+The updater uses a complete `skills add` reconciliation so legacy locks gain newly introduced skills, while non-Mathodology lock entries remain unchanged. It replaces only `mathodology-*` managed assets. On failure, it restores the original skills, agents, workflows, `skills-lock.json`, and `.mcp.json`. Exit `0` means success, `1` means the update failed and was rolled back, and `2` means an argument, dependency, or configuration error.
+
+MCP handling is conservative: a missing file receives the shipped config; a download env is added only when both an old evidence skill and the old canonical `uvx free-search-mcp` registration identify a legacy install. Custom search entries, a missing search entry, invalid JSON, and intentional download opt-outs in a current installation are never overwritten speculatively. Invalid JSON fails before any write; other preserved states appear in the JSON summary. Use the manual registration command in [Search MCP For Evidence Work](#search-mcp-for-evidence-work) when no `search` entry exists.
+
+After a successful asset update, `uvx free-search-mcp@latest --help` refreshes the MCP package. Missing `uvx` or a refresh failure is recorded as non-fatal.
 
 ### Verify A Project-Level Install
 
@@ -104,7 +125,7 @@ Do not use `skills add <repo> --help` as a help command. Current `skills` CLI ve
 Update only Mathodology skills:
 
 ```bash
-npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-evidence-search mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
 ```
 
 Update all globally installed skills:
@@ -232,8 +253,9 @@ reports every non-`combined` run as reduced coverage.
 
 ## Requirements
 
+- Python 3.9 or newer for the transactional project updater
 - Node.js and `npx`
 - `uv` for the `search` MCP server used by evidence work (optional; skills install without it)
-- `curl` and `tar` for the subagents/workflows half of the project-level install
+- `curl` for the one-command updater bootstrap
 - network access to GitHub and npm
 - write access to the target skills directories
