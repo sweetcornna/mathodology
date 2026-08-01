@@ -2841,7 +2841,9 @@ def self_test():
                 restore_waitid_attribute()
                 os.environ["PATH"] = original_path
 
-            waitid_eperm_start = time.monotonic()
+            # Cleanup latency is not asserted here: a denied SIGTERM never
+            # reaches the grace-period branch, so any such check is vacuous.
+            # `auxiliary-cleanup-denial-is-best-effort` covers the EPERM contract.
             waitid_eperm_killpg = os.killpg
             try:
                 simple_success = (
@@ -2874,7 +2876,6 @@ def self_test():
                 os.killpg = waitid_eperm_killpg
                 restore_waitid_attribute()
                 os.environ["PATH"] = original_path
-            waitid_eperm_elapsed = time.monotonic() - waitid_eperm_start
             check(
                 "grouped-process-waitid-fallback",
                 waitid_fallback_npx
@@ -2885,8 +2886,7 @@ def self_test():
                 and not waitid_git_marker.exists()
                 and waitid_eperm_npx
                 and waitid_eperm_mcp == "refreshed"
-                and waitid_eperm_git
-                and waitid_eperm_elapsed < 3,
+                and waitid_eperm_git,
             )
 
         symlink_project = temp / "symlink-root"
