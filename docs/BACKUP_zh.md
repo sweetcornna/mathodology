@@ -37,6 +37,7 @@ untracked-files.txt
 - `README_en.md`
 - `LICENSE`
 - `.gitignore`
+- `.mcp.json`
 
 这样可以把旧的本地源码残留排除在 skills 备份之外。
 

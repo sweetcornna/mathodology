@@ -11,10 +11,10 @@ Mathodology 使用 `vercel-labs/skills` 提供的开放 `skills` CLI 作为安�
 
 ## 项目级安装（只部署到当前文件夹）
 
-在目标项目根目录运行。一条命令把 Mathodology 的全部内容——9 个 skills、9 个 Claude Code subagents、2 个竞赛 workflow 模板、项目级 `search` MCP 配置——只部署到该文件夹。已有的 `.mcp.json` 不会被动：
+在目标项目根目录运行。事务型 updater 把 Mathodology 的全部内容——9 个 skills、9 个 Claude Code subagents、2 个竞赛 workflow 模板、项目级 `search` MCP 配置——只部署到该文件夹。它只安装缺失的 MCP 配置或迁移可明确识别的旧版标准配置；自定义配置和主动关闭的下载保持不变：
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
+curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
 ```
 
 它创建的所有文件都在当前文件夹内：
@@ -22,12 +22,12 @@ npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agen
 - `./.claude/skills/mathodology-*` — 9 个 skills（复制模式，无 symlink）
 - `./.claude/agents/mathodology-*.md` — 9 个项目 subagents
 - `./.claude/workflows/mathodology-*.md` — 2 个 workflow 模板
-- `./.mcp.json` — `search` MCP server 注册；仅当项目还没有 `.mcp.json` 时写入
+- `./.mcp.json` — `search` MCP server 注册；缺失时创建，仅在明确识别为旧版标准配置时因迁移而重写
 - `./skills-lock.json` — `skills` CLI 的项目 lockfile
 
 不会写入 `~/.claude/`、`~/.agents/` 或任何其他项目。
 
-只要 skills、不要 subagents 和 workflow 模板时，去掉后半段：
+只要 skills、不安装 subagents、workflow 模板或处理项目 MCP 时，直接调用底层 CLI：
 
 ```bash
 npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code
@@ -41,17 +41,38 @@ npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agen
 
 安装后在该项目里重启 Claude Code（或 Codex）。
 
-### 更新项目级安装
-
-在项目根目录运行。一条命令刷新 skills、subagents、workflow 模板和 `search` MCP server 本体，并且仅当项目还没有 `.mcp.json` 时才写入配置：
+如果当前目录本身是 Mathodology 仓库的 clone，不要运行复制 updater，应更新 checkout：
 
 ```bash
-npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; } && { uvx free-search-mcp@latest --help >/dev/null 2>&1 || echo 'note: search MCP server not refreshed (is uv installed?)'; }
+git pull --ff-only
+python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-更新不会重写已存在的 `.mcp.json`，所以自带 MCP 配置的项目不会被悄悄塞进新 server。若你的配置里还没有 `search` 条目，请使用[证据检索用的 Search MCP](#证据检索用的-search-mcp)中的默认开启下载手工注册命令。
+### 更新项目级安装
 
-最后一段刷新的是 MCP server 包本身——否则 `uvx` 会一直用缓存里已有的版本。它刻意设计成非致命：没装 `uv` 的机器只打印一行提示，不会让整个更新失败，因为 skills 和 subagents 已经更新成功了。
+在项目根目录运行。更新器先把 `main`（或 `--ref` 指定值）解析为不可变提交，再从同一提交全量补齐 9 个 skills、镜像 Mathodology subagents/workflows，并处理 MCP 配置：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
+```
+
+诊断而不写入：
+
+```bash
+python3 /tmp/mathodology-update.py --project . --check
+```
+
+安装确定的发布版本：
+
+```bash
+python3 /tmp/mathodology-update.py --project . --ref v0.12.0
+```
+
+更新器用全量 `skills add` 补齐旧 lock 缺少的 skill，并保留非 Mathodology lock 条目。它只替换 `mathodology-*` 受管资产；失败会恢复原 skills、agents、workflows、`skills-lock.json` 和 `.mcp.json`。退出码 `0` 表示成功，`1` 表示更新失败且已回滚，`2` 表示参数、依赖或配置错误。
+
+MCP 处理是保守的：缺文件时安装默认配置；仅当旧 evidence skill 与旧标准 `uvx free-search-mcp` 配置同时出现时，才补上下载环境变量。自定义 `search`、缺少 `search`、无效 JSON，以及当前 skill 中主动关闭下载的配置都不会被猜测性覆盖。无效 JSON 会在任何写入前失败；其余保留状态会在 JSON 摘要中报告。若配置里没有 `search`，使用[证据检索用的 Search MCP](#证据检索用的-search-mcp)中的手工注册命令。
+
+`uvx free-search-mcp@latest --help` 仍在成功更新后刷新 server package；没有 `uvx` 或刷新失败都只记为非致命状态。
 
 ### 验证项目级安装
 
@@ -104,7 +125,7 @@ npx -y skills@latest --help
 只更新 Mathodology skills：
 
 ```bash
-npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-evidence-search mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
 ```
 
 更新所有全局安装的 skills：
@@ -220,8 +241,9 @@ critic 会把所有非 `combined` 运行报告为覆盖度下降。
 
 ## 要求
 
+- Python 3.9 或更高版本，用于事务型项目 updater
 - Node.js 和 `npx`
 - 证据检索用的 `search` MCP server 需要 `uv`（可选；没有它 skills 照常安装）
-- 项目级安装的 subagents/workflows 半段需要 `curl` 和 `tar`
+- 一键下载 updater 引导脚本需要 `curl`
 - 能访问 GitHub 和 npm
 - 对目标 skills 目录有写权限

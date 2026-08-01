@@ -35,17 +35,19 @@ No application source, CI workflows, deployment files, generated contracts, pack
 
 ## One-Command Install And Update
 
-Recommended: run one command from the target project root to deploy everything (9 skills + 9 Claude Code subagents + 2 workflow templates + the project-level `search` MCP config) into that folder only, as project-level skills, without affecting any other project. An existing `.mcp.json` in the target project is never overwritten:
+Recommended: run the transactional updater from the target project root to deploy everything (9 skills + 9 Claude Code subagents + 2 workflow templates + the project-level `search` MCP config) into that folder only, without affecting any other project. It installs a missing MCP config or migrates only an identifiable legacy canonical config; custom configurations and intentional download opt-outs remain unchanged:
 
 ```bash
-npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; }
+curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
 ```
 
-Update a project-level install (from the project root). One command refreshes the skills, the subagents, the workflow templates, and the `search` MCP server itself, and writes `.mcp.json` only when the project has none. The MCP refresh is the last clause and is non-fatal — without `uv` it just prints a note:
+Run the same command from the project root for later updates. The updater resolves one immutable commit, reconciles all 9 skills, mirrors Mathodology subagents/workflows, conservatively migrates identifiable legacy MCP config, and restores managed files on failure. Missing `uvx` only skips the optional server-package refresh:
 
 ```bash
-npx -y skills@latest update --project --yes && curl -fsSL https://github.com/sweetcornna/mathodology/archive/refs/heads/main.tar.gz | tar -xz --strip-components=1 'mathodology-main/.claude/agents' 'mathodology-main/.claude/workflows' && { [ -f .mcp.json ] || curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.mcp.json -o .mcp.json; } && { uvx free-search-mcp@latest --help >/dev/null 2>&1 || echo 'note: search MCP server not refreshed (is uv installed?)'; }
+curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
 ```
+
+Append `--check` to diagnose without writing or `--ref v0.12.0` to install a reproducible release payload. Existing custom search configurations and intentional download opt-outs are preserved.
 
 Alternative: install all Mathodology skills globally for Codex and Claude Code (affects every project on the machine):
 
@@ -56,7 +58,7 @@ npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '
 Update globally installed Mathodology skills:
 
 ```bash
-npx -y skills@latest update --global --yes mathodology-whole-project mathodology-agent-pipeline mathodology-award-gates mathodology-dev-test-release mathodology-evidence-search mathodology-gateway-api mathodology-project-orientation mathodology-skill-authoring mathodology-web-ui
+npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
 ```
 
 These commands use the open `skills` CLI from `vercel-labs/skills`, which installs Agent Skills from GitHub into the right agent directories.
@@ -151,13 +153,13 @@ Run every maintenance gate from the repository root:
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-Run one gate by naming it — `skills`, `metadata`, `links`, `whitelist`, `agents`, `sync`, `evidence`, or `selftest`:
+Run one gate by naming it — `skills`, `metadata`, `links`, `whitelist`, `agents`, `sync`, `evidence`, `updater`, or `selftest`:
 
 ```bash
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py sync
 ```
 
-The `all` run covers skill and agent frontmatter, `agents/openai.yaml` metadata, markdown link and `.claude/...` path resolution, the tracked-file whitelist, en/zh doc-twin sync, and the dual-source evidence/download configuration contract. The scripts shipped in `mathodology-award-gates` each carry a `--self-test`; `validate_repo.py` uses its `selftest` subcommand.
+The `all` run covers skill and agent frontmatter, `agents/openai.yaml` metadata, markdown link and `.claude/...` path resolution, the tracked-file whitelist, en/zh doc-twin sync, the dual-source evidence/download contract, and the canonical transactional updater contract. The scripts shipped in `mathodology-award-gates` each carry a `--self-test`; `validate_repo.py selftest` also runs the updater's offline migration and rollback fixtures.
 
 ## Repository Policy
 
