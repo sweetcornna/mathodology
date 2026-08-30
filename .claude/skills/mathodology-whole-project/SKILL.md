@@ -126,7 +126,7 @@ Use the same command to update a full Claude Code project install. It resolves o
 curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
 ```
 
-Append `--check` for a read-only diagnosis or `--ref v0.12.0` for a reproducible release payload. The updater installs a missing `.mcp.json`, migrates only an identifiable legacy canonical search registration, and preserves custom, missing-search, or intentionally download-disabled configurations. MCP package refresh remains non-fatal.
+Append `--check` for a read-only diagnosis or `--ref v0.12.0` for a reproducible release payload. The updater installs a missing `.mcp.json`, migrates only an identifiable legacy canonical search registration, recognises and preserves plugin-pinned registrations, and preserves custom, missing-search, or intentionally download-disabled configurations. A plugin-pinned registration refreshes with `/plugin update free-search`; MCP package refresh remains non-fatal.
 
 For a machine-wide install across all projects, use the global variant:
 

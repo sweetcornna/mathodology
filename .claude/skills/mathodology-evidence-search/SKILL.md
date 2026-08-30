@@ -56,8 +56,13 @@ requires a reason and its coverage loss under `missing_evidence`. Never silently
 degrade or convert unavailable search into evidence of absence.
 
 Treat MCP capabilities individually. If search works but `download` is absent,
-continue discovery and reading, record a configuration degradation under
-`missing_evidence`, and do not reconfigure MCP from an agent.
+two causes are ordinary and neither is yours to fix: a Claude Code plugin
+install, whose `.mcp.json` sets no environment variables and so starts with no
+`SEARCH_MCP_DOWNLOAD_DIR`, or a deliberate opt-out by a user who removed it.
+Either way the remedy is a user action (`SEARCH_MCP_DOWNLOAD_DIR` in
+`~/.config/search-mcp/.env`), not an agent one. Continue discovery and reading,
+record a configuration degradation under `missing_evidence`, and do not
+reconfigure MCP from an agent.
 
 Registering it elsewhere with downloads enabled (no API key):
 
@@ -67,6 +72,15 @@ claude mcp add --transport stdio --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/sea
 
 # Codex
 codex mcp add --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" search -- uvx free-search-mcp
+```
+
+A Claude Code plugin registers the same server with no checkout and no `mcp add`
+invocation, but pins the version to the plugin's own and sets no environment
+variables, so it has no `download` tool until one is added:
+
+```
+/plugin marketplace add sweetcornna/free-search-mcp
+/plugin install free-search@free-search-mcp
 ```
 
 ## Routing Rules
