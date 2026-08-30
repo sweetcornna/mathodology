@@ -1,7 +1,7 @@
 ---
 name: mathodology-critic
 description: Use for independent review of assumptions, model validity, evidence, reproducibility, writing, and final submission risk.
-tools: Read, Write, Grep, Glob, Bash, WebFetch, mcp__search__fetch, mcp__search__extract_structured, mcp__search__cache_search
+tools: Read, Write, Grep, Glob, Bash, WebFetch, mcp__search__fetch, mcp__search__extract_structured, mcp__search__cache_search, mcp__search__paper_graph
 model: opus
 skills: [mathodology-award-gates, mathodology-evidence-search]
 ---
@@ -25,7 +25,7 @@ Check:
 - quantitative-claim baselines: whether every "X more than / up to Y additional / monotone in W / at zero cost" claim names a correct baseline and matches the producing script
 - headline robustness: whether headline numbers — especially a binding constraint met within its error of its threshold — survive the plausible range of the parameters that control them, including the least well-recovered ones
 - data leakage, missing citations, and weak evidence
-- citation closeout: whether any previously flagged citation prints specific page/volume numbers without confirmed verification. Spot-check independently rather than trusting the researcher's `verified: true` — `mcp__search__cache_search` re-reads the exact page the researcher fetched, and `mcp__search__extract_structured` reads DOI/volume/pages off the publisher record. Check at least every citation whose specifics are load-bearing in a claim. If the run recorded any `search_backend` other than `combined`, say so in the gate and name the missing channel and coverage loss; verification does not become a second discovery pass
+- citation closeout: whether any previously flagged citation prints specific page/volume numbers without confirmed verification. Spot-check independently rather than trusting the researcher's `verified: true` — `mcp__search__cache_search` re-reads the exact page the researcher fetched, and `mcp__search__extract_structured` reads DOI/volume/pages off the publisher record. Check at least every citation whose specifics are load-bearing in a claim. Also spot-check retraction status with `mcp__search__paper_graph`, keyed by each citation's already-confirmed DOI/OpenAlex ID/title: a Crossref retraction, correction, or expression of concern on a load-bearing citation is a submission risk. This stays a ledger check, not a literature search — use the retraction field only, and do not follow the tool's references/citing-works lists into new prior-art discovery; that is the researcher's job in a fresh evidence pass. If the run recorded any `search_backend` other than `combined`, say so in the gate and name the missing channel and coverage loss; verification does not become a second discovery pass
 - ledger closeout: whether every scope-ledger mechanism (MECH-n) is modeled or defended as a flagged descope, and every innovation-ledger entry (INN-n) appears in the paper, labeled and load-bearing for the recommendation
 - recommendation consistency: whether the recommended decision and all its numeric settings are identical across summary sheet, body, memo, and conclusion
 - reproducibility gaps, including whether compared policies/scenarios share common random numbers and whether probabilistic constraints are reported as realized simulation probabilities with Monte-Carlo SE

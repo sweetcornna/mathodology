@@ -188,7 +188,10 @@ Expected skills:
 `mathodology-evidence-search` drives its evidence and citation-verification protocol
 through an MCP server named `search` ([free-search-mcp](https://github.com/sweetcornna/free-search-mcp)):
 keyless multi-engine web search, page and PDF reading, publisher-metadata extraction,
-and routing to the literature and dataset databases (arXiv, OpenAlex, Crossref, PubMed, Zenodo).
+a two-level category tree routing to literature, dataset, news, finance, code, forum,
+and image sources (arXiv, OpenAlex, Crossref, PubMed, Zenodo, and many more — see
+`mathodology-evidence-search`'s Routing Rules for the full catalogue), and a
+`paper_graph` prior-art and retraction check.
 
 A clone needs no configuration. The repository ships a `.mcp.json` that registers the
 server at project scope, so Claude Code offers `search` the first time you open the
@@ -245,9 +248,9 @@ Browser-rendered engines additionally need Chromium once; without it, HTTP searc
 fetch still work.
 
 The server is optional, but a normal evidence run uses it together with built-in
-`WebSearch`: MCP category routing supplies literature and dataset coverage while the
-built-in channel independently broadens discovery, and the researcher reconciles both
-result sets. If either channel is unavailable, the handoff records a single-source
+`WebSearch`: MCP category routing supplies vertical coverage across its literature,
+dataset, news, finance, code, forum, and image sources while the built-in channel
+independently broadens discovery, and the researcher reconciles both result sets. If either channel is unavailable, the handoff records a single-source
 `search_backend` plus the degradation reason; `none` blocks evidence work. The critic
 reports every non-`combined` run as reduced coverage.
 

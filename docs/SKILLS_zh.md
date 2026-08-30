@@ -54,7 +54,7 @@ Claude Code 项目编排资产放在：
 - 整体迁移或备份：从 `mathodology-whole-project` 开始。
 - 仓库清理或策略检查：从 `mathodology-project-orientation` 开始。
 - Skill 修改：从 `mathodology-skill-authoring` 开始。
-- 外部证据、文献、数据集或引用核验：从 `mathodology-evidence-search` 开始。它默认同时使用内置 `WebSearch` 与项目 `search` MCP server（free-search-mcp），综合两边来源，并显式记录任何单来源降级。仓库自带的 `.mcp.json` 会注册 server 并开启暂存下载，因此克隆后无需配置，见 `docs/INSTALL_zh.md`。
+- 外部证据、文献、数据集或引用核验：从 `mathodology-evidence-search` 开始。它默认同时使用内置 `WebSearch` 与项目 `search` MCP server（free-search-mcp），通过两级分类树路由查询，综合两边来源，用 `paper_graph` 做已有文献与撤稿核查，并显式记录任何单来源降级。仓库自带的 `.mcp.json` 会注册 server 并开启暂存下载，因此克隆后无需配置，见 `docs/INSTALL_zh.md`。
 
 ## 不再存在的内容
 
