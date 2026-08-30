@@ -224,12 +224,33 @@ Mathodology 项目安装应当提供 `download` 工具。server 本身仍把磁�
 MCP 工具存在但 `download` 缺失，应把它视为配置降级；agent 只报告，不会静默修改 MCP 配置。
 若有意关闭下载，删掉 `.mcp.json` 里的 `env` 块即可，server 其余功能不受影响。
 
-`uvx` 用的是缓存里已有的版本，所以在新版本发布前用过 `free-search-mcp` 的机器会一直停在旧版。
-用一条命令刷新——`--help` 会立即退出，下次启动 server 就是刚缓存下来的版本：
+第三条注册路径，free-search-mcp 0.11.0 新增，是 Claude Code plugin——不需要仓库
+checkout，也不需要 `mcp add` 命令：
+
+```
+/plugin marketplace add sweetcornna/free-search-mcp
+/plugin install free-search@free-search-mcp
+```
+
+它注册的是同一个 `search` server，以 stdio 方式运行 `uvx free-search-mcp==<version>`，
+所以 `PATH` 里有 `uv` 仍是唯一前提。和上面浮动的仓库自带 `.mcp.json`、两条手工命令不同，
+plugin **锁定**版本到 plugin 自身的版本——装 plugin 0.11.0 就一直跑 package 0.11.0。
+它的 `.mcp.json` 也不设置任何环境变量，所以 plugin 安装默认没有 `SEARCH_MCP_DOWNLOAD_DIR`，
+也就没有 `download` 工具；想要它，把 `SEARCH_MCP_DOWNLOAD_DIR` 写进 `~/.config/search-mcp/.env`
+即可，server 读取该文件与安装路径无关。用 `/plugin update free-search` 升级，需要重启
+Claude Code 才会生效。
+
+`uvx` 用的是缓存里已有的版本，所以在新版本发布前用过 `free-search-mcp` 的机器会一直停在旧版——
+这对仓库自带的 `.mcp.json` 和上面两条手工命令成立，因为它们都是浮动的。用一条命令刷新——
+`--help` 会立即退出，下次启动 server 就是刚缓存下来的版本：
 
 ```bash
 uvx free-search-mcp@latest --help
 ```
+
+这条刷新命令对 plugin 安装没有作用：plugin 把 `uvx free-search-mcp==<version>` 锁定在
+自己的版本上，`@latest` 没有未锁定的版本可解析。刷新 plugin 安装请改用
+`/plugin update free-search`，之后重启 Claude Code。
 
 想换成本地 checkout 或带 key 的引擎组合时，用同一个 server 名字在 local 作用域注册——
 local 作用域会覆盖项目的 `.mcp.json`。浏览器渲染类引擎还需要装一次 Chromium；不装时

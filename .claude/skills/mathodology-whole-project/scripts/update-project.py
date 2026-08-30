@@ -495,6 +495,25 @@ def _canonical_search(search):
     )
 
 
+def _plugin_pinned_search(search):
+    # Plugin-managed registrations must remain pinned so the updater never
+    # mistakes a Claude Code-owned file for a canonical config it can migrate.
+    if (
+        not isinstance(search, dict)
+        or not set(search).issubset({"command", "args"})
+        or search.get("command") != "uvx"
+    ):
+        return False
+    args = search.get("args")
+    if not isinstance(args, list) or len(args) != 1 or not isinstance(args[0], str):
+        return False
+    prefix = "free-search-mcp=="
+    if not args[0].startswith(prefix):
+        return False
+    version = args[0][len(prefix) :]
+    return bool(version) and "=" not in version and not any(char.isspace() for char in version)
+
+
 def _mcp_state(observed_status, action, data, result_status=None):
     return {
         "observed_status": observed_status,
@@ -524,6 +543,8 @@ def classify_mcp(project):
     search = servers.get("search")
     if search is None:
         return _mcp_state("missing", "preserve", data)
+    if _plugin_pinned_search(search):
+        return _mcp_state("plugin-pinned", "preserve", data)
     if not _canonical_search(search):
         return _mcp_state("custom", "preserve", data)
     env = search.get("env")
@@ -1280,7 +1301,10 @@ def validate_install(project, sha, inventory, foreign_lock):
         raise UpdateError("installed evidence researcher lacks required discovery/download tools")
 
 
-def refresh_mcp_package():
+def refresh_mcp_package(observed_status=None):
+    if observed_status == "plugin-pinned":
+        note("search MCP plugin is pinned; run /plugin update free-search and restart Claude Code")
+        return "plugin-update-required"
     uvx = shutil.which("uvx")
     if not uvx:
         note("uvx not found; search MCP package refresh skipped")
@@ -1298,6 +1322,14 @@ def refresh_mcp_package():
         note("search MCP package refresh failed; project update remains valid")
         return "failed"
     return "refreshed"
+
+
+def _refresh_mcp_for_state(mcp_state, refresher):
+    # A pinned plugin spec does not use the uvx cache, so refreshing @latest
+    # would succeed without changing the server this project actually runs.
+    if mcp_state["observed_status"] == "plugin-pinned":
+        return refresh_mcp_package("plugin-pinned")
+    return refresher()
 
 
 def _is_repository_remote(remote):
@@ -1340,6 +1372,12 @@ def _is_mathodology_clone(project):
 
 def summarize_check(project, sha, inventory, mcp_state, include_details=False):
     _reject_managed_symlinks(project)
+    if mcp_state["observed_status"] == "plugin-pinned":
+        note(
+            "plugin-pinned search MCP has no download tool without "
+            "SEARCH_MCP_DOWNLOAD_DIR; set SEARCH_MCP_DOWNLOAD_DIR in "
+            "~/.config/search-mcp/.env"
+        )
     lock = read_lock(project)
     skills_root = project / ".claude" / "skills"
     present_skill_names = [
@@ -1500,7 +1538,7 @@ def _execute_update_locked(project, sha, snapshot, inventory, skills_installer, 
             "agents": len(inventory["agents"]),
             "workflows": len(inventory["workflows"]),
             "mcp_status": mcp_state["observed_status"],
-            "mcp_package": refresher(),
+            "mcp_package": _refresh_mcp_for_state(mcp_state, refresher),
         }
     original_lock = read_lock(project)
     foreign_lock = {
@@ -1561,7 +1599,7 @@ def _execute_update_locked(project, sha, snapshot, inventory, skills_installer, 
         except BaseException as original_error:
             _restore_after_failure(project, backup, original_error)
             raise
-    package_status = refresher()
+    package_status = _refresh_mcp_for_state(mcp_state, refresher)
     return {
         "mode": "update",
         "resolved_sha": sha,
@@ -1876,6 +1914,93 @@ def self_test():
             current_result["mcp_package"] == "refreshed"
             and refresh_calls == [True]
             and _tree_digest(project) == current_digest,
+        )
+
+        plugin = temp / "plugin-pinned"
+        shutil.copytree(project, plugin)
+        plugin_mcp_path = plugin / ".mcp.json"
+        plugin_mcp_path.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "search": {
+                            "command": "uvx",
+                            "args": ["free-search-mcp==0.11.0"],
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        plugin_mcp_before = plugin_mcp_path.read_bytes()
+        plugin_state = classify_mcp(plugin)
+        plugin_diagnosis = []
+        original_note = globals()["note"]
+        try:
+            globals()["note"] = plugin_diagnosis.append
+            summarize_check(plugin, "a" * 40, inventory, plugin_state)
+        finally:
+            globals()["note"] = original_note
+        check(
+            "plugin-pinned-mcp-state-is-explicit",
+            plugin_state["observed_status"] == "plugin-pinned"
+            and plugin_state["action"] == "preserve"
+            and plugin_mcp_path.read_bytes() == plugin_mcp_before,
+        )
+        plugin_refresh_calls = []
+        plugin_refresh_notes = []
+        try:
+            globals()["note"] = plugin_refresh_notes.append
+            plugin_result = execute_update(
+                plugin,
+                "a" * 40,
+                snapshot,
+                inventory,
+                skills_installer=unexpected_installer,
+                refresher=lambda: plugin_refresh_calls.append(True) or "refreshed",
+            )
+        finally:
+            globals()["note"] = original_note
+        check(
+            "plugin-pinned-diagnosis-and-refresh-guidance",
+            plugin_diagnosis
+            == [
+                "plugin-pinned search MCP has no download tool without "
+                "SEARCH_MCP_DOWNLOAD_DIR; set SEARCH_MCP_DOWNLOAD_DIR in "
+                "~/.config/search-mcp/.env"
+            ]
+            and plugin_result["mcp_package"] == "plugin-update-required"
+            and plugin_refresh_calls == []
+            and plugin_refresh_notes
+            == [
+                "plugin-pinned search MCP has no download tool without "
+                "SEARCH_MCP_DOWNLOAD_DIR; set SEARCH_MCP_DOWNLOAD_DIR in "
+                "~/.config/search-mcp/.env",
+                "search MCP plugin is pinned; run /plugin update free-search "
+                "and restart Claude Code"
+            ]
+            and plugin_mcp_path.read_bytes() == plugin_mcp_before,
+        )
+        non_plugin_pinned = temp / "non-plugin-pinned"
+        non_plugin_pinned.mkdir()
+        (non_plugin_pinned / ".mcp.json").write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "search": {
+                            "command": "uvx",
+                            "args": ["free-search-mcp==0.11.0", "--extra"],
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        non_plugin_state = classify_mcp(non_plugin_pinned)
+        check(
+            "non-plugin-pinned-shape-is-custom",
+            non_plugin_state["observed_status"] == "custom"
+            and non_plugin_state["action"] == "preserve",
         )
         stale_lock_data = json.loads(
             (project / "skills-lock.json").read_text(encoding="utf-8")

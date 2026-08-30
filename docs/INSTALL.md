@@ -233,14 +233,38 @@ but `download` is absent, treat that as a configuration degradation; agents repo
 rather than silently changing MCP configuration. Delete the `env` block from
 `.mcp.json` to turn downloads back off intentionally; the rest of the server is unaffected.
 
+A third registration path, added in free-search-mcp 0.11.0, is the Claude Code
+plugin — no repository checkout and no `mcp add` invocation:
+
+```
+/plugin marketplace add sweetcornna/free-search-mcp
+/plugin install free-search@free-search-mcp
+```
+
+It registers the same `search` server as a stdio `uvx free-search-mcp==<version>`
+process, so `uv` on `PATH` is still the only prerequisite. Unlike the shipped
+`.mcp.json` and both manual commands above, which float, the plugin **pins** the
+version to the plugin's own version — installing plugin 0.11.0 always runs
+package 0.11.0. Its `.mcp.json` also sets no environment variables, so a plugin
+install has no `SEARCH_MCP_DOWNLOAD_DIR` and therefore no `download` tool by
+default; set `SEARCH_MCP_DOWNLOAD_DIR` in `~/.config/search-mcp/.env` to enable
+it, since the server reads that file regardless of install path. Upgrade with
+`/plugin update free-search`, which needs a Claude Code restart to take effect.
+
 `uvx` serves whatever version its cache already holds, so a machine that ran
-`free-search-mcp` before a new release keeps the old one indefinitely. Refresh it
+`free-search-mcp` before a new release keeps the old one indefinitely — true for
+the shipped `.mcp.json` and both manual commands above, which float. Refresh it
 with one command — `--help` exits immediately, and the next server start picks up
 the version it just cached:
 
 ```bash
 uvx free-search-mcp@latest --help
 ```
+
+This refresh does nothing for a plugin install: the plugin pins its
+`uvx free-search-mcp==<version>` invocation to the plugin's own version, so
+`@latest` has no unpinned version to resolve to. Refresh a plugin install with
+`/plugin update free-search` instead, and restart Claude Code afterward.
 
 To run a local checkout or a keyed engine set instead of the published package, register
 the same server name at local scope — local scope overrides the project `.mcp.json`.
