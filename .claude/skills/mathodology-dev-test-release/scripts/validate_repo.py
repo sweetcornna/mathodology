@@ -305,13 +305,17 @@ def check_whitelist(root):
     tracked = _tracked_files(root)
     if tracked is None:
         return False, ["FAIL whitelist: not a git repository (git ls-files failed)"]
-    bad = [
-        f for f in tracked
-        if f not in KEEP_EXACT and not f.startswith(KEEP_PREFIXES)
-    ]
+    # The broad source prefixes are intentional, but generated interpreter
+    # output must remain outside this skills-only tree even below those paths.
+    bad = []
+    for f in tracked:
+        if f.endswith((".pyc", ".pyo")) or "__pycache__" in f.split("/"):
+            bad.append((f, "compiled/bytecode artifact is not allowed"))
+        elif f not in KEEP_EXACT and not f.startswith(KEEP_PREFIXES):
+            bad.append((f, "outside the skills-repository whitelist"))
     if bad:
         lines = ["FAIL whitelist: unexpected tracked file(s):"]
-        lines += [f"       - {f}" for f in bad]
+        lines += [f"       - {path} ({reason})" for path, reason in bad]
         return False, lines
     return True, [f"PASS whitelist: {len(tracked)} tracked file(s), all inside the skills repo"]
 
@@ -827,6 +831,19 @@ def _selftest():
     _mk(os.path.join(t, "src", "app.py"), "print(1)\n")
     _git_init(t)
     expect("whitelist-fail", check_whitelist, t, False)
+    shutil.rmtree(t, ignore_errors=True)
+
+    # Bytecode is rejected even when it sits below an allowed source prefix.
+    t = tempfile.mkdtemp()
+    _good_skill(t)
+    bytecode_root = os.path.join(
+        t, ".claude", "skills", "mathodology-demo", "scripts", "deep"
+    )
+    _mk(os.path.join(bytecode_root, "__pycache__", "module.pyc"), "compiled\n")
+    _mk(os.path.join(bytecode_root, "__pycache__", "metadata.txt"), "cache\n")
+    _mk(os.path.join(bytecode_root, "module.pyo"), "compiled\n")
+    _git_init(t)
+    expect("whitelist-fail(bytecode-in-allowed-prefix)", check_whitelist, t, False)
     shutil.rmtree(t, ignore_errors=True)
 
     # links (needs git for tracked *.md)

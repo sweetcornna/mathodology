@@ -43,6 +43,11 @@ __pycache__/
 !/.claude/workflows/
 !/.claude/workflows/**
 
+# Re-apply interpreter-output exclusions after the source-tree allowlists.
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
 # Retired non-skills project trees should not be reintroduced on this branch.
 /.github/
 /apps/
