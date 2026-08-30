@@ -54,7 +54,7 @@ Current workflow templates:
 - Full transfer or backup: start with `mathodology-whole-project`.
 - Repository cleanup or policy checks: start with `mathodology-project-orientation`.
 - Skill edits: start with `mathodology-skill-authoring`.
-- External evidence, literature, datasets, or citation verification: start with `mathodology-evidence-search`. It combines built-in `WebSearch` with the project `search` MCP server (free-search-mcp) by default, reconciles their sources, and records any single-source degradation explicitly. The repository's `.mcp.json` registers the server and enables staged downloads, so a clone needs no setup — see `docs/INSTALL.md`.
+- External evidence, literature, datasets, or citation verification: start with `mathodology-evidence-search`. It combines built-in `WebSearch` with the project `search` MCP server (free-search-mcp) by default, routes queries through a two-level category tree, reconciles their sources, verifies citations with a `paper_graph` prior-art/retraction check, and records any single-source degradation explicitly. The repository's `.mcp.json` registers the server and enables staged downloads, so a clone needs no setup — see `docs/INSTALL.md`.
 
 ## What Is Not Present
 

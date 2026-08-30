@@ -147,7 +147,7 @@ Deliver:
 - domain constraints
 - citation notes
 
-Evidence acquisition follows `.claude/skills/mathodology-evidence-search/SKILL.md` and enforces `dual-source-default: WebSearch + mcp__search__search`, `single-source-mode: explicit degradation`, and `search_backend: combined`. MCP `category=paper`/`dataset` routing supplies vertical coverage, results are reconciled before reading, and every handoff records per-query backend provenance or an explicit degradation.
+Evidence acquisition follows `.claude/skills/mathodology-evidence-search/SKILL.md` and enforces `dual-source-default: WebSearch + mcp__search__search`, `single-source-mode: explicit degradation`, and `search_backend: combined`. MCP category routing — the two-level `paper`/`dataset`/... tree, narrowed to a sub-group such as `paper.math` or `dataset.repository` when a specific corpus is needed — supplies vertical coverage, results are reconciled before reading, and every handoff records per-query backend provenance or an explicit degradation.
 
 Critic gate: every planned model input has data, proxy logic, or an explicit assumption with a sensitivity or robustness plan; blocked or gated searches are reported as `missing_evidence` rather than silently treated as evidence of absence.
 

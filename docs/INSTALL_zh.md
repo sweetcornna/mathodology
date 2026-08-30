@@ -187,8 +187,9 @@ npx -y skills@latest add sweetcornna/mathodology --list
 
 `mathodology-evidence-search` 的证据采集与引用核验协议依赖一个名为 `search` 的 MCP server
 （[free-search-mcp](https://github.com/sweetcornna/free-search-mcp)）：无需 API key 的多引擎
-网页检索、页面与 PDF 阅读、出版方元数据抽取，以及到文献和数据集数据库的分类路由
-（arXiv、OpenAlex、Crossref、PubMed、Zenodo）。
+网页检索、页面与 PDF 阅读、出版方元数据抽取、覆盖文献、数据集、新闻、金融、代码、论坛、
+图片的两级分类路由（arXiv、OpenAlex、Crossref、PubMed、Zenodo 等更多来源——完整目录见
+`mathodology-evidence-search` 的 Routing Rules），以及 `paper_graph` 已有文献与撤稿核查。
 
 克隆下来无需任何配置：仓库自带 `.mcp.json`，在项目作用域注册该 server，第一次打开这个
 文件夹时 Claude Code 会提示是否启用 `search`，确认一次即可用。唯一前提是 `PATH` 里有
@@ -235,7 +236,8 @@ local 作用域会覆盖项目的 `.mcp.json`。浏览器渲染类引擎还需�
 HTTP 检索和抓取照常可用。
 
 该 server 是可选项，但正常的证据任务会同时使用它与内置 `WebSearch`：MCP 分类路由负责
-文献和数据集覆盖，内置渠道独立拓宽发现范围，researcher 再综合两边结果。任一渠道不可用时，
+文献、数据集、新闻、金融、代码、论坛、图片各领域的纵深覆盖，内置渠道独立拓宽发现范围，
+researcher 再综合两边结果。任一渠道不可用时，
 handoff 会记录单来源 `search_backend` 及降级原因；两边都不可用时以 `none` 阻塞证据工作。
 critic 会把所有非 `combined` 运行报告为覆盖度下降。
 

@@ -24,6 +24,7 @@ complements built-in `WebSearch` as a peer discovery channel. Its tools appear a
 | `read_doc(source, start?, length?)` | Read PDF / DOCX / XLSX / PPTX / EPUB / CSV / HTML with pagination — the correct tool for a paper PDF or a data file, not `fetch`. |
 | `compare(question, urls=[2..5])` | Reconcile a constant or definition that two to five sources state differently. |
 | `extract_structured(url)` | Pull JSON-LD / OpenGraph / microdata — DOI, authors, journal, volume, pages, date. The mechanical path to citation specifics. |
+| `paper_graph(identifier, limit?)` | The mechanical prior-art and retraction check for one paper by DOI, OpenAlex ID, or exact title — its references, its citing works ordered by how heavily the field cited those in turn, and any Crossref retraction, correction, or expression of concern. A retracted citation is a submission risk this tool finds, not one WebSearch reliably surfaces. |
 | `cache_search(query, limit?)` | Full-text search over pages already fetched in this run. Cheap; use before re-fetching. |
 | `engines()` | Check which engines are available before blaming a query for thin results. |
 | `download(url)` | Keep an actual file — a contest data attachment, a dataset archive, a PDF the coder must read. Staging only: see *Reproducibility Boundary*. |
@@ -70,17 +71,35 @@ codex mcp add --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" 
 
 ## Routing Rules
 
-`category` routes the query to sources a general web engine cannot index. Pass it
-instead of hand-listing engines:
+`category` is a two-level tree and routes the query to sources a general web engine
+cannot index. Passing `category` also changes the order of results, not only which
+engines run, because an engine that natively indexes the requested category counts
+double in the rank fusion. Pass it instead of hand-listing engines. The tool schema's
+enum lists every group and sub-group, so an agent discovers the tree from the schema
+alone, without a second call.
 
-- `paper` — arXiv, OpenAlex, Crossref, PubMed. Use for every literature,
-  benchmark-method, and prior-art query. Hostname-filtering general web results is
-  not a literature search.
-- `dataset` — Zenodo, with DOIs. Replaces the default pool.
-- `news` — Google News plus GDELT, for events, policy dates, and non-English coverage.
+A bare group is capped (three engines by default) and round-robins across its
+sub-groups; a dotted sub-group narrows to that one corpus:
+
+- `paper` — literature and prior-art queries. `paper.index` (OpenAlex, Crossref,
+  Semantic Scholar behind an optional key), `paper.preprint` (arXiv, Europe PMC),
+  `paper.biomed` (Europe PMC, PubMed), `paper.cs` (DBLP), `paper.openaccess` (Europe
+  PMC, DOAJ), `paper.trial` (ClinicalTrials.gov), `paper.math` (zbMATH Open).
+  Hostname-filtering general web results is not a literature search.
+- `dataset` — `dataset.repository` (Zenodo, Dryad, Harvard Dataverse, figshare),
+  `dataset.ml` (Hugging Face Hub), `dataset.gov` (data.europa.eu). **Exclusive**:
+  replaces the default pool instead of augmenting it, so no general web engine is
+  there to catch a miss — with five sources behind it now, one dead source is far
+  less likely to be mistaken for the whole category; still check `engines()` and
+  route an empty result to `missing_evidence`, never to an absence claim.
+- `news` — Google News; `news.world` narrows to GDELT for non-English and
+  cross-border event coverage.
+- `finance` — `finance.filings` (SEC EDGAR, cninfo A-share/HK announcements),
+  `finance.market` (Yahoo Finance), `finance.macro` (World Bank, IMF).
 - `github` — repository metadata for reference implementations.
 - `forum` — Stack Exchange and Hacker News, for accepted-answer signal on a method.
-- `image` — openly-licensed images; results are direct file URLs. Replaces the default pool.
+- `image` — Openverse, Wikimedia Commons; results are direct file URLs. **Exclusive**:
+  replaces the default pool instead of augmenting it.
 
 Naming `engines=[...]` explicitly disables this routing — do that only to reach a
 specific opt-in engine (for example `google`, `wikipedia`, or the Chinese-language
@@ -127,7 +146,12 @@ a preprint of a paper you cite by its journal pagination.
 3. Anything you cannot confirm down to the specifics the paper will print goes on
    `citations_to_verify` with `verified: false`. Do not print a page or volume
    number that no tool call confirmed.
-4. `cache_search` makes this auditable: `mathodology-critic` can re-read the exact
+4. Run `paper_graph` on each citation load-bearing to a claim, keyed by its
+   confirmed DOI, OpenAlex ID, or exact title. Note any Crossref retraction,
+   correction, or expression of concern against the citation record — a retracted
+   source is a submission risk, not a stylistic issue, and this is the mechanical
+   way to catch one before the paper ships.
+5. `cache_search` makes this auditable: `mathodology-critic` can re-read the exact
    page the researcher saw, without re-fetching, when closing the citation gate.
 
 ## Reproducibility Boundary
@@ -166,7 +190,11 @@ Interactive search is not a reproducible pipeline stage.
 - `mathodology-evidence-researcher` — primary owner, Phase 1 and every later
   evidence request.
 - `mathodology-critic` — verification only against the researcher's ledger with
-  its existing readers, metadata, and cache tools; it does not start a new discovery pass.
+  its existing readers, metadata, cache, and retraction-check tools; it does not
+  start a new discovery pass. `paper_graph` is scoped to the retraction/correction
+  field on citations already in the ledger, keyed by their confirmed identifier —
+  not to mining its references or citing-works lists for prior art the researcher
+  has not already found, which stays discovery and stays out of scope here.
 - `mathodology-award-judge` — **never**. Judge seats score the rendered PDF and the
   artifact list blind; external lookups break the blind protocol in
   `.claude/skills/mathodology-award-gates/SKILL.md`.

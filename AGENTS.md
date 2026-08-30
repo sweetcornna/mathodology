@@ -3,7 +3,7 @@
 Mathodology is an Agent Skills pack purpose-built for math modeling contests (MCM/ICM, CUMCM, Huashu Cup, M3, HiMCM/MidMCM, IMMC/IM2C, and similar), targeting award-level submissions end to end. This repository is skills-only. The current GitHub tree intentionally contains no application source, CI, deployment, generated contracts, datasets, package manifests, lockfiles, or build outputs.
 
 Project skills for AI coding tools live in `.claude/skills/`.
-The root `.mcp.json` registers the keyless `search` MCP server (free-search-mcp) and enables its staged `download` tool. `mathodology-evidence-search` combines that server with built-in `WebSearch` by default, so a clone has dual-source evidence discovery with no per-user setup.
+The root `.mcp.json` registers the keyless `search` MCP server (free-search-mcp) and enables its staged `download` tool. `mathodology-evidence-search` combines that server — its two-level category routing and its `paper_graph` prior-art/retraction check included — with built-in `WebSearch` by default, so a clone has dual-source evidence discovery with no per-user setup.
 Claude Code project subagents live in `.claude/agents/`.
 Claude Code workflow templates live in `.claude/workflows/`.
 
@@ -12,7 +12,7 @@ Before non-trivial work, load the relevant skill:
 - `mathodology-whole-project` for full skills-repository orientation, backup, transfer, restore, and Codex or Claude Code orchestration.
 - `mathodology-project-orientation` for the current skills-only layout, retained files, deletion policy, and repository boundary checks.
 - `mathodology-award-gates` for award-run gate schemas (structured handoff/gate/scorecard/decision_memo), the severity ladder, judge-panel thresholds, iteration budgets, run layout, the blind seat protocol, and the shipped figure/PDF QA and run-block linting scripts.
-- `mathodology-evidence-search` for external evidence work: combined built-in `WebSearch` and `search` MCP discovery by default, category routing to literature and dataset databases, source reconciliation, citation verification, reproducible downloads, and explicit single-source degradation.
+- `mathodology-evidence-search` for external evidence work: combined built-in `WebSearch` and `search` MCP discovery by default, two-level category routing across literature, dataset, news, finance, code, forum, and image sources, source reconciliation, citation verification with a `paper_graph` prior-art/retraction check, reproducible downloads, and explicit single-source degradation.
 - `mathodology-agent-pipeline` for archived knowledge about the former Python agent pipeline and the new award-level phase workflow.
 - `mathodology-gateway-api` for archived knowledge about the former Rust gateway and API.
 - `mathodology-web-ui` for archived knowledge about the former Vue web UI.

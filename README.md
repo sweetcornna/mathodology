@@ -9,7 +9,7 @@
 
 Mathodology 是一套**专为数学建模竞赛设计的数模 Agent Skills**，面向 Claude Code、Codex 等兼容 Agent Skills 的 AI 编程工具。它把获奖级数模方法论——问题拆解、模型构建、可复现实验、获奖级论文写作、提交包组装——沉淀为可直接加载的项目 skills、subagents 和 workflow 模板。
 
-证据发现默认同时使用内置 `WebSearch` 与项目提供的 `search` MCP server —— **[free-search-mcp](https://github.com/sweetcornna/free-search-mcp)**，再综合、去重并核验两边来源。该 server 提供免 API key 的多引擎检索、页面与 PDF 阅读、出版方元数据抽取、到 arXiv/OpenAlex/Crossref/PubMed/Zenodo 的分类路由，以及暂存式下载。仓库自带 `.mcp.json`，完整 Claude Code 项目安装会在目标项目尚无 MCP 配置时写入它，因此克隆或使用该项目安装后即可使用组合工作流，无需用户级配置。
+证据发现默认同时使用内置 `WebSearch` 与项目提供的 `search` MCP server —— **[free-search-mcp](https://github.com/sweetcornna/free-search-mcp)**，再综合、去重并核验两边来源。该 server 提供免 API key 的多引擎检索、页面与 PDF 阅读、出版方元数据抽取、覆盖文献、数据集、新闻、金融、代码、论坛、图片七大类的两级分类路由（arXiv、OpenAlex、Crossref、PubMed、Zenodo 等更多来源）、`paper_graph` 已有文献与撤稿核查，以及暂存式下载。仓库自带 `.mcp.json`，完整 Claude Code 项目安装会在目标项目尚无 MCP 配置时写入它，因此克隆或使用该项目安装后即可使用组合工作流，无需用户级配置。
 
 覆盖的竞赛类型：
 
@@ -95,7 +95,7 @@ Mathodology 分别提供 Codex 和 Claude Code 的竞赛编排指导：
 | [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | 整个 skills 仓库的备份、迁移、恢复、整体理解，或 Codex/Claude Code 竞赛工作流编排 |
 | [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | 在 skills-only checkout 中开始工作，或检查仓库边界 |
 | [`mathodology-award-gates`](.claude/skills/mathodology-award-gates/SKILL.md) | 运行竞赛时执行获奖级 phase gate、判审团、结构化 handoff、图表 QA 或渲染 PDF QA |
-| [`mathodology-evidence-search`](.claude/skills/mathodology-evidence-search/SKILL.md) | 检索文献、数据集、benchmark、领域常数或核验引用（内置搜索与 search MCP 组合发现、来源综合、分类路由、可复现下载与显式降级） |
+| [`mathodology-evidence-search`](.claude/skills/mathodology-evidence-search/SKILL.md) | 检索文献、数据集、benchmark、领域常数或核验引用（内置搜索与 search MCP 组合发现、两级分类路由、来源综合、`paper_graph` 已有文献与撤稿核查、可复现下载与显式降级） |
 | [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | 编排 9-phase 获奖工作流（phase 职责、专家名册、prize-level gates），并保留原 agent pipeline 的归档知识 |
 | [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | 工作流的导出/打包/API 推理，并保留原 gateway 和 API 的归档知识 |
 | [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | 工作流的图表呈现推理，并保留原 Web UI 的归档知识 |

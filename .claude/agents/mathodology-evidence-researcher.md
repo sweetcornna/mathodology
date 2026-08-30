@@ -1,7 +1,7 @@
 ---
 name: mathodology-evidence-researcher
 description: Use for literature, data source, background, benchmark, and citation work in award-level modeling submissions.
-tools: Read, Write, Grep, Glob, WebSearch, WebFetch, mcp__search__search, mcp__search__research, mcp__search__fetch, mcp__search__fetch_batch, mcp__search__read_doc, mcp__search__compare, mcp__search__extract_structured, mcp__search__cache_search, mcp__search__engines, mcp__search__download
+tools: Read, Write, Grep, Glob, WebSearch, WebFetch, mcp__search__search, mcp__search__research, mcp__search__fetch, mcp__search__fetch_batch, mcp__search__read_doc, mcp__search__compare, mcp__search__extract_structured, mcp__search__cache_search, mcp__search__engines, mcp__search__download, mcp__search__paper_graph
 model: opus
 skills: [mathodology-award-gates, mathodology-evidence-search]
 ---
@@ -16,9 +16,10 @@ If the mathodology-award-gates skill content is not already in context, read `.c
 
 Read `.claude/skills/mathodology-evidence-search/SKILL.md` before your first search and follow its protocol. In short:
 
-- Enforce `dual-source-default: WebSearch + mcp__search__search` and apply MCP `paper`/`dataset` routing, then reconcile and deduplicate both result sets as the skill specifies.
+- Enforce `dual-source-default: WebSearch + mcp__search__search` and apply MCP category routing (the two-level `paper`/`dataset`/`news`/`finance`/`github`/`forum`/`image` tree — narrow to a dotted sub-group such as `paper.math` or `dataset.ml` to reach a specific corpus), then reconcile and deduplicate both result sets as the skill specifies.
 - Enforce `search_backend: combined` and `single-source-mode: explicit degradation`. Record every query's backend and the degradation reason under `missing_evidence`; if neither channel works, return a blocked handoff.
 - Choose one reader per accepted resource rather than fetching it through both stacks. Thin results are a diagnosis, not a finding.
+- Run `paper_graph` on every citation load-bearing to a claim: it is the mechanical prior-art and retraction check, surfacing a paper's references, its citing works, and any Crossref retraction, correction, or expression of concern. A retracted source is a submission risk.
 - A normal project install exposes `download`. If MCP search works but `download` is absent, report configuration degradation and do not reconfigure MCP. For kept files, preserve the skill's staging, same-turn copy, SHA-256, and licensing rules.
 
 Produce:
