@@ -1,172 +1,59 @@
-# Mathodology 数模竞赛 Skills
+# Mathodology 数学建模 Skills
 
-**简体中文** · [English](./README_en.md)
+**简体中文** · [English](README_en.md)
 
-![license](https://img.shields.io/badge/license-MIT-blue)
-![format](https://img.shields.io/badge/format-Agent%20Skills-black)
-![tools](https://img.shields.io/badge/tools-Claude%20Code%20%7C%20Codex-blue)
-![contests](https://img.shields.io/badge/contests-MCM%2FICM%20%7C%20CUMCM%20%7C%20%E5%8D%8E%E6%95%B0%E6%9D%AF-orange)
+面向数学建模竞赛的提示词与参考资料：理解问题、建立模型、检验结果，再把
+结论写清楚。agent 根据题目和证据选择工作方式，按需使用专业角色。
 
-Mathodology 是一套**专为数学建模竞赛设计的数模 Agent Skills**，面向 Claude Code、Codex 等兼容 Agent Skills 的 AI 编程工具。它把获奖级数模方法论——问题拆解、模型构建、可复现实验、获奖级论文写作、提交包组装——沉淀为可直接加载的项目 skills、subagents 和 workflow 模板。
+## 复杂图表与 image2
 
-证据发现默认同时使用内置 `WebSearch` 与项目提供的 `search` MCP server —— **[free-search-mcp](https://github.com/sweetcornna/free-search-mcp)**，再综合、去重并核验两边来源。该 server 提供免 API key 的多引擎检索、页面与 PDF 阅读、出版方元数据抽取、覆盖文献、数据集、新闻、金融、代码、论坛、图片七大类的两级分类路由（arXiv、OpenAlex、Crossref、PubMed、Zenodo 等更多来源）、`paper_graph` 已有文献与撤稿核查，以及暂存式下载。仓库自带 `.mcp.json`，完整 Claude Code 项目安装会在目标项目尚无 MCP 配置时写入它，因此克隆或使用该项目安装后即可使用组合工作流，无需用户级配置。
+新增 [科学图表技能](.claude/skills/mathodology-figure-presets/SKILL.md)，提供
+[20 类图表预设](.claude/skills/mathodology-figure-presets/references/presets.md)：
+多面板、预测区间、雨云图、山脊图、配对差异、森林图、联合分布、聚类热图、
+可行域、Pareto、平行坐标、桑基图、网络、空间放大、时空演化、敏感性、
+校准残差、生存曲线、消融和稳健性矩阵。
 
-覆盖的竞赛类型：
+每类包含数据要求、布局、统计解释、误导反例、简化方案、绘图和图注提示词。
+另附 [6 张论文图例与 8 份官方源码参考](.claude/skills/mathodology-figure-presets/references/README.md)，
+保留许可和来源；以及可复现的 [6 张合成数据样张](.claude/skills/mathodology-figure-presets/examples/README.md)。
 
-- **MCM/ICM（美赛）**：面向 Outstanding/Finalist 级产出
-- **CUMCM（全国大学生数学建模竞赛）**：面向国家一等奖级产出
-- **华数杯**、**M3**、**HiMCM/MidMCM**、**IMMC/IM2C**
-- leaderboard/数据科学型、运筹/政策/商业案例型、短时冲刺型竞赛
+![多面板合成样张](.claude/skills/mathodology-figure-presets/examples/f01-mosaic.png)
 
-本仓库是 skills-only 分支：刻意不包含原可运行应用源码，只保留项目级 skills、skill 元数据、轻量文档、备份脚本和许可证。
+首次设计图表时，agent 会主动询问是否有 image2 模型及使用方式；已有回答
+会沿用，等待时继续分析。image2 可辅助配图、机制图和版式；真实数值图从
+数据和公式绘制。没有 image2 也能完成图表。
 
-## 仓库内容
+无 image2 时默认使用 [20 类可调用绘图代码模板](.claude/skills/mathodology-figure-presets/templates/README.md)，填入真实数据并实际生成 PNG/PDF，不等待模型或只返回绘图提示词。
 
-- `.claude/skills/<skill-name>/SKILL.md` 中的 Claude Code 项目 skills
-- `.claude/agents/` 中的 9 个 Claude Code 项目 subagents（建模、编码、论文、评审、盲评判审等分工角色）
-- `.claude/workflows/` 中的 Claude Code 竞赛 workflow 模板
-- 每个 skill 自带 `agents/openai.yaml`，方便 Codex 风格工具展示和调用
-- 根目录 `AGENTS.md`，给不会自动发现 project skills 的工具使用
-- 根目录 `.mcp.json`，注册免 key 的 `search` MCP server，克隆后无需配置即可使用证据检索和引用核验
-- `docs/` 下的 skills 和 workflow 文档
-- `mathodology-whole-project` skill 中的 skills-only 备份脚本
+## 开始使用
 
-这个分支不保留应用源码、CI workflow、部署文件、生成的 contracts、包锁文件、数据集、构建产物或安装器资源。
-
-## 一键安装与更新
-
-推荐：在目标项目根目录运行事务型 updater，把全部内容（9 个 skills + 9 个 Claude Code subagents + 2 个 workflow 模板 + 项目级 `search` MCP 配置）只部署到当前文件夹，不影响其他项目。它只会安装缺失的 MCP 配置或迁移可明确识别的旧版标准配置；自定义配置和主动关闭的下载保持不变：
+在已有项目中安装所需宿主的技能：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
+npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent codex
 ```
 
-以后在项目根目录运行同一命令更新。更新器会把 ref 解析为同一个不可变提交，全量补齐 9 个 skills，镜像 Mathodology subagents/workflows，并对旧版标准 MCP 配置做保守迁移；失败时自动恢复受管文件。`uvx` 缺失只会跳过可选的 server package 刷新：
+Claude Code 将最后一个参数改为 `claude-code`。完整仓库还包含可选角色、
+工作流和 search MCP 配置；标准技能安装不自动安装这些项目级文件。
+详见 [安装与更新](docs/INSTALL_zh.md)。
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
-```
+可直接给 agent：
 
-只诊断不写入可追加 `--check`；固定到发布版本可追加 `--ref v0.12.0`。已有自定义 `search` 配置和当前版本中主动关闭的下载不会被覆盖。
+> 使用 mathodology-whole-project 分析这道建模题。从题目、数据和约束出发，
+> 建立可解释的基线，验证影响结论的假设，用 mathodology-figure-presets
+> 选择有用的图表。首次准备配图时询问我是否有 image2 模型。保留可复现
+> 计算和证据来源，按实际需要组织工作，交付结果、图表与清楚的局限。
 
-备选：一条命令把全部 Mathodology skills 全局安装到 Codex 和 Claude Code（影响本机所有项目）：
+## 简洁的工作方式
 
-```bash
-npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
-```
+保留数学正确性、数据可追溯、结果可复现和真实渲染检查。工作流不要求
+固定九阶段、格式化交接、固定数量图表或模拟奖项评分。专业角色按需使用；
+备份、仓库检查、PDF 页面总览和样张生成都是可选小工具。
 
-更新全局安装的 Mathodology skills：
+维护源在 `.claude/skills/`；`.agents/skills/` 是忽略跟踪的本地镜像。
+仓库只存技能、文档及其教学参考，不包含建模应用或比赛数据集。
+项目原创内容按 [MIT](LICENSE) 许可；第三方素材保留各自许可。
 
-```bash
-npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
-```
+[技能索引](docs/SKILLS_zh.md) · [工作提示词](docs/WORKFLOWS_zh.md) · [备份](docs/BACKUP_zh.md)
 
-这些命令使用 `vercel-labs/skills` 提供的开放 `skills` CLI，从 GitHub 安装 Agent Skills 到对应 agent 的 skills 目录。
-
-安装或更新后重启 Codex 或 Claude Code，让新 skills、subagents 和 workflow 模板被发现。查看 CLI 帮助请用 `npx -y skills@latest --help`；不要使用 `skills add <repo> --help`，当前 CLI 版本可能会把它当成安装命令执行。
-
-更多目标和验证方式见 [docs/INSTALL_zh.md](docs/INSTALL_zh.md)。
-
-## Codex 与 Claude Code 模式
-
-Mathodology 分别提供 Codex 和 Claude Code 的竞赛编排指导：
-
-- Claude Code：使用 `.claude/workflows/mathodology-award-submission.md`，并调用 `.claude/agents/` 中的项目 subagents。
-- Claude Code 竞赛类型适配：M3、HiMCM/MidMCM、IMMC/IM2C、leaderboard/data-science、运筹/政策/商业案例和短时冲刺赛使用 `.claude/workflows/mathodology-contest-variants.md`。
-- Codex：加载 `mathodology-whole-project`，按多 agents 模式执行 9 个 phase。
-
-两种模式都面向国奖或 MCM/ICM O 奖级别产出：多模型备选、有证据支撑的假设、可复现实验、成熟论文、完整提交包。类型适配器会把这些 gate 调整到论文优先、代码优先、冲刺型、中学生型和政策/商业案例型竞赛。
-
-完整 phase 模型见 [docs/WORKFLOWS_zh.md](docs/WORKFLOWS_zh.md)。
-
-## 获奖级质量 gate
-
-获奖级质量控制被做成可执行、有边界的机制，全部由 `mathodology-award-gates` skill 承载：
-
-- **独立三席盲评判审团**：Phase 7 并行派发 3 个互不共享上下文的 `mathodology-award-judge` seat（旗舰通审 / 创新与决策效用 / 只审正确性与可复现），各自只拿到渲染 PDF 与产物清单打分；lead 按数值阈值聚合（Outstanding/国一 ≥85、floor 70），任一席位低于目标档即触发定向改进循环。
-- **有界迭代预算**：每个 phase gate 最多 2 轮修复、Phase 7 最多 2 轮重评、全程上限 8 轮；耗尽后不静默继续，而是向用户发结构化 `decision_memo` 决策备忘。
-- **结构化 YAML handoff**：specialist 交接、critic gate、判审 scorecard 都是带固定字段的 YAML 块，由 `lint_run.py` 脚本校验，杜绝自由文本漏项。
-- **随包发布的图表/PDF QA gate**：`figqa.py`（bbox 碰撞硬门）和 `pdf_qa.sh`（渲染 PDF 页数、重复 caption、匿名性检查）随 skill 发布，直接执行而非每次重写。
-
-## Skill 索引
-
-| Skill | 适用场景 |
-|---|---|
-| [`mathodology-whole-project`](.claude/skills/mathodology-whole-project/SKILL.md) | 整个 skills 仓库的备份、迁移、恢复、整体理解，或 Codex/Claude Code 竞赛工作流编排 |
-| [`mathodology-project-orientation`](.claude/skills/mathodology-project-orientation/SKILL.md) | 在 skills-only checkout 中开始工作，或检查仓库边界 |
-| [`mathodology-award-gates`](.claude/skills/mathodology-award-gates/SKILL.md) | 运行竞赛时执行获奖级 phase gate、判审团、结构化 handoff、图表 QA 或渲染 PDF QA |
-| [`mathodology-evidence-search`](.claude/skills/mathodology-evidence-search/SKILL.md) | 检索文献、数据集、benchmark、领域常数或核验引用（内置搜索与 search MCP 组合发现、两级分类路由、来源综合、`paper_graph` 已有文献与撤稿核查、可复现下载与显式降级） |
-| [`mathodology-agent-pipeline`](.claude/skills/mathodology-agent-pipeline/SKILL.md) | 编排 9-phase 获奖工作流（phase 职责、专家名册、prize-level gates），并保留原 agent pipeline 的归档知识 |
-| [`mathodology-gateway-api`](.claude/skills/mathodology-gateway-api/SKILL.md) | 工作流的导出/打包/API 推理，并保留原 gateway 和 API 的归档知识 |
-| [`mathodology-web-ui`](.claude/skills/mathodology-web-ui/SKILL.md) | 工作流的图表呈现推理，并保留原 Web UI 的归档知识 |
-| [`mathodology-dev-test-release`](.claude/skills/mathodology-dev-test-release/SKILL.md) | 验证 skills 仓库，或保留 dev、test、release 归档指导 |
-| [`mathodology-skill-authoring`](.claude/skills/mathodology-skill-authoring/SKILL.md) | 新增、更新、验证或 review 项目 skills |
-
-## 快速开始
-
-克隆仓库：
-
-```bash
-git clone https://github.com/sweetcornna/mathodology.git
-cd mathodology
-```
-
-Claude Code 打开本仓库后，从这里加载 skills：
-
-```text
-.claude/skills/
-```
-
-Codex 或其他 AI 编程工具从这里开始：
-
-```text
-AGENTS.md
-```
-
-然后按任务加载 `mathodology-whole-project` 或更具体的 skill。拿到赛题后，直接按 [docs/WORKFLOWS_zh.md](docs/WORKFLOWS_zh.md) 的 phase 工作流开跑。
-
-## 备份与迁移
-
-创建 skills-only 备份：
-
-```bash
-bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
-```
-
-默认备份到仓库外：
-
-```text
-../mathodology_skills_backups/<timestamp>/mathodology-skills-<timestamp>.tar.gz
-```
-
-归档使用 skills 白名单，只包含当前保留的 skills 仓库文件。它会排除 `.git/`、secret、构建产物、运行时状态，以及本地可能残留的旧应用目录。
-
-恢复细节见 [docs/BACKUP_zh.md](docs/BACKUP_zh.md)。
-
-## 验证
-
-所有机械化仓库验证都收敛到一个脚本 `validate_repo.py`（纯标准库，无需 PyYAML），随 `mathodology-dev-test-release` skill 一起发布。不要再把这些检查以 heredoc 形式内联进文档或其他 skill。
-
-从仓库根目录运行全部维护 gate：
-
-```bash
-python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
-```
-
-按名字单独运行某个 gate —— `skills`、`metadata`、`links`、`whitelist`、`agents`、`sync`、`evidence`、`updater` 或 `selftest`：
-
-```bash
-python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py sync
-```
-
-`all` 覆盖 skill 与 agent 的 frontmatter、`agents/openai.yaml` 元数据、markdown 链接与 `.claude/...` 路径解析、tracked 文件白名单、中英文档孪生同步、双来源证据检索与下载配置契约，以及 canonical 事务型 updater 契约。`mathodology-award-gates` 携带的脚本各自带 `--self-test`；`validate_repo.py selftest` 还会运行 updater 的离线迁移与回滚 fixture。
-
-## 仓库策略
-
-保持这个分支只服务数模竞赛 skills。除非明确改变仓库策略，不要加回应用源码树、生成客户端、CI workflow、Docker 文件、安装器、数据集或构建产物。
-
-如果需要历史应用实现，可以从 Git 历史恢复；它不是当前 GitHub tree 的一部分。
-
-## 许可证
-
-MIT。见 [LICENSE](LICENSE)。
+[给 agent 的默认绘图指导](.claude/skills/mathodology-figure-presets/references/figure-guidance.md)

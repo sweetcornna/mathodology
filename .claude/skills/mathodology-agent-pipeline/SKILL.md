@@ -1,131 +1,53 @@
 ---
 name: mathodology-agent-pipeline
-description: Use when orchestrating the Mathodology nine-phase award workflow (phase responsibilities, specialist roster, prize-level gates) or consulting archived knowledge about the former Python agent pipeline.
+description: Use when planning a modeling solution, selecting the next useful step or briefing a specialist.
 ---
 
-# Mathodology Agent Pipeline Archive
+# Mathodology Modeling Prompts
 
-## Scope
+Use the following questions in whatever order the task needs. They are prompts
+for reasoning, not mandatory stages or files.
 
-This skill preserves architectural knowledge about the former Mathodology Python worker and multi-agent pipeline.
+## Understand the problem
 
-The current GitHub branch does not contain the worker source. Use this skill to update archived guidance, explain the former design, or help reconstruct context from history. Do not instruct agents to edit or test missing worker files in this checkout.
+What decision is the reader trying to make? What is given, unknown or required?
+Which mechanisms must the solution represent? Check the actual contest rules
+when applicable, including deadline, page limits and AI-use requirements.
 
-## Archived Concepts
+## Formulate a model
 
-The former worker coordinated specialized modeling agents around a mathematical modeling run:
+Start with a useful baseline. Define variables, units, assumptions, constraints
+and the objective. Compare plausible alternatives when there is a real choice;
+do not invent extra models to meet a quota. Explain why the added complexity
+changes the answer. Check identifiability, data requirements and limiting cases.
 
-- problem interpretation and task decomposition
-- literature and evidence search
-- model selection and method grounding
-- code execution for numerical work
-- draft generation and revision
-- critique, audit, and final evidence checks
+## Challenge the result
 
-The worker also carried knowledge about HMML-style method retrieval, MATLAB or Octave execution, web and scholarly search tools, figure generation, and runtime skills used by the Coder role.
+Which observation could disprove the model? Can a simpler baseline perform as
+well? Test influential assumptions and plausible adverse scenarios. Separate
+parameter uncertainty, observation noise and structural uncertainty. Match the
+paper's claims to the implemented mathematics and the data actually used.
 
-## New Orchestration Use
+## Communicate the answer
 
-This skill now also carries the reusable workflow pattern that replaced the removed worker source.
+Answer the problem's questions with interpretable quantities and limitations.
+Choose figures from [figure presets](../mathodology-figure-presets/SKILL.md),
+including the once-per-task image2 question. Build the explanation around the
+results, not the history of experiments. Review with
+[review questions](../mathodology-award-gates/SKILL.md).
 
-The gate schemas (`handoff` / `gate` / `scorecard` / `decision_memo`), the judge-panel protocol, and the figure/PDF QA scripts live in `mathodology-award-gates`; reference that skill rather than restating those contracts here.
+## Focused collaboration
 
-For Claude Code:
+When delegation is useful and available, give a specialist a bounded question,
+relevant data, current assumptions and a concrete output. Agree file ownership
+for concurrent editing. Ask for ordinary prose: finding, reasoning, artifact
+paths and unresolved uncertainty. The lead integrates the answer and resolves
+conflicting evidence; it does not collect points or gate every intermediate step.
 
-- Use `.claude/workflows/mathodology-award-submission.md`.
-- Use `.claude/workflows/mathodology-contest-variants.md` when the contest is not the default MCM/ICM or CUMCM-style paper workflow.
-- Dispatch `.claude/agents/mathodology-*.md` roles.
-- Lead owns phase gates and synthesis.
+For a fresh task, a compact prompt is:
 
-For Codex:
-
-- Use multi-agents mode.
-- Dispatch separate agents for problem analysis, evidence, model design, experiments, critique, writing, and packaging.
-- Keep a phase log and run an independent critic gate before advancing.
-- Treat execution as phase-sized and resumable. Ask the user only for contest-critical details, then continue automatically when the gate passes.
-- In Phase 0, classify the contest type and apply the adapter from `docs/WORKFLOWS.md`.
-
-## Human Confirmation Checkpoints
-
-The workflow should not stop for every ambiguity. Most modeling details can be handled by conservative, explicit assumptions and later critic review.
-
-Ask the user only when the answer would change official requirements, private data access, model route selection, compute or reproducibility constraints, or final submission decisions. The question should state the current phase, why the detail blocks progress, the recommended default, and the consequence of common answers.
-
-For all other ambiguity, record the assumption in the phase log and proceed. If Codex must stop because a response boundary is reached, preserve the current phase, completed gates, unresolved risks, artifact paths, and next action so the next response resumes rather than restarts.
-
-## Phase Responsibilities
-
-- Phase 0: problem analyst maps prompt clauses, scoring surface, contest type, deliverables, official constraints, dependencies, and material ambiguities; critic checks requirement coverage, adapter selection, and whether user questions are truly contest-critical.
-- Phase 1: evidence researcher builds source ledger, data dictionary, proxy logic, benchmark inventory, citation plan, and evidence gaps; critic checks traceability and proxy defensibility.
-- Phase 2: at least two model agents propose alternatives; lead compares at least three routes and selects one with rejection reasons; critic checks route fit, novelty, time feasibility, and absence of generic method stacking.
-- Phase 3: modeler writes notation, assumptions, units, objectives, constraints, algorithms, pseudocode, validation metrics, baseline, ablation, sensitivity, and robustness plan; critic checks implementability and mathematical coherence.
-- Phase 4: coder produces reproducible computation, environment notes, raw outputs, tables, figures, baseline, ablations, sensitivity, robustness outputs, and run logs; the figure/table set must cover model structure, primary results, sensitivity, robustness, decision tradeoffs, and final recommendations; critic checks number traceability, source data, density, and no cherry-picking.
-- Phase 5: modeler, evidence researcher, and paper editor translate results into prompt-level answers, captions, recommendations, limitations, uncertainty notes, claim-source links, and a figure/table coverage map; critic checks answer coverage, support, and whether visual and tabular evidence is sufficient for a top-tier paper.
-- Phase 6: paper editor builds summary, coherent paper narrative, references, appendix, AI-use statement when required, and final figure/table placement, compiles the PDF, and runs the rendered-PDF QA; critic checks summary quality, paper coherence, notation, citations, page/format risk, and whether results feel substantive rather than sparse.
-- Phase 7: critic audits prompt coverage, math, evidence, reproducibility, writing, formatting, originality, and final scoring risk, and the lead reruns specialists until no blocker or high issue remains; then the lead dispatches the mandatory three-seat blind `mathodology-award-judge` panel and aggregates the scorecards against the target-tier thresholds (protocol and aggregation rule in `mathodology-award-gates`).
-- Phase 8: packager assembles final paper, source, code, data notes, figures, tables, README, AI-use statement, and checklist; critic checks compliance, anonymity, size/page limits, secrets, scratch artifacts, and submit-readiness.
-
-## Agent Handoff Format
-
-Every specialist ends each phase with the structured `handoff:` yaml block
-defined in `mathodology-award-gates` (this applies in Codex mode too). Free-text
-handoffs are rejected; the lead lints every block with `lint_run.py handoff`.
-
-## Prize-Level Gates
-
-Block progression if any of these are missing:
-
-- prompt requirement without an output
-- major assumption without evidence, derivation, or sensitivity check
-- selected model without rejected alternatives
-- reported number without reproducibility path
-- figure or table without interpretation
-- sparse result presentation: for a paper-first contest, the final draft must contain a purposeful figure/table system, not only a few isolated visuals
-- missing visual/tabular coverage for model architecture, primary comparison, sensitivity, robustness or uncertainty, scenario or policy tradeoff, and final decision summary, unless the contest format explicitly prevents it
-- figure/table count inflated with decorative, duplicate, or unsupported artifacts
-- figure-generation defects such as overlapping labels, clipped axes, unreadable text, duplicate caption prefixes, orphaned figures, or tables that wrap incoherently in the rendered PDF
-- paper claim without support
-- final package without README and requirement-to-file checklist
-- phase artifact without independent critic review
-- blocker or high-severity critic issue without a fix
-
-## Figure And Table Density Standard
-
-For MCM/ICM O-prize, CUMCM national-first-prize, and comparable paper-first contests, treat visual and tabular density as a scoring gate, not cosmetic polish.
-
-Minimum expected coverage before Phase 6 passes:
-
-- one model-architecture diagram or algorithm flowchart
-- one compact data, assumption, or parameter table
-- one baseline or route-comparison figure/table
-- one sensitivity figure or tornado/heatmap-style diagnostic
-- one robustness, uncertainty, or stress-test figure/table
-- one scenario, policy, cost, environmental, or implementation tradeoff figure/table when the problem is decision-facing
-- one final decision dashboard or prompt-by-prompt answer table
-
-These are role requirements, not a fixed count. A short sprint may merge roles into fewer artifacts; a full MCM/ICM or national contest paper should usually exceed this minimum while staying inside the page limit. Do not add filler figures. Every visual must carry a result that a judge can use to understand, verify, or compare the solution.
-
-For the full generation and verification contract, use `docs/WORKFLOWS.md` / `docs/WORKFLOWS_zh.md` section "Figure And Table Generation Specification". The key operational rule is: generate from source data, render the final PDF, create a figure/page contact sheet, visually inspect it, and block any phase with overlap, clipping, illegible text, duplicated captions, or unsupported filler visuals.
-
-## How To Maintain This Skill
-
-When updating archived pipeline guidance:
-
-1. State clearly that the implementation is historical and not present on this branch.
-2. Prefer conceptual boundaries over file paths.
-3. Avoid commands that imply the current checkout can run the old worker tests.
-4. If exact implementation evidence is needed, inspect Git history in a separate worktree.
-5. Keep details reusable for future agents who need to understand or rebuild the pipeline.
-
-## Useful Questions
-
-Use this skill for questions like:
-
-- How did the former multi-agent modeling pipeline divide responsibility?
-- What did the Coder, Critic, Search, MATLAB, or HMML concepts mean?
-- Which archived behavior should be preserved in skills documentation?
-- What must be recovered from Git history before rebuilding a worker?
-
-## Current-Branch Rule
-
-Any current-branch edit should be limited to skills or documentation. Do not add worker source, tests, package files, run artifacts, or runtime skill directories back to this branch unless the user explicitly changes the repository strategy.
+> Solve the supplied modeling problem. State assumptions, build and test a
+> useful baseline, add justified complexity, and connect each recommendation to
+> evidence. Adapt the workflow to the available time. Select purposeful figures
+> using mathodology-figure-presets and ask once about image2 availability.
+> Keep calculations reproducible and explain what could change the conclusion.

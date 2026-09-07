@@ -35,15 +35,15 @@ git -C "$repo_root" ls-files --others --exclude-standard > "$backup_dir/untracke
 
 (
   cd "$repo_root"
-  tar -czf "$archive_path" --null -T "$backup_dir/source-files.nul"
+  COPYFILE_DISABLE=1 tar -czf "$archive_path" --null -T "$backup_dir/source-files.nul"
 )
 
 tar -tzf "$archive_path" > "$backup_dir/archive-files.txt"
 
 if command -v shasum >/dev/null 2>&1; then
-  shasum -a 256 "$archive_path" > "$backup_dir/SHA256SUMS"
+  (cd "$backup_dir" && shasum -a 256 "$archive_name") > "$backup_dir/SHA256SUMS"
 elif command -v sha256sum >/dev/null 2>&1; then
-  sha256sum "$archive_path" > "$backup_dir/SHA256SUMS"
+  (cd "$backup_dir" && sha256sum "$archive_name") > "$backup_dir/SHA256SUMS"
 else
   printf 'No sha256 tool found; archive checksum not generated.\n' > "$backup_dir/SHA256SUMS"
 fi

@@ -1,26 +1,68 @@
 # Mathodology Agent Guide
 
-Mathodology is an Agent Skills pack purpose-built for math modeling contests (MCM/ICM, CUMCM, Huashu Cup, M3, HiMCM/MidMCM, IMMC/IM2C, and similar), targeting award-level submissions end to end. This repository is skills-only. The current GitHub tree intentionally contains no application source, CI, deployment, generated contracts, datasets, package manifests, lockfiles, or build outputs.
+Mathodology is a skills pack for mathematical modeling contests. Use prompts to
+support mathematical judgment, reproducible computation and clear scientific
+communication. Adapt the amount of work to the actual problem and deadline.
 
-Project skills for AI coding tools live in `.claude/skills/`.
-The root `.mcp.json` registers the keyless `search` MCP server (free-search-mcp) and enables its staged `download` tool. `mathodology-evidence-search` combines that server — its two-level category routing and its `paper_graph` prior-art/retraction check included — with built-in `WebSearch` by default, so a clone has dual-source evidence discovery with no per-user setup.
-Claude Code project subagents live in `.claude/agents/`.
-Claude Code workflow templates live in `.claude/workflows/`.
+## Start from the task
 
-Before non-trivial work, load the relevant skill:
+Read the problem and available data. Identify the decisions to support, the
+required outputs and the current contest rules. Ask only about missing details
+that would change the solution. State reasonable assumptions and keep working.
 
-- `mathodology-whole-project` for full skills-repository orientation, backup, transfer, restore, and Codex or Claude Code orchestration.
-- `mathodology-project-orientation` for the current skills-only layout, retained files, deletion policy, and repository boundary checks.
-- `mathodology-award-gates` for award-run gate schemas (structured handoff/gate/scorecard/decision_memo), the severity ladder, judge-panel thresholds, iteration budgets, run layout, the blind seat protocol, and the shipped figure/PDF QA and run-block linting scripts.
-- `mathodology-evidence-search` for external evidence work: combined built-in `WebSearch` and `search` MCP discovery by default, two-level category routing across literature, dataset, news, finance, code, forum, and image sources, source reconciliation, citation verification with a `paper_graph` prior-art/retraction check, reproducible downloads, and explicit single-source degradation.
-- `mathodology-agent-pipeline` for archived knowledge about the former Python agent pipeline and the new award-level phase workflow.
-- `mathodology-gateway-api` for archived knowledge about the former Rust gateway and API.
-- `mathodology-web-ui` for archived knowledge about the former Vue web UI.
-- `mathodology-dev-test-release` for skills-only validation and archived dev, test, deploy, packaging, and release guidance.
-- `mathodology-skill-authoring` for adding or updating `SKILL.md` files and `agents/openai.yaml` metadata.
+Use a flexible cycle: understand the problem, formulate a model, challenge its
+results, and communicate the answer. Revisit any part when evidence changes.
+Do not require fixed phases, machine-readable handoffs, repeated approvals,
+arbitrary figure counts or invented award scores. Quality follows from the
+argument and evidence, not completion of a checklist or a predicted prize.
 
-For Claude Code, prefer `.claude/workflows/mathodology-award-submission.md` with the `mathodology-*` project subagents. The `mathodology-lead` agent runs as the main thread and dispatches the specialists; at Phase 7 it dispatches three independent blind `mathodology-award-judge` seats in parallel and aggregates their scorecards against the numeric tier thresholds in `mathodology-award-gates`. If the contest is M3, HiMCM/MidMCM, IMMC/IM2C, leaderboard/data-science, operations/policy/business-case, or short-sprint style, also load `.claude/workflows/mathodology-contest-variants.md` and apply the matching adapter.
+## Skills and roles
 
-For Codex, run the 9-phase workflow in multi-agents mode from `docs/WORKFLOWS.md`: dispatch independent agents per phase, synthesize, then gate with an independent critic before continuing. In Phase 0, classify the contest type and apply the matching workflow adapter from `docs/WORKFLOWS.md`. Ask the user only for contest-critical details that would change requirements, data access, model choice, compute budget, or final submission constraints; otherwise record conservative assumptions and continue phase by phase. Every phase artifact must have a specialist handoff and an independent critic gate before it can feed the next phase.
+- `mathodology-whole-project`: entry point, installation, backup and repository use.
+- `mathodology-agent-pipeline`: adaptable modeling prompts and focused collaboration.
+- `mathodology-evidence-search`: literature, data, citations and licensed references.
+- `mathodology-figure-presets`: scientific figure selection, design, image2 and examples.
+- `mathodology-award-gates`: substantive mathematical and editorial review questions.
+- `mathodology-project-orientation`: skills-only repository boundaries.
+- `mathodology-skill-authoring`: maintain skills and their metadata.
+- `mathodology-dev-test-release`: optional repository maintenance checks.
 
-Do not reintroduce non-skills project files unless the user explicitly changes the repository strategy. If historical application code is needed, inspect Git history in a separate branch or worktree instead of adding it back to `main`.
+Choose specialists only when their contribution helps the task and the host
+supports delegation. Brief them with a concrete question and relevant evidence;
+ask for findings, artifacts and limitations in ordinary prose. Independent
+review is useful for difficult mathematical or empirical claims. A single agent
+can complete a small task. Do not invent a mandatory panel or scoring system.
+
+## Default figure guidance
+
+Use [the explicit agent guidance](.claude/skills/mathodology-figure-presets/references/figure-guidance.md)
+when starting or delegating figure work. The expected deliverable is a rendered,
+data-backed figure, with an explanation and reproduction path.
+
+## Figures and image2
+
+Before designing figures, load `mathodology-figure-presets`. Default to its
+callable chart code templates for numerical figures. If image2 is unavailable
+or the answer is pending, bind real data, execute the template and deliver
+PNG/PDF outputs; do not stop at a design prompt or wait for image2. On the first figure
+request in each modeling task, ask once whether image2 is available through a
+current tool, a configured interface, or manual use. Reuse an answer already
+in the conversation; continue independent analysis while waiting. Follow the
+skill's image2 guidance, including truthful capability reporting and data-driven
+quantitative marks. Synthetic demonstrations must be labeled as such.
+
+## Repository boundary
+
+Maintain skills in `.claude/skills/`, optional roles in `.claude/agents/`, and
+short workflow prompts in `.claude/workflows/`. This is the sole source of truth;
+`.agents/skills/` is a gitignored local installation mirror. Back up this project's
+mirror before refreshing it; do not modify other skills or global settings.
+
+Keep skill references, licensed exemplars and small optional utilities within
+the owning skill. Contest outputs belong in a separate working project or the
+ignored `work/` directory. Do not add application source, datasets, deployment,
+package manifests or build outputs. `.mcp.json` configures evidence search;
+keep credentials and machine-specific paths out of it. Historical application
+material remains available in Git history, outside the active skill set.
+
+See [the workflow](docs/WORKFLOWS.md) and [installation](docs/INSTALL.md).

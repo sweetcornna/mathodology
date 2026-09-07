@@ -1,4 +1,0 @@
-interface:
-  display_name: "Mathodology Web UI"
-  short_description: "Use archived UI presentation patterns"
-  default_prompt: "Use $mathodology-web-ui when a Mathodology workflow needs archived UI, figure, table, rendering, reader-facing artifact, or review-presentation guidance."

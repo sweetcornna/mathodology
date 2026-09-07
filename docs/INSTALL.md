@@ -1,288 +1,87 @@
-# One-Command Install And Update
+# Installation and updates
 
-Mathodology uses the open `skills` CLI from `vercel-labs/skills` as its installer. The repository does not maintain a custom package manager.
+Mathodology uses the standard [skills CLI](https://github.com/vercel-labs/skills).
+A full checkout contains eight skills, eight optional Claude Code roles, two
+workflow prompts and a project search MCP configuration. No custom updater runs.
 
-Evidence work additionally uses the keyless `search` MCP server, **[free-search-mcp](https://github.com/sweetcornna/free-search-mcp)**. The repository ships `.mcp.json`, and the project-level command below installs it alongside the skills, so no manual MCP setup is needed. See [Search MCP For Evidence Work](#search-mcp-for-evidence-work).
-
-There are two install scopes:
-
-- **Project-level (recommended)**: installs into the current folder only. Other projects and user-level directories are never touched.
-- **Global**: installs into the current user's agent directories and affects every project on the machine.
-
-## Project-Level Install (Current Folder Only)
-
-Run from the root of the target project. The transactional updater deploys everything Mathodology ships — all 9 skills, the 9 Claude Code subagents, the 2 contest workflow templates, and the project-level `search` MCP config — into that folder only. It installs a missing MCP config or migrates only an identifiable legacy canonical config; custom configurations and intentional download opt-outs remain unchanged:
+## Use a full checkout
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
+git clone https://github.com/sweetcornna/mathodology.git
+cd mathodology
 ```
 
-What it creates, all inside the current folder:
+Claude Code can use the project skill and role directories. Codex can install a
+local skill copy from this checkout:
 
-- `./.claude/skills/mathodology-*` — the 9 skills (copied, no symlinks)
-- `./.claude/agents/mathodology-*.md` — the 9 project subagents
-- `./.claude/workflows/mathodology-*.md` — the 2 workflow templates
-- `./.mcp.json` — the `search` MCP server registration, created when missing and rewritten only for a positively identified legacy canonical migration
-- `./skills-lock.json` — the `skills` CLI project lockfile
+```bash
+npx -y skills@latest add . --copy --yes --skill '*' --agent codex
+```
 
-Nothing is written to `~/.claude/`, `~/.agents/`, or any other project.
+The maintained source remains `.claude/skills/`; the Codex copy is in the ignored
+`.agents/skills/` mirror. Restart or refresh the host's skill discovery after an
+update. Project MCP configuration support depends on the host.
 
-For a skills-only install without subagents, workflow templates, or project MCP handling, invoke the underlying CLI directly:
+## Install skills into an existing project
+
+From the target project, choose the appropriate command:
 
 ```bash
 npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent claude-code
-```
-
-Codex project-level install goes to `./.agents/skills/` instead:
-
-```bash
 npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent codex
 ```
 
-Restart Claude Code (or Codex) in that project after installation.
+These commands install skills, including their references and examples. They do
+not copy root AGENTS.md, project roles, workflows or MCP configuration. Do not
+overwrite the target project's instructions or custom MCP settings. Optional roles
+and workflows can be copied from the checkout after checking destination conflicts.
+Add only the needed Mathodology guidance to existing project instructions.
 
-If this directory is a clone of the Mathodology repository itself, update the checkout instead of running the copy updater:
+For a deliberate global skills install, add `--global` to the selected command.
+Global scope affects other projects and is not required for project use. It does
+not install project roles or MCP configuration.
 
-```bash
-git pull --ff-only
-python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
-```
+## Evidence tools
 
-### Update A Project-Level Install
+The checkout's `.mcp.json` registers
+[free-search-mcp](https://github.com/sweetcornna/free-search-mcp) through `uvx`.
+It requires uv to be available and enables a local staged-download directory.
+The host may require enabling the server. It is a keyless search service; underlying
+engines can still be unavailable. The evidence skill records actual coverage and
+can continue with built-in search.
 
-From the project root. The updater first resolves `main` (or `--ref`) to an immutable commit, then uses that same commit to reconcile all 9 skills, mirror Mathodology subagents/workflows, and handle MCP configuration:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
-```
-
-Diagnose without writing:
-
-```bash
-python3 /tmp/mathodology-update.py --project . --check
-```
-
-Install a reproducible release payload:
-
-```bash
-python3 /tmp/mathodology-update.py --project . --ref v0.12.0
-```
-
-The updater uses a complete `skills add` reconciliation so legacy locks gain newly introduced skills, while non-Mathodology lock entries remain unchanged. It replaces only `mathodology-*` managed assets. On failure, it restores the original skills, agents, workflows, `skills-lock.json`, and `.mcp.json`. Exit `0` means success, `1` means the update failed and was rolled back, and `2` means an argument, dependency, or configuration error.
-
-MCP handling is conservative: a missing file receives the shipped config; a download env is added only when both an old evidence skill and the old canonical `uvx free-search-mcp` registration identify a legacy install. Custom search entries, a missing search entry, invalid JSON, and intentional download opt-outs in a current installation are never overwritten speculatively. Invalid JSON fails before any write; other preserved states appear in the JSON summary. Use the manual registration command in [Search MCP For Evidence Work](#search-mcp-for-evidence-work) when no `search` entry exists.
-
-After a successful asset update, `uvx free-search-mcp@latest --help` refreshes the MCP package. Missing `uvx` or a refresh failure is recorded as non-fatal.
-
-### Verify A Project-Level Install
-
-```bash
-ls .claude/skills | rg '^mathodology-'
-ls .claude/agents .claude/workflows
-```
-
-### Remove A Project-Level Install
-
-Project-level files are plain copies, so removal is a targeted delete inside the project:
-
-```bash
-rm -rf .claude/skills/mathodology-* .claude/agents/mathodology-*.md .claude/workflows/mathodology-*.md
-```
-
-If `skills-lock.json` contains only Mathodology entries, you can delete it too. Delete `.mcp.json` as well if the install created it and you keep no other MCP servers in that project.
-
-## Global Install (All Projects On This Machine)
-
-Run this from any directory:
-
-```bash
-npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
-```
-
-What it does:
-
-- downloads the skills from `github.com/sweetcornna/mathodology`
-- installs all 9 skills
-- targets Codex and Claude Code
-- installs globally for the current user
-- copies files instead of symlinking
-- skips interactive prompts
-
-Restart Codex or Claude Code after installation.
-
-The `skills` CLI installs skill packages. For Claude Code project subagents and workflow templates, use the project-level install above, or copy `.claude/agents/` and `.claude/workflows/` from a checkout into the target project.
-
-CLI help:
-
-```bash
-npx -y skills@latest --help
-```
-
-Do not use `skills add <repo> --help` as a help command. Current `skills` CLI versions can interpret that form as an install command and create project-local `.agents/` and `skills-lock.json` files.
-
-### Update A Global Install
-
-Update only Mathodology skills:
-
-```bash
-npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
-```
-
-Update all globally installed skills:
-
-```bash
-npx -y skills@latest update --global --yes
-```
-
-Restart Codex or Claude Code after updating.
-
-### Verify A Global Install
-
-Codex:
-
-```bash
-ls ~/.codex/skills | rg '^mathodology-'
-```
-
-Claude Code:
-
-```bash
-ls ~/.claude/skills | rg '^mathodology-'
-```
-
-If a skill already exists and update is not enough, remove it before reinstalling:
-
-```bash
-npx -y skills@latest remove --global --yes --skill mathodology-whole-project --agent codex
-npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill mathodology-whole-project --agent codex
-```
-
-## Other Targets
-
-Install globally for every supported agent directory on the machine:
-
-```bash
-npx -y skills@latest add sweetcornna/mathodology --global --copy --all
-```
-
-List skills without installing:
-
-```bash
-npx -y skills@latest add sweetcornna/mathodology --list
-```
-
-Expected skills:
-
-- `mathodology-agent-pipeline`
-- `mathodology-award-gates`
-- `mathodology-dev-test-release`
-- `mathodology-evidence-search`
-- `mathodology-gateway-api`
-- `mathodology-project-orientation`
-- `mathodology-skill-authoring`
-- `mathodology-web-ui`
-- `mathodology-whole-project`
-
-## Search MCP For Evidence Work
-
-`mathodology-evidence-search` drives its evidence and citation-verification protocol
-through an MCP server named `search` ([free-search-mcp](https://github.com/sweetcornna/free-search-mcp)):
-keyless multi-engine web search, page and PDF reading, publisher-metadata extraction,
-a two-level category tree routing to literature, dataset, news, finance, code, forum,
-and image sources (arXiv, OpenAlex, Crossref, PubMed, Zenodo, and many more — see
-`mathodology-evidence-search`'s Routing Rules for the full catalogue), and a
-`paper_graph` prior-art and retraction check.
-
-A clone needs no configuration. The repository ships a `.mcp.json` that registers the
-server at project scope, so Claude Code offers `search` the first time you open the
-folder — approve it once and the evidence tools are live. The only requirement is `uv`
-on `PATH`; the package itself is fetched from PyPI on first run:
-
-```bash
-uv --version
-```
-
-The skills-only commands do not copy `.mcp.json` into the target project; the full
-Claude Code project command above does, provided the project does not already have one.
-For a skills-only install or an existing MCP config, register the server with downloads
-enabled. Claude Code:
+A skills-only installation can register the server using its host's MCP settings.
+Where the corresponding CLI is available, these are the standard commands:
 
 ```bash
 claude mcp add --transport stdio --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" search -- uvx free-search-mcp
-```
-
-Codex:
-
-```bash
 codex mcp add --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" search -- uvx free-search-mcp
 ```
 
-Verify the server is reachable, then restart the client:
+Run only the command for your host and intended scope; inspect existing server
+settings first. Do not replace a custom server or intentional download opt-out.
+No image2 service is installed: the agent asks about the user's actual tool,
+configured interface or manual usage when figure work begins.
+
+## Update and migrate
+
+Back up local edits first. For a clean checkout:
 
 ```bash
-claude mcp list
+git status --short
+git pull --ff-only
 ```
 
-The shipped `.mcp.json` and both manual commands set `SEARCH_MCP_DOWNLOAD_DIR`,
-so `download` is expected in a normal Mathodology project install. The server itself
-keeps disk writes opt-in, which is why omitting that environment variable removes only
-the download tool. Files land in `~/.cache/search-mcp/downloads`, are capped at 100 MB
-each, and are purged after 24 hours, so the workflow treats that directory as staging
-and copies anything it keeps into the run directory. If search MCP tools are present
-but `download` is absent, treat that as a configuration degradation; agents report it
-rather than silently changing MCP configuration. Delete the `env` block from
-`.mcp.json` to turn downloads back off intentionally; the rest of the server is unaffected.
+Do not reset or discard local work when fast-forwarding is unavailable. For an
+installed skills copy, back up its Mathodology directories, then reinstall from
+the selected source with the appropriate command above. Compare the new skill
+list with the old installation and remove retired Mathodology entries after
+backing them up. Leave unrelated skills, custom settings and global installs alone.
+Do not use a broad update command if only this project should change.
 
-A third registration path, added in free-search-mcp 0.11.0, is the Claude Code
-plugin — no repository checkout and no `mcp add` invocation:
+For this repository's local Codex mirror, back up `.agents/skills/mathodology-*`
+separately before refreshing those entries from `.claude/skills/`. The source
+backup intentionally excludes the ignored mirror. Resolve customizations in the
+backup explicitly; never turn the mirror into a second authoring source.
 
-```
-/plugin marketplace add sweetcornna/free-search-mcp
-/plugin install free-search@free-search-mcp
-```
-
-It registers the same `search` server as a stdio `uvx free-search-mcp==<version>`
-process, so `uv` on `PATH` is still the only prerequisite. Unlike the shipped
-`.mcp.json` and both manual commands above, which float, the plugin **pins** the
-version to the plugin's own version — installing plugin 0.11.0 always runs
-package 0.11.0. Its `.mcp.json` also sets no environment variables, so a plugin
-install has no `SEARCH_MCP_DOWNLOAD_DIR` and therefore no `download` tool by
-default; set `SEARCH_MCP_DOWNLOAD_DIR` in `~/.config/search-mcp/.env` to enable
-it, since the server reads that file regardless of install path. Upgrade with
-`/plugin update free-search`, which needs a Claude Code restart to take effect.
-
-`uvx` serves whatever version its cache already holds, so a machine that ran
-`free-search-mcp` before a new release keeps the old one indefinitely — true for
-the shipped `.mcp.json` and both manual commands above, which float. Refresh it
-with one command — `--help` exits immediately, and the next server start picks up
-the version it just cached:
-
-```bash
-uvx free-search-mcp@latest --help
-```
-
-This refresh does nothing for a plugin install: the plugin pins its
-`uvx free-search-mcp==<version>` invocation to the plugin's own version, so
-`@latest` has no unpinned version to resolve to. Refresh a plugin install with
-`/plugin update free-search` instead, and restart Claude Code afterward.
-
-To run a local checkout or a keyed engine set instead of the published package, register
-the same server name at local scope — local scope overrides the project `.mcp.json`.
-Browser-rendered engines additionally need Chromium once; without it, HTTP search and
-fetch still work.
-
-The server is optional, but a normal evidence run uses it together with built-in
-`WebSearch`: MCP category routing supplies vertical coverage across its literature,
-dataset, news, finance, code, forum, and image sources while the built-in channel
-independently broadens discovery, and the researcher reconciles both result sets. If either channel is unavailable, the handoff records a single-source
-`search_backend` plus the degradation reason; `none` blocks evidence work. The critic
-reports every non-`combined` run as reduced coverage.
-
-## Requirements
-
-- Python 3.9 or newer for the transactional project updater
-- Node.js and `npx`
-- `uv` for the `search` MCP server used by evidence work (optional; skills install without it)
-- `curl` for the one-command updater bootstrap
-- network access to GitHub and npm
-- write access to the target skills directories
+See [backup](BACKUP.md), [skills](SKILLS.md), and [workflow prompts](WORKFLOWS.md).
