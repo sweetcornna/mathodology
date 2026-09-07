@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mathodology Scientific Figures"
+  short_description: "Default plotting guidance and 20 data-driven code templates"
+  default_prompt: "Use $mathodology-figure-presets and read references/figure-guidance.md to select a purposeful scientific figure and adapt its plotting and caption prompts. Ask once per modeling task about image2 availability unless already answered. Without image2 or while awaiting an answer, use the 20 callable chart code templates with real data and execute them to generate PNG/PDF. Keep quantitative marks data-driven, use licensed references selectively, and inspect the final render."

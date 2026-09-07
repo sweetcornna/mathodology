@@ -1,4 +1,4 @@
 interface:
-  display_name: "Mathodology Dev Test Release"
-  short_description: "Validate skills and final packages"
-  default_prompt: "Use $mathodology-dev-test-release to validate the skills repository or gate a Mathodology final submission package with phase handoffs, independent critic gates, reproducibility, completeness, and no-extra-artifact checks."
+  display_name: "Mathodology Repository Checks"
+  short_description: "Maintain skills and prepare requested releases"
+  default_prompt: "Use $mathodology-dev-test-release for lightweight source checks. For an explicitly requested release, inspect remote version history, validate the actual changes, explain migration requirements, follow repository review practice, and publish the tag and release only for the intended merged source. Keep release maintenance separate from modeling guidance."

@@ -1,95 +1,40 @@
-# Backup and Restore
+# Backup and restore
 
-The skills repository includes a skills-only backup script:
+The optional utility archives the current maintained source, including new and
+modified files that fit the skills repository boundary:
 
 ```bash
 bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
 ```
 
-By default it writes to:
+It writes an archive, checksum, file list, Git status and local-diff notes to
+`../mathodology_skills_backups/<timestamp>/`. Included: skills and their references,
+examples and utilities, roles, workflows, docs, root instructions, READMEs,
+LICENSE, .gitignore and .mcp.json.
 
-```text
-../mathodology_skills_backups/<timestamp>/
-```
+It excludes Git history, ignored `.agents/` copies, contest outputs, caches and
+secrets. Back up a customized local mirror or contest work separately before
+replacing it; the source archive cannot recover those excluded files.
 
-## Backup Contents
+## Verify and restore
 
-Each backup directory contains:
-
-```text
-mathodology-skills-<timestamp>.tar.gz
-SHA256SUMS
-archive-files.txt
-source-files.nul
-git-status.txt
-uncommitted-diff.patch
-untracked-files.txt
-```
-
-The archive is built from a whitelist. It includes only:
-
-- `.claude/skills/**`
-- `.claude/agents/**`
-- `.claude/workflows/**`
-- `docs/**`
-- `AGENTS.md`
-- `README.md`
-- `README_en.md`
-- `LICENSE`
-- `.gitignore`
-- `.mcp.json`
-
-This keeps old local source remnants out of the skills backup.
-
-## Exclusions
-
-The archive does not include:
-
-- `.git/`
-- `.env` or local secret files
-- application source trees
-- CI, deployment, installer, or package-manager files
-- build outputs and dependency directories
-- local run artifacts
-- `.claude/worktrees/`
-
-## Verify a Backup
+In the printed backup directory, verify the checksum:
 
 ```bash
-cd ../mathodology_skills_backups/<timestamp>
 shasum -a 256 -c SHA256SUMS
-tar -tzf mathodology-skills-<timestamp>.tar.gz | head
 ```
 
-Check that the skills entrypoints exist:
+Inspect the archive's file list, then extract the named archive into a new empty
+directory. Use the actual archive path and timestamp from the backup output:
 
 ```bash
-tar -tzf mathodology-skills-<timestamp>.tar.gz | rg '^(AGENTS\.md|\.claude/skills/mathodology-whole-project/SKILL\.md)$'
+mkdir -p /tmp/mathodology-restore
+tar -xzf /path/to/mathodology-skills-TIMESTAMP.tar.gz -C /tmp/mathodology-restore
 ```
 
-Check that old application paths are absent:
+Read AGENTS.md and the installation guide in the extracted tree. Check required
+skills and references before replacing an installation. This is a source export,
+not a Git-history backup, and requires no application build. The lightweight
+repository checker can inspect an extracted export without Git.
 
-```bash
-tar -tzf mathodology-skills-<timestamp>.tar.gz | rg '^(\.git/|apps/|crates/|packages/|scripts/|config/|installer/|tests/|data/|\.github/|node_modules/|target/|\.venv/|\.env$|\.claude/worktrees/)'
-```
-
-The last command should produce no matches.
-
-## Restore
-
-```bash
-mkdir -p /tmp/mathodology-skills-restore
-tar -xzf ../mathodology_skills_backups/<timestamp>/mathodology-skills-<timestamp>.tar.gz -C /tmp/mathodology-skills-restore
-cd /tmp/mathodology-skills-restore
-```
-
-Then read:
-
-```text
-AGENTS.md
-.claude/skills/mathodology-whole-project/SKILL.md
-.claude/workflows/mathodology-award-submission.md
-docs/INSTALL.md
-```
-
-No build step is required for a skills-only restore.
+See [installation](INSTALL.md) for project/global scope and mirror migration.

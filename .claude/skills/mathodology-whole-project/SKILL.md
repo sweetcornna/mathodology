@@ -1,179 +1,49 @@
 ---
 name: mathodology-whole-project
-description: Use when running, backing up, transferring, restoring, archiving, or installing (project-level or global) the Mathodology skills-only repository and its award workflows.
+description: Use when starting a modeling task or installing, backing up or maintaining the skills pack.
 ---
 
-# Mathodology Whole Project
+# Mathodology Modeling Companion
 
-## Purpose
+Mathodology helps turn a problem into a justified model, reproducible results and
+clear scientific communication. It is a skills pack, not an application or an
+execution engine. Use [modeling prompts](../mathodology-agent-pipeline/SKILL.md)
+as a flexible guide. For figures use
+[figure presets](../mathodology-figure-presets/SKILL.md), including its image2
+availability question. For evidence use
+[evidence search](../mathodology-evidence-search/SKILL.md).
 
-This is the top-level orchestration skill for the current Mathodology GitHub
-tree: running the award workflow, backing up, transferring, restoring, and
-installing the skills globally.
+## Start or resume a modeling task
 
-The repository is intentionally skills-only. It preserves Mathodology as an
-AI-coding knowledge pack, not as a runnable app checkout.
+Read the problem, available data, existing results and applicable contest rules.
+Ask about missing constraints that would change the answer. Reuse established
+preferences and continue from the current evidence. Keep a short note of important
+assumptions and decisions if it helps continuity; no special schema is needed.
 
-For repository maintenance, boundary and whitelist checks, and deciding whether
-a change belongs on this branch, load `mathodology-project-orientation`.
+Work in the user's chosen directory or an ignored `work/` directory in this
+checkout. Produce only artifacts needed for the requested deliverable. Keep
+numerical results traceable. Use specialists where they help and the host allows
+it; an independent review can challenge important claims without fixed panels.
 
-## Current Shape
+## Maintain and distribute
 
-The retained repository surface is:
+The maintained source is `.claude/skills/`. Claude Code roles and workflow prompts
+are adjacent. Codex may use an installed `.agents/skills/` mirror. Back up this
+project's mirror before updating its Mathodology entries. Do not modify unrelated
+skills, project instructions, custom MCP settings or global configuration.
 
-- `.claude/skills/**`: project skills and Codex-style metadata.
-- `.claude/agents/**`: Claude Code project subagents for award-level modeling workflows.
-- `.claude/workflows/**`: Claude Code workflow templates.
-- `AGENTS.md`: tool-neutral entrypoint.
-- `README.md` (Chinese-first) and `README_en.md` (English): public project overview.
-- `docs/SKILLS*.md`, `docs/INSTALL*.md`, `docs/WORKFLOWS*.md`, and `docs/BACKUP.md`: skill, install, workflow, and backup documentation.
-- `LICENSE`, `.gitignore`, and `.mcp.json`.
+For installation in other projects, use the standard skills CLI; for a clean
+repository checkout, use `git pull --ff-only`. Resolve local edits before updating;
+do not reset them. Installation details are in the repository's docs/INSTALL.md.
+A skills-only global install does not install project roles or MCP settings.
 
-Do not expect app source, CI workflows, deployment config, generated contracts,
-datasets, package manifests, lockfiles, or installers in this branch. For the
-full retained-file and deletion policy, load `mathodology-project-orientation`.
-
-## Skill Set
-
-Load these skills as needed:
-
-- `mathodology-project-orientation`: current layout, retained files, deletion policy, and repository boundary checks.
-- `mathodology-award-gates`: award-run gate schemas (handoff/gate/scorecard/decision_memo), the severity ladder, judge-panel thresholds, iteration budgets, run layout, the blind seat protocol, and the figure/PDF QA scripts.
-- `mathodology-agent-pipeline`: archived knowledge about the former Python agent pipeline and the reusable phase workflow pattern.
-- `mathodology-gateway-api`: archived knowledge about the former Rust gateway and API.
-- `mathodology-web-ui`: archived knowledge about the former Vue web UI.
-- `mathodology-dev-test-release`: skills validation (`validate_repo.py`) and archived dev, test, deploy, packaging, and release guidance.
-- `mathodology-skill-authoring`: adding or updating project skills and metadata.
-
-## Runtime Modes
-
-Choose the orchestration mode from the agent environment:
-
-- Claude Code project checkout: use `.claude/workflows/mathodology-award-submission.md` and dispatch the `.claude/agents/mathodology-*.md` subagents.
-- Claude Code contest variants: when the contest is M3, HiMCM/MidMCM, IMMC/IM2C, leaderboard/data-science, operations/policy/business-case, or short-sprint style, also load `.claude/workflows/mathodology-contest-variants.md` and apply the matching adapter.
-- Claude Code global skill install: load this skill and follow `docs/WORKFLOWS.md`; copy `.claude/agents/` and `.claude/workflows/` into the project if native project subagents are needed.
-- Codex global skill install: run the workflow in multi-agents mode, dispatching independent agents for each phase, synthesizing their findings, then gating with a critic. In Phase 0, classify the contest type and apply the matching adapter from `docs/WORKFLOWS.md`. Treat the run as phase-sized and resumable; ask the user only for contest-critical details, then continue automatically when the gate passes.
-
-Codex start prompt:
-
-```text
-Use $mathodology-whole-project. Run the Mathodology 9-phase award submission workflow in Codex multi-agents mode. Work phase by phase: dispatch independent agents for analysis, modeling, evidence, coding, critique, and writing where applicable; synthesize their output; require result-density maps, figure/table sufficiency gates, and rendered-PDF figure QA; run the phase gate; then continue automatically. Pause to ask the user only for contest-critical details that would change requirements, data access, model choice, compute budget, or final submission constraints. For ordinary ambiguity, make a conservative assumption, record it in the phase log, and keep going.
-```
-
-## Codex Resumable Execution
-
-Codex may need multiple responses to finish the full award workflow. The lead agent should keep the run moving without asking the user to approve routine steps.
-
-Ask the user only when the answer would materially change:
-
-- official contest requirements, deliverable format, page limits, AI-use rules, or deadline
-- access to private files, datasets, paid sources, credentials, or external services
-- choice between plausible model routes with different scoring or feasibility risks
-- compute, runtime, language, tool, or reproducibility constraints
-- final claim, recommendation, or submission package decision that cannot be safely inferred
-
-For all other ambiguity, choose the safest defensible default, mark it as an assumption, and continue to the next task or phase gate.
-
-When a user confirmation is required, ask a compact question that includes:
-
-- current phase and blocking decision
-- why the detail matters
-- recommended default
-- effect of the likely answers
-
-After the user answers, resume from the current phase log. Do not restart completed phases unless the new answer invalidates them.
-
-If a response boundary is reached before Phase 8, finish the current synthesis or gate, then end with this continuation state:
-
-```text
-Continuation state:
-- Current phase:
-- Completed gates:
-- Blocking user question, if any:
-- Assumptions to carry forward:
-- Artifact paths:
-- Next action:
-- Suggested prompt: Continue from the current continuation state and run the next Mathodology phase gate.
-```
-
-## Award Workflow And Contest Adapters
-
-Use the shared phase model, adapters, and gate guarantees from their canonical
-homes instead of restating them here:
-
-- Phase model (Phases 0-8) and the contest-type adapter table: `docs/WORKFLOWS.md`.
-- Claude Code default workflow, phase-agent-critic matrix, and prize-level gate guarantees: `.claude/workflows/mathodology-award-submission.md`.
-- Claude Code contest variants (M3, HiMCM/MidMCM, IMMC/IM2C, leaderboard, operations/policy, short-sprint, graduate/华为杯, APMCM, MathorCup, and similar): `.claude/workflows/mathodology-contest-variants.md`.
-- Runtime gate schemas, judge-panel protocol, iteration budgets, and figure/PDF QA scripts: `mathodology-award-gates`.
-
-The bar is national-first-prize or MCM/ICM Outstanding: multiple model routes,
-evidence-backed assumptions, reproducible computation, sensitivity and robustness
-checks, a polished paper, independent critic review, and a complete submission
-package. Treat `.claude/workflows/mathodology-award-submission.md` as the source
-of truth for the detailed matrix and gate guarantees.
-
-## User Install And Update
-
-For end users, prefer the bundled transactional updater, which delegates skill installation to the mature `skills` CLI. The recommended scope is project-level: run from the target project root, deploy everything (skills, Claude Code subagents, workflow templates, and MCP configuration) into that folder only, and leave other projects untouched:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
-```
-
-Use the same command to update a full Claude Code project install. It resolves one immutable commit for skills, subagents, workflows, and MCP configuration; reconciles skills missing from legacy locks; mirrors only `mathodology-*` managed assets; preserves unrelated project content; and restores managed files if an update fails:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/sweetcornna/mathodology/main/.claude/skills/mathodology-whole-project/scripts/update-project.py -o /tmp/mathodology-update.py && test -s /tmp/mathodology-update.py && python3 /tmp/mathodology-update.py --project .
-```
-
-Append `--check` for a read-only diagnosis or `--ref v0.12.0` for a reproducible release payload. The updater installs a missing `.mcp.json`, migrates only an identifiable legacy canonical search registration, recognises and preserves plugin-pinned registrations, and preserves custom, missing-search, or intentionally download-disabled configurations. A plugin-pinned registration refreshes with `/plugin update free-search`; MCP package refresh remains non-fatal.
-
-For a machine-wide install across all projects, use the global variant:
-
-```bash
-npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
-```
-
-Update globally installed Mathodology skills with:
-
-```bash
-npx -y skills@latest add sweetcornna/mathodology --global --copy --yes --skill '*' --agent codex claude-code
-```
-
-Use `npx -y skills@latest --help` for CLI help. Do not use `skills add <repo> --help` as a help command because current CLI versions may treat that form as an install command.
-
-See `docs/INSTALL.md` for target-specific variants, verification, and removal.
-
-## Backup Workflow
-
-Use the bundled script:
+The optional [backup utility](scripts/create-source-backup.sh) saves skills,
+references and repository docs, including local uncommitted source changes:
 
 ```bash
 bash .claude/skills/mathodology-whole-project/scripts/create-source-backup.sh
 ```
 
-The script creates a timestamped backup directory outside the repo by default:
-
-```text
-../mathodology_skills_backups/<timestamp>/
-├── mathodology-skills-<timestamp>.tar.gz
-├── SHA256SUMS
-├── archive-files.txt
-├── source-files.nul
-├── git-status.txt
-├── uncommitted-diff.patch
-└── untracked-files.txt
-```
-
-The archive is whitelist-based. It includes only the retained skills repository files, including `.mcp.json` and the bundled updater, even if old application directories still exist locally.
-
-## Restore Orientation
-
-After extracting a backup:
-
-```bash
-tar -xzf mathodology-skills-<timestamp>.tar.gz -C <restore-dir>
-cd <restore-dir>
-```
-
-Then read `AGENTS.md` and load `mathodology-project-orientation` before making edits.
+It excludes the ignored Codex mirror, contest outputs and Git history. Back those
+up separately when needed. Extract a backup into an empty directory and verify
+its checksum before replacing an installation. No application build is required.

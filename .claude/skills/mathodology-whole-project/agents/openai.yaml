@@ -1,4 +1,4 @@
 interface:
-  display_name: "Mathodology Whole Project"
-  short_description: "Run Mathodology skills and award workflows"
-  default_prompt: "Use $mathodology-whole-project. In Codex, classify the contest type in Phase 0, apply the matching Mathodology workflow adapter, then run the 9-phase award workflow with parallel agents, specialist handoffs, result-density maps, figure/table sufficiency gates, rendered-PDF figure QA, phase synthesis, independent critic gates, and resumable phase logs. Target MCM/ICM Outstanding, CUMCM national-first-prize, or the equivalent top tier for the selected contest."
+  display_name: "Mathodology Modeling Companion"
+  short_description: "starting a modeling task or installing, backing up or maintaining the skills pack."
+  default_prompt: "Use $mathodology-whole-project. Use adaptable modeling prompts and figure presets, ask once about image2 at figure design, and preserve evidence and reproducibility. For maintenance, keep a single skill source and back up local copies before refresh. For figure work, follow the default figure guidance in $mathodology-figure-presets: use real-data code templates to generate PNG/PDF when image2 is unavailable or pending."

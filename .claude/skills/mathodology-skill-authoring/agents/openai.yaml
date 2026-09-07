@@ -1,4 +1,4 @@
 interface:
   display_name: "Mathodology Skill Authoring"
-  short_description: "Author skills and agent adapters"
-  default_prompt: "Use $mathodology-skill-authoring when editing Mathodology SKILL.md files, agents/openai.yaml metadata, Claude Code subagents, workflow templates, or Codex multi-agent prompts."
+  short_description: "adding, editing or reviewing skills, role prompts or skill metadata."
+  default_prompt: "Use $mathodology-skill-authoring. Improve reusable prompts, keep metadata discoverable, remove redundant process constraints and verify links."
