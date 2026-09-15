@@ -38,11 +38,10 @@ Use the narrowest category the live tool exposes. Typical groups include `paper`
 (with index, preprint, biomed, cs, openaccess, trial and math subgroups), `dataset`
 (repository, ml, gov), `news`, `finance`, `github`, `forum` and `image`. Subgroup
 availability depends on the server. A general web domain filter is not equivalent
-to a bibliographic search. Do not silently treat a blocked engine as an empty corpus.
+to a bibliographic search.
 
 Merge results by DOI or canonical URL. Read an accepted source once, using the
-appropriate reader. Prefer a few relevant, verified sources to a large list of
-unread papers. Record disagreements and why the adopted value fits the model.
+appropriate reader. Record disagreements and why the adopted value fits the model.
 
 ## Verify citations and retain evidence
 
@@ -78,5 +77,4 @@ Save a small, relevant selection with attribution, version, original URL, access
 date and hash. Prefer an immutable source revision for code examples. Keep copied
 source as reference text, review it before adaptation, and do not execute it
 automatically. Extract design principles; do not present another paper's image
-or numerical results as the current model's output. Broad scraping is unnecessary
-when the existing presets already fit the question.
+or numerical results as the current model's output.

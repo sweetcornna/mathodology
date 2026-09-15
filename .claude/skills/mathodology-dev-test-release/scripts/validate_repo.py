@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 from urllib.parse import unquote, urlsplit
 
-ROOT_FILES = {'AGENTS.md', 'README.md', 'README_en.md', 'LICENSE', '.gitignore', '.mcp.json'}
+ROOT_FILES = {'AGENTS.md', 'CLAUDE.md', 'README.md', 'README_en.md', 'LICENSE', '.gitignore', '.mcp.json'}
 DOC_FILES = {f'docs/{name}{suffix}.md' for name in ['SKILLS', 'INSTALL', 'WORKFLOWS', 'BACKUP']
              for suffix in ['', '_zh']}
 PREFIXES = ('.claude/skills/', '.claude/agents/', '.claude/workflows/')

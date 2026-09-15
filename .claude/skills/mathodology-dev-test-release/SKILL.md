@@ -20,14 +20,9 @@ known skill references and allowed repository paths. Individual commands are
 Git; in a checkout it also inspects tracked paths. It does not enforce document
 heading counts, search wording, updater contracts or contest run schemas.
 
-When changing a utility, exercise its actual behavior. The figure demonstration
-script and PDF overview utility have self-tests; backup can be verified by
-extracting the archive and checking its checksum. Read
-[backup and installation guidance](../mathodology-whole-project/SKILL.md).
-
-When changing prompts, review representative user scenarios and inspect generated
-figures. Do not add tests that simply restate prompt sentences. Do not report
-that a prompt guarantees consistent future model behavior.
+The figure demonstration script and PDF overview utility have self-tests; backup
+can be verified by extracting the archive and checking its checksum
+([backup and installation guidance](../mathodology-whole-project/SKILL.md)).
 
 ## Explicitly requested releases
 
