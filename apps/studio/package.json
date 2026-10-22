@@ -1,11 +1,12 @@
 {
   "name": "mathodology-studio",
   "productName": "Mathodology Studio",
-  "version": "0.16.1",
+  "version": "0.17.0",
   "description": "Desktop workbench for mathematical-modeling contests, driving local agent CLIs (Claude Code, Codex, Gemini CLI) with the Mathodology skills pack.",
   "license": "MIT",
   "author": "Mathodology contributors",
   "homepage": "https://github.com/sweetcornna/mathodology",
+  "desktopName": "mathodology-studio.desktop",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
@@ -15,7 +16,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "package": "electron-vite build && electron-builder --mac --dir",
-    "dist": "electron-vite build && electron-builder --mac"
+    "dist": "electron-vite build && electron-builder --mac",
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:linux": "electron-vite build && electron-builder --linux -c.productName=mathodology-studio"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "5.3.0",

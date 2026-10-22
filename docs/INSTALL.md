@@ -73,10 +73,11 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dist` builds an unsigned macOS DMG. Studio installs the skills, roles,
-workflow prompts and humanizer into each project it creates, and leaves existing
-files alone. At each launch it updates humanizer and refreshes free-search-mcp to
-the newest release. See the [Studio README](../apps/studio/README.md).
+`pnpm dist` builds an unsigned macOS DMG; `pnpm dist:win` and `pnpm dist:linux`
+build the Windows installer and the Linux .deb and AppImage. Studio installs the
+skills, roles, workflow prompts and humanizer into each project it creates, and
+leaves existing files alone. At each launch it updates humanizer and refreshes
+free-search-mcp to the newest release. See the [Studio README](../apps/studio/README.md).
 
 ## Update and migrate
 

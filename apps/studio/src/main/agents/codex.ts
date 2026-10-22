@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process'
 import type { AgentAccount, FileChange, ModelInfo, PermissionMode, SessionEventBody, TodoItem, Usage } from '@shared/types'
 import {
   askCli,
@@ -13,6 +12,7 @@ import {
   type TurnRequest,
   type TurnSink
 } from './base'
+import { execCli } from './launch'
 
 type Json = Record<string, unknown>
 
@@ -162,7 +162,7 @@ export class CodexAppServerParser {
           callId: id,
           name: 'apply_patch',
           toolKind: 'edit',
-          title: changes.map((c) => c.path.split('/').pop()).join(', ') || 'files',
+          title: changes.map((c) => c.path.split(/[\\/]/).pop()).join(', ') || 'files',
           input: { changes: changes.map(({ path, kind }) => ({ path, kind })) },
           changes
         })
@@ -266,7 +266,7 @@ export class CodexAppServerParser {
           requestId,
           callId: p.itemId ? String(p.itemId) : undefined,
           toolName: 'apply_patch',
-          title: changes.map((c) => c.path.split('/').pop()).join(', ') || String(p.reason ?? 'files'),
+          title: changes.map((c) => c.path.split(/[\\/]/).pop()).join(', ') || String(p.reason ?? 'files'),
           input: { changes: changes.map((c) => ({ path: c.path, kind: c.kind })), reason: p.reason, grantRoot: p.grantRoot }
         })
         return null
@@ -346,7 +346,7 @@ function codexAccount(raw: unknown): AgentAccount | undefined {
 
 function debugModels(binary: string, env: NodeJS.ProcessEnv): Promise<ModelInfo[]> {
   return new Promise((resolve) => {
-    execFile(binary, ['debug', 'models'], { env, timeout: 15_000, maxBuffer: 16 << 20 }, (_err, stdout) => {
+    execCli(binary, ['debug', 'models'], { env, timeout: 15_000, maxBuffer: 16 << 20 }, (_err, stdout) => {
       try {
         resolve(codexModels(JSON.parse(stdout).models))
       } catch {

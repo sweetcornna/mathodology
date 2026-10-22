@@ -7,7 +7,10 @@ export function splitArgs(s: string): string[] {
   return out
 }
 
-/** The inverse of `splitArgs` for display: quote the parts that contain spaces. */
+/**
+ * The inverse of `splitArgs` for display: quote the parts that contain spaces. `splitArgs` reads
+ * quotes literally, so backslashes (Windows paths) are kept as they are rather than escaped.
+ */
 export function joinArgs(parts: string[]): string {
-  return parts.map((p) => (/\s/.test(p) || !p ? JSON.stringify(p) : p)).join(' ')
+  return parts.map((p) => (/\s/.test(p) || !p ? (p.includes('"') ? `'${p}'` : `"${p}"`) : p)).join(' ')
 }

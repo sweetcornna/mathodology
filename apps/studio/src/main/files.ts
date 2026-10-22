@@ -1,5 +1,5 @@
 import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { FileEntry, FilePreview } from '@shared/types'
 
 const HIDDEN = new Set(['.git', 'node_modules', '.DS_Store', '__pycache__', '.venv', '.ipynb_checkpoints'])
@@ -38,14 +38,17 @@ function realPath(abs: string): string {
   }
 }
 
+/** `abs` is `base` or below it. `relative` ignores case on Windows, where C: and c: are one drive. */
+function inside(base: string, abs: string): boolean {
+  const rel = relative(base, abs)
+  return rel === '' || (rel !== '..' && !rel.startsWith('..' + sep) && !isAbsolute(rel))
+}
+
 /** Resolve `rel` inside `root`, refusing paths that escape it, also through symbolic links. */
 export function safeJoin(root: string, rel = ''): string {
   const base = resolve(root)
   const abs = resolve(base, rel)
-  if (abs !== base && !abs.startsWith(base + sep)) throw new Error('Path outside project')
-  const real = realPath(abs)
-  const realRoot = realPath(base)
-  if (real !== realRoot && !real.startsWith(realRoot + sep)) throw new Error('Path outside project')
+  if (!inside(base, abs) || !inside(realPath(base), realPath(abs))) throw new Error('Path outside project')
   return abs
 }
 

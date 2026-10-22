@@ -95,12 +95,24 @@ function tomlString(s: string): string {
   return JSON.stringify(s)
 }
 
-function tomlBlock(c: Connector): string {
+// npm's npx, npm, pnpm and yarn are .cmd files on Windows, which start only through cmd.exe;
+// Claude Code and Codex do not add it themselves.
+const WINDOWS_SHIMS = /^(npx|npm|pnpm|pnpx|yarn|yarnpkg)(\.cmd)?$/i
+
+/** The command line written for a stdio connector. */
+export function stdioCommand(c: Connector, platform: NodeJS.Platform = process.platform): { command: string; args: string[] } {
+  const command = c.command ?? ''
+  const args = c.args ?? []
+  return platform === 'win32' && WINDOWS_SHIMS.test(command) ? { command: 'cmd', args: ['/c', command, ...args] } : { command, args }
+}
+
+function tomlBlock(c: Connector, platform: NodeJS.Platform): string {
   const lines = [`[mcp_servers.${c.id}]`]
   if (c.url) lines.push(`url = ${tomlString(c.url)}`)
   else {
-    lines.push(`command = ${tomlString(c.command ?? '')}`)
-    lines.push(`args = [${(c.args ?? []).map(tomlString).join(', ')}]`)
+    const { command, args } = stdioCommand(c, platform)
+    lines.push(`command = ${tomlString(command)}`)
+    lines.push(`args = [${args.map(tomlString).join(', ')}]`)
     if (c.env && Object.keys(c.env).length) {
       lines.push('', `[mcp_servers.${c.id}.env]`)
       for (const [k, v] of Object.entries(c.env)) lines.push(`${/^[A-Za-z0-9_-]+$/.test(k) ? k : tomlString(k)} = ${tomlString(v)}`)
@@ -121,7 +133,13 @@ function tomlKey(lines: string[]): string {
  * Replace the `[mcp_servers.<id>]` tables (and their sub-tables) Studio wrote for the managed ids
  * in a Codex config, keeping every other line as it was. `written` is updated in place.
  */
-export function syncCodexToml(text: string, connectors: Connector[], removed: string[], written: Written = {}): string {
+export function syncCodexToml(
+  text: string,
+  connectors: Connector[],
+  removed: string[],
+  written: Written = {},
+  platform: NodeJS.Platform = process.platform
+): string {
   const managed = new Set([...connectors.map((c) => c.id), ...removed])
   const header = /^\s*\[\s*mcp_servers\.(?:"([^"]+)"|([A-Za-z0-9_-]+))(?:\.[^\]]*)?\s*\]\s*(#.*)?$/
   // Each line with the managed server whose table or sub-table it is in.
@@ -150,7 +168,7 @@ export function syncCodexToml(text: string, connectors: Connector[], removed: st
     } else delete written[sid]
   }
   for (const r of removed) sync(r)
-  for (const c of connectors) sync(c.id, c.enabled ? tomlBlock(c) : undefined)
+  for (const c of connectors) sync(c.id, c.enabled ? tomlBlock(c, platform) : undefined)
   const body = tagged
     .filter((t) => !t.id || !replaced.has(t.id))
     .map((t) => t.line)
@@ -168,15 +186,20 @@ export function syncCodexToml(text: string, connectors: Connector[], removed: st
  * alone. `removed` lists ids of connectors that were deleted, so their entries go too. Returns the
  * files that changed.
  */
-export function syncConnectors(projectDir: string, connectors: Connector[], ledger: string, removed: string[] = []): string[] {
+export function syncConnectors(
+  projectDir: string,
+  connectors: Connector[],
+  ledger: string,
+  removed: string[] = [],
+  platform: NodeJS.Platform = process.platform
+): string[] {
   const state = readJson<Record<string, Written>>(ledger, {})
   const before = JSON.stringify(state)
   const written = (file: string): Written => (state[file] ??= {})
   const changed: string[] = []
-  const claude = (c: Connector): Record<string, unknown> =>
-    c.url ? { type: 'http', url: c.url } : { command: c.command, args: c.args ?? [], ...(c.env && Object.keys(c.env).length ? { env: c.env } : {}) }
-  const gemini = (c: Connector): Record<string, unknown> =>
-    c.url ? { httpUrl: c.url } : { command: c.command, args: c.args ?? [], ...(c.env && Object.keys(c.env).length ? { env: c.env } : {}) }
+  const stdio = (c: Connector): Record<string, unknown> => ({ ...stdioCommand(c, platform), ...(c.env && Object.keys(c.env).length ? { env: c.env } : {}) })
+  const claude = (c: Connector): Record<string, unknown> => (c.url ? { type: 'http', url: c.url } : stdio(c))
+  const gemini = (c: Connector): Record<string, unknown> => (c.url ? { httpUrl: c.url } : stdio(c))
   if (syncJson(join(projectDir, '.mcp.json'), connectors, removed, claude, written('.mcp.json'))) changed.push('.mcp.json')
   if (syncJson(join(projectDir, '.gemini/settings.json'), connectors, removed, gemini, written('.gemini/settings.json'))) {
     changed.push('.gemini/settings.json')
@@ -184,7 +207,7 @@ export function syncConnectors(projectDir: string, connectors: Connector[], ledg
 
   const toml = join(projectDir, '.codex/config.toml')
   const prev = existsSync(toml) ? readFileSync(toml, 'utf8') : ''
-  const next = syncCodexToml(prev, connectors, removed, written('.codex/config.toml'))
+  const next = syncCodexToml(prev, connectors, removed, written('.codex/config.toml'), platform)
   if (next !== prev && (next || existsSync(toml)) && writeIfChanged(toml, next)) changed.push('.codex/config.toml')
 
   for (const file of Object.keys(state)) if (!Object.keys(state[file]).length) delete state[file]

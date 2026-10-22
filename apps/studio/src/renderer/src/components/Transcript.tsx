@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { createTwoFilesPatch } from 'diff'
 import type { SessionEvent, ToolKind } from '@shared/types'
+import { projectRel } from '../lib/api'
 import { buildTranscript, formatTokens, type FileStat, type Item, type ToolNode } from '../lib/transcript'
 import { activityLabel, summarize } from '../lib/verbs'
 import { useT } from '../lib/i18n'
@@ -86,7 +87,7 @@ function UserMessage({ text, attachments }: { text: string; attachments: string[
               className="flex h-7 items-center gap-1.5 rounded-[8px] bg-surface-2 px-2.5 text-[0.857rem] text-fg-2 hover:bg-surface-3"
             >
               <Paperclip size={12} />
-              {a.split('/').pop()}
+              {a.split(/[\\/]/).pop()}
             </button>
           ))}
         </div>
@@ -133,7 +134,7 @@ function inputDetail(node: ToolNode): { lang: string; text: string } | null {
   if (node.toolKind === 'shell' && typeof i.command === 'string') return { lang: 'bash', text: i.command }
   if ((node.name === 'Edit' || node.name === 'MultiEdit') && typeof i.file_path === 'string') {
     const edits = node.name === 'MultiEdit' && Array.isArray(i.edits) ? (i.edits as Record<string, string>[]) : [i as Record<string, string>]
-    const name = String(i.file_path).split('/').pop() ?? ''
+    const name = String(i.file_path).split(/[\\/]/).pop() ?? ''
     const patch = edits
       .map((e) => createTwoFilesPatch(name, name, String(e.old_string ?? ''), String(e.new_string ?? ''), '', '', { context: 2 }))
       .map((p) => p.split('\n').slice(4).join('\n'))
@@ -295,7 +296,7 @@ function ChangesCard({ files }: { files: FileStat[] }) {
   const projectPath = useStudio((s) => s.projects.find((p) => p.id === s.activeProjectId)?.path ?? '')
   const [all, setAll] = useState(false)
   const shown = all ? files : files.slice(0, 3)
-  const rel = (p: string): string => (projectPath && p.startsWith(projectPath + '/') ? p.slice(projectPath.length + 1) : p)
+  const rel = (p: string): string => projectRel(projectPath, p) ?? p
   const total = files.reduce((a, f) => ({ added: a.added + f.added, removed: a.removed + f.removed }), { added: 0, removed: 0 })
   return (
     <div className="card overflow-hidden">

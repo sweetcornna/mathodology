@@ -120,3 +120,21 @@ describe('attachments', () => {
     store.flush()
   })
 })
+
+describe('a CLI that cannot be started', () => {
+  it('ends the turn with an error instead of leaving the session running', async () => {
+    ADAPTERS.claude = {
+      ...ADAPTERS.claude,
+      start() {
+        // What spawn throws on Windows for a command line over 32,767 characters.
+        throw new Error('spawn ENAMETOOLONG')
+      }
+    }
+    const { store, manager, session } = setup()
+    await manager.send({ sessionId: session.id, text: 'hi', attachments: [] })
+    expect(store.session(session.id)?.status).toBe('error')
+    const events = store.events(session.id)
+    expect(events.find((e) => e.kind === 'notice')).toMatchObject({ level: 'error', text: expect.stringContaining('spawn ENAMETOOLONG') })
+    expect(events.at(-1)).toMatchObject({ kind: 'turn.completed', ok: false })
+  })
+})

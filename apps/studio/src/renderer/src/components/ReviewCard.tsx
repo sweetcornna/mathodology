@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronRight, CircleCheck, CircleHelp, CircleX, RotateCcw, ShieldCheck, Square, TriangleAlert, Wrench } from 'lucide-react'
 import type { FindingSeverity, Review, ReviewFinding } from '@shared/types'
+import { projectRel } from '../lib/api'
 import { useT, type MessageKey } from '../lib/i18n'
 import { useStudio } from '../store'
 import { Markdown } from './Markdown'
@@ -18,14 +19,11 @@ const ORDER: FindingSeverity[] = ['fail', 'warn', 'inconclusive', 'pass']
 /** A path or `call:<id>` the finding cites; paths open in the side pane. */
 function Evidence({ item }: { item: string }) {
   const projectPath = useStudio((s) => s.projects.find((p) => p.id === s.activeProjectId)?.path ?? '')
-  const artifact = useStudio((s) => {
-    const rel = item.replace(/^\.\//, '')
-    return s.artifacts.find((a) => a.rel === rel || (projectPath && `${projectPath}/${a.rel}` === item))
-  })
+  const rel = projectRel(projectPath, item) ?? item.replace(/^\.\//, '')
+  const artifact = useStudio((s) => s.artifacts.find((a) => a.rel === rel))
   const openArtifact = useStudio((s) => s.openArtifact)
   const openPreview = useStudio((s) => s.openPreview)
   if (item.startsWith('call:')) return <span className="chip text-fg-3">{item}</span>
-  const rel = projectPath && item.startsWith(projectPath + '/') ? item.slice(projectPath.length + 1) : item.replace(/^\.\//, '')
   return (
     <button className="chip text-accent-text hover:bg-accent-soft" onClick={() => (artifact ? openArtifact(artifact.id) : openPreview(rel))}>
       {rel}

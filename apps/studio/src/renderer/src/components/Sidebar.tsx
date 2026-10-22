@@ -16,7 +16,7 @@ import {
   Trash2
 } from 'lucide-react'
 import type { Session } from '@shared/types'
-import { api, isMac, mod } from '../lib/api'
+import { api, isMac, mod, tildify } from '../lib/api'
 import { useT, type MessageKey } from '../lib/i18n'
 import { useStudio } from '../store'
 import { AgentGlyph } from './BrandIcon'
@@ -176,7 +176,7 @@ function ProjectSwitcher() {
       {projects.map((p) => (
         <MenuItem key={p.id} onSelect={() => select(p.id)} right={p.id === activeId ? <Check size={14} className="text-accent" /> : null}>
           <div className="truncate">{p.name}</div>
-          <div className="truncate text-[0.786rem] text-fg-3">{p.path.replace(/^\/Users\/[^/]+/, '~')}</div>
+          <div className="truncate text-[0.786rem] text-fg-3">{tildify(p.path)}</div>
         </MenuItem>
       ))}
       <MenuSep />

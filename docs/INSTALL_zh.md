@@ -63,7 +63,8 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dist` 构建未签名的 macOS DMG。Studio 新建项目时安装技能、角色、工作提示词
+`pnpm dist` 构建未签名的 macOS DMG，`pnpm dist:win` 和 `pnpm dist:linux` 构建 Windows
+安装包和 Linux 的 .deb、AppImage。Studio 新建项目时安装技能、角色、工作提示词
 和 humanizer，不覆盖已有文件；每次启动更新 humanizer，并把 free-search-mcp 刷新到最新版。
 详见 [Studio 说明](../apps/studio/README.md)。
 

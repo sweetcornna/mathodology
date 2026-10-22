@@ -231,70 +231,79 @@ export class SessionManager {
     // It is stored only once the agent confirms the session, so an aborted first turn starts fresh.
     const newSessionId = !resumeId && session.agent !== 'codex' ? randomUUID() : undefined
     let resumeFailed = false
-    const turn = adapter.start(
-      {
-        binary,
-        cwd: project.path,
-        prompt,
-        model: current.model || settings.agents[session.agent].defaultModel || undefined,
-        effort: current.effort || undefined,
-        permissionMode: current.permissionMode,
-        resumeId,
-        newSessionId,
-        // Claude takes this as a system prompt each run; the others only need it once per thread.
-        systemAppend: session.agent === 'claude' || !resumeId ? STUDIO_PREAMBLE : undefined,
-        settings: settings.agents[session.agent],
-        env
-      },
-      {
-        emit: (body) => {
-          if (body.kind === 'permission.request') save({ status: 'waiting' })
-          if (body.kind === 'permission.resolved' && current.status === 'waiting') save({ status: 'running' })
-          if (body.kind === 'tool.result') this.hooks.filesChanged(project.id)
-          if (body.kind === 'tool.call') calls.set(body.callId, body)
-          if (body.kind === 'notice' && resumeId && RESUME_FAILED.test(body.text)) resumeFailed = true
-          if (body.kind === 'turn.completed') {
-            continueQueue = body.ok
-            // Files written by scripts or commands appear here, attributed to the turn as a whole.
-            this.capture(session.id, project, 'scan', { origin: 'turn', sessionId: session.id, turnSeq })
-          }
-          if (body.kind === 'turn.completed' && body.usage) {
-            const u = current.usage
-            save({
-              usage: {
-                inputTokens: u.inputTokens + (body.usage.inputTokens ?? 0),
-                outputTokens: u.outputTokens + (body.usage.outputTokens ?? 0),
-                cacheReadTokens: u.cacheReadTokens + (body.usage.cacheReadTokens ?? 0),
-                costUsd: u.costUsd + (body.usage.costUsd ?? 0)
-              }
-            })
-          }
-          this.emit(session.id, body)
-          if (body.kind === 'tool.result' && !body.isError) {
-            const call = calls.get(body.callId)
-            if (call && (call.toolKind === 'edit' || call.toolKind === 'write')) {
-              this.capture(session.id, project, namedPaths(project, call), {
-                origin: 'tool',
-                sessionId: session.id,
-                turnSeq,
-                callId: call.callId,
-                tool: call.name
+    let turn: Turn
+    try {
+      turn = adapter.start(
+        {
+          binary,
+          cwd: project.path,
+          prompt,
+          model: current.model || settings.agents[session.agent].defaultModel || undefined,
+          effort: current.effort || undefined,
+          permissionMode: current.permissionMode,
+          resumeId,
+          newSessionId,
+          // Claude takes this as a system prompt each run; the others only need it once per thread.
+          systemAppend: session.agent === 'claude' || !resumeId ? STUDIO_PREAMBLE : undefined,
+          settings: settings.agents[session.agent],
+          env
+        },
+        {
+          emit: (body) => {
+            if (body.kind === 'permission.request') save({ status: 'waiting' })
+            if (body.kind === 'permission.resolved' && current.status === 'waiting') save({ status: 'running' })
+            if (body.kind === 'tool.result') this.hooks.filesChanged(project.id)
+            if (body.kind === 'tool.call') calls.set(body.callId, body)
+            if (body.kind === 'notice' && resumeId && RESUME_FAILED.test(body.text)) resumeFailed = true
+            if (body.kind === 'turn.completed') {
+              continueQueue = body.ok
+              // Files written by scripts or commands appear here, attributed to the turn as a whole.
+              this.capture(session.id, project, 'scan', { origin: 'turn', sessionId: session.id, turnSeq })
+            }
+            if (body.kind === 'turn.completed' && body.usage) {
+              const u = current.usage
+              save({
+                usage: {
+                  inputTokens: u.inputTokens + (body.usage.inputTokens ?? 0),
+                  outputTokens: u.outputTokens + (body.usage.outputTokens ?? 0),
+                  cacheReadTokens: u.cacheReadTokens + (body.usage.cacheReadTokens ?? 0),
+                  costUsd: u.costUsd + (body.usage.costUsd ?? 0)
+                }
               })
             }
-          }
-          if (body.kind === 'turn.completed') {
-            save({ status: body.ok || body.summary === 'interrupted' ? 'idle' : 'error' })
-            if (resumeFailed) {
-              save({ nativeSessionId: undefined })
-              this.emit(session.id, { kind: 'notice', level: 'info', text: RESUME_RESET, code: 'resumeReset' })
+            this.emit(session.id, body)
+            if (body.kind === 'tool.result' && !body.isError) {
+              const call = calls.get(body.callId)
+              if (call && (call.toolKind === 'edit' || call.toolKind === 'write')) {
+                this.capture(session.id, project, namedPaths(project, call), {
+                  origin: 'tool',
+                  sessionId: session.id,
+                  turnSeq,
+                  callId: call.callId,
+                  tool: call.name
+                })
+              }
             }
+            if (body.kind === 'turn.completed') {
+              save({ status: body.ok || body.summary === 'interrupted' ? 'idle' : 'error' })
+              if (resumeFailed) {
+                save({ nativeSessionId: undefined })
+                this.emit(session.id, { kind: 'notice', level: 'info', text: RESUME_RESET, code: 'resumeReset' })
+              }
+            }
+          },
+          nativeSession: (id) => {
+            if (id && id !== current.nativeSessionId) save({ nativeSessionId: id })
           }
-        },
-        nativeSession: (id) => {
-          if (id && id !== current.nativeSessionId) save({ nativeSessionId: id })
         }
-      }
-    )
+      )
+    } catch (err) {
+      // spawn throws for some failures, such as a command line longer than the system allows.
+      this.emit(session.id, { kind: 'notice', level: 'error', text: `${adapter.name} could not be started: ${(err as Error).message}` })
+      this.emit(session.id, { kind: 'turn.completed', ok: false })
+      save({ status: 'error' })
+      return
+    }
     this.turns.set(session.id, turn)
     turn.done.finally(() => {
       this.turns.delete(session.id)

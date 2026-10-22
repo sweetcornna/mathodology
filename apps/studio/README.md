@@ -99,17 +99,20 @@ CLI's own account and limits. It is MIT-licensed like the rest of the repository
 
 ## Requirements
 
-- macOS on Apple silicon. Electron builds for Windows and Linux are configured
-  but untested.
+- macOS on Apple silicon, Windows 10 or 11 (x64), or Linux (x64 or arm64; the
+  .deb for Debian and Ubuntu, the AppImage elsewhere).
 - At least one agent CLI on your `PATH`, signed in from a terminal once:
   - Claude Code: `npm install -g @anthropic-ai/claude-code`
   - Codex: `npm install -g @openai/codex`
   - Gemini CLI: `npm install -g @google/gemini-cli`
 - For development: Node.js 22.12 or newer and pnpm 10.
 
-Studio resolves CLIs through your login shell, so tools installed with Homebrew,
-npm, nvm or `~/.local/bin` are found even when the app starts from Finder. A
-binary path can also be set per agent in Settings → Agents.
+On macOS and Linux, Studio resolves CLIs through your login shell, so tools
+installed with Homebrew, npm, nvm or `~/.local/bin` are found even when the app
+starts from Finder or a desktop menu. On Windows it searches `PATH` for `.exe`
+and `.cmd` files, plus `%APPDATA%\npm` and `~/.local/bin`, and starts npm's
+`.cmd` shims with node directly so multi-line prompts arrive intact. A binary
+path can also be set per agent in Settings → Agents.
 
 ## Develop
 
@@ -123,13 +126,20 @@ pnpm dev
 | --- | --- |
 | `pnpm dev` | Run with hot reload |
 | `pnpm typecheck` | Type-check the main/preload and renderer projects |
-| `pnpm test` | Run the unit tests (stream parsers, models, artifacts, reviews, connectors, literature, reference checks, citation trace, humanizer and search updates) |
+| `pnpm test` | Run the unit tests (stream parsers, models, artifacts, reviews, connectors, literature, reference checks, citation trace, humanizer and search updates, Windows CLI launching) |
 | `pnpm package` | Build an unpacked `.app` under `release/<version>/` |
 | `pnpm dist` | Build the macOS DMG and ZIP |
+| `pnpm dist:win` | Build the Windows x64 installer |
+| `pnpm dist:linux` | Build the Linux .deb and AppImage for x64 and arm64 |
+
+All three build on a Mac, including Apple silicon, without Wine.
 
 Builds are unsigned. On first launch macOS asks for confirmation; open the app
 from Finder with Control-click → Open, or clear the quarantine flag on the copy
-you built yourself.
+you built yourself. Windows SmartScreen may warn about an unknown publisher:
+choose More info → Run anyway. On Ubuntu 23.10 and later, AppArmor keeps
+AppImages from using Chromium's sandbox; the .deb installs a profile that
+allows it.
 
 Set `STUDIO_USER_DATA=/some/dir` to run with a separate data directory, for
 example to see onboarding again or to test without touching your projects.

@@ -57,7 +57,7 @@ Mathodology 让 Claude Code、Codex 和 Gemini CLI 按数模的方式工作：�
 
 ## Mathodology Studio
 
-[Studio](apps/studio/README.md) 是开源桌面工作台（macOS，Apple 芯片），不调用模型 API，
+[Studio](apps/studio/README.md) 是开源桌面工作台（macOS、Windows、Linux），不调用模型 API，
 不保存密钥，不收集数据。
 
 - 驱动本机已登录的 Claude Code、Codex 或 Gemini CLI，回合之间可切换
@@ -67,8 +67,12 @@ Mathodology 让 Claude Code、Codex 和 Gemini CLI 按数模的方式工作：�
 - 自动安装 [humanizer](https://github.com/blader/humanizer)，改掉论文里的 AI 腔；每次启动检查并更新
 - MCP 连接器在设置里配一次，三个 agent 同步使用；内置检索 free-search-mcp 每次启动更新到最新版
 
-**[下载 v0.16.1 DMG](https://github.com/sweetcornna/mathodology/releases/download/v0.16.1/Mathodology-Studio-0.16.1-arm64.dmg)**（macOS，Apple 芯片）。
-应用未签名，首次打开请在访达里按住 Control 点按应用，选择“打开”。需要先装好并登录至少一个 agent CLI。
+**下载 v0.17.0**：[macOS DMG](https://github.com/sweetcornna/mathodology/releases/download/v0.17.0/Mathodology-Studio-0.17.0-arm64.dmg)（Apple 芯片）·
+[Windows 安装包](https://github.com/sweetcornna/mathodology/releases/download/v0.17.0/Mathodology-Studio-0.17.0-x64-setup.exe)（x64）·
+[Linux .deb / AppImage](https://github.com/sweetcornna/mathodology/releases/tag/v0.17.0)（x64、arm64）。
+应用未签名：macOS 首次打开请在访达里按住 Control 点按应用，选择“打开”；Windows 弹出 SmartScreen
+时点“更多信息”→“仍要运行”；Ubuntu 23.10 及以后请用 .deb，那里的 AppImage 用不了 Chromium 沙箱。
+需要先装好并登录至少一个 agent CLI。
 
 或从源码运行（Node.js 22.12+、pnpm 10）：
 

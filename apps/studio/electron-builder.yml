@@ -9,7 +9,8 @@ files:
   - package.json
   - '!**/*.map'
 asarUnpack: []
-# The UI ships in Chinese and English; drop Chromium's other locale packs.
+# The UI ships in Chinese and English; drop Chromium's other locale packs. macOS names them
+# en_GB.lproj, Windows and Linux en-GB.pak.
 electronLanguages: [en, en_GB, zh_CN, zh_TW]
 # The contest kit (skills, roles, workflows) ships beside the app and is copied into projects.
 extraResources:
@@ -45,10 +46,59 @@ dmg:
   title: ${productName} ${version}
 win:
   icon: build/icon.png
-  target: nsis
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: Mathodology-Studio-${version}-${arch}-setup.${ext}
+  electronLanguages: [en-US, en-GB, zh-CN, zh-TW]
+  signAndEditExecutable: true
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: ${productName}
 linux:
   icon: build/icon.png
-  target: AppImage
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+    - target: deb
+      arch: [x64, arm64]
+  artifactName: Mathodology-Studio-${version}-${arch}.${ext}
+  electronLanguages: [en-US, en-GB, zh-CN, zh-TW]
   category: Education
+  # Window association: the .desktop file, StartupWMClass and Electron's app_id share one name.
+  syncDesktopName: true
+  maintainer: Mathodology contributors <96944678+sweetcornna@users.noreply.github.com>
+  synopsis: Desktop workbench for mathematical-modeling contests
+  # `pnpm dist:linux` sets productName to mathodology-studio so the deb installs to a folder without
+  # a space: Chromium splits the setuid sandbox helper's path on whitespace. The menu keeps the name.
+  desktop:
+    entry:
+      Name: Mathodology Studio
+  # Linux window managers read the window icon from the running app (see windowIcon in main).
+  extraResources:
+    - from: build/icon.png
+      to: icon.png
+deb:
+  # electron-builder's defaults plus the GBM, DRM and ALSA libraries Electron links against. Ubuntu
+  # 24.04 and Debian 13 renamed the ALSA package to libasound2t64.
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - libgbm1
+    - libdrm2
+    - libasound2t64 | libasound2
 npmRebuild: false
+# The default makensis and mksquashfs are x86_64 binaries; these bundles also run natively on
+# Apple silicon, and the newer AppImage runtime no longer needs libfuse2.
+toolsets:
+  nsis: 1.2.1
+  appimage: 1.0.3
 publish: null

@@ -1,7 +1,7 @@
-import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { execCli } from './agents/launch'
 
 type Fetch = (url: string) => Promise<{ ok: boolean; text(): Promise<string> }>
 export type Run = (cmd: string, args: string[], cwd: string) => Promise<{ code: number; stdout: string }>
@@ -46,9 +46,9 @@ export interface HumanizerCache {
 export function runner(env: NodeJS.ProcessEnv): Run {
   return (cmd, args, cwd) =>
     new Promise((resolve) => {
-      execFile(cmd, args, { cwd, env, timeout: 180_000, maxBuffer: 1 << 20 }, (err, stdout) => {
+      execCli(cmd, args, { cwd, env, timeout: 180_000, maxBuffer: 1 << 20 }, (err, stdout) => {
         const code = err ? (typeof err.code === 'number' ? err.code : 1) : 0
-        resolve({ code, stdout: String(stdout) })
+        resolve({ code, stdout })
       })
     })
 }
