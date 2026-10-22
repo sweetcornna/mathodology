@@ -94,14 +94,15 @@ export async function detectAgents(
         supportsResume: a.supportsResume
       }
       if (!path) return { ...base, available: false, note: 'not-found' }
-      const [out, models] = await Promise.all([
+      const [out, found] = await Promise.all([
         run(path, a.versionArgs, env),
-        a.listModels ? a.listModels(path, env).catch(() => []) : Promise.resolve([])
+        a.inspect ? a.inspect(path, env).catch(() => ({ models: [] })) : Promise.resolve({ models: [] })
       ])
       const version = /\d+\.\d+\.\d+[\w.-]*/.exec(out)?.[0]
       return {
         ...base,
-        models: models.length > 1 ? models : a.models,
+        models: found.models.length > 1 ? found.models : a.models,
+        account: 'account' in found ? found.account : undefined,
         path,
         version,
         available: Boolean(version),

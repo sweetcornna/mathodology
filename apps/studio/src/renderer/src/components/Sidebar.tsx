@@ -19,7 +19,7 @@ import type { Session } from '@shared/types'
 import { api, isMac, mod } from '../lib/api'
 import { useT, type MessageKey } from '../lib/i18n'
 import { useStudio } from '../store'
-import { AgentGlyph } from './Logo'
+import { AgentGlyph } from './BrandIcon'
 import { Menu, MenuItem, MenuLabel, MenuSep, Spinner, Tip } from './ui'
 
 function groupKey(ts: number): MessageKey {

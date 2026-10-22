@@ -2,12 +2,19 @@ import type {
   AgentId,
   AgentInfo,
   AppInfo,
+  Artifact,
+  Connector,
+  ConnectorCheck,
   CreateProjectInput,
   CreateSessionInput,
   FileEntry,
   FilePreview,
   PermissionMode,
+  FindingStatus,
+  LitCitation,
+  LitResult,
   Project,
+  Review,
   SendMessageInput,
   Session,
   SessionEvent,
@@ -28,7 +35,7 @@ export interface StudioCalls {
   'sessions:create': (input: CreateSessionInput) => Session
   'sessions:update': (
     sessionId: string,
-    patch: Partial<Pick<Session, 'title' | 'pinned' | 'archived' | 'model' | 'permissionMode' | 'agent'>>
+    patch: Partial<Pick<Session, 'title' | 'pinned' | 'archived' | 'model' | 'effort' | 'permissionMode' | 'agent'>>
   ) => Session
   'sessions:delete': (sessionId: string) => void
   'sessions:events': (sessionId: string) => SessionEvent[]
@@ -42,7 +49,23 @@ export interface StudioCalls {
   ) => void
   'files:list': (projectId: string, rel?: string) => FileEntry[]
   'files:preview': (projectId: string, rel: string) => FilePreview
-  'files:figures': (projectId: string) => FileEntry[]
+  /** The project's outputs with their version history; also records edits made outside Studio. */
+  'artifacts:list': (projectId: string) => Artifact[]
+  'artifacts:read': (projectId: string, artifactId: string, v: number) => FilePreview
+  /** Write an earlier version back to disk as the newest version. */
+  'artifacts:restore': (projectId: string, artifactId: string, v: number) => Artifact | null
+  'sessions:dequeue': (sessionId: string, queuedId: string) => Session | undefined
+  /** Start the connector's server and list its tools. */
+  'connectors:check': (connector: Connector) => ConnectorCheck
+  /** Papers for a query through the search connector; `category` narrows the source (e.g. `paper.math`). */
+  'lit:search': (query: string, category?: string) => LitResult[]
+  /** Fetch a BibTeX entry for the paper and add it to the project's bibliography unless it is there. */
+  'lit:cite': (projectId: string, paper: LitResult) => LitCitation
+  'reviews:list': (sessionId: string) => Review[]
+  /** Start a read-only review of the session with its own agent; progress arrives as `review:changed`. */
+  'reviews:start': (sessionId: string) => Review
+  'reviews:cancel': (reviewId: string) => void
+  'reviews:setStatus': (sessionId: string, reviewId: string, findingId: string, status: FindingStatus) => Review | undefined
   'shell:openPath': (path: string) => void
   'shell:reveal': (path: string) => void
   'shell:openExternal': (url: string) => void
@@ -56,6 +79,8 @@ export interface StudioPushes {
   'session:changed': Session
   'project:changed': Project
   'files:changed': { projectId: string }
+  'artifacts:changed': { projectId: string }
+  'review:changed': Review
   'menu:command': MenuCommand
 }
 

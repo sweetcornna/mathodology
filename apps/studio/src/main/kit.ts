@@ -77,7 +77,7 @@ export interface KitInstallResult {
  * Copy the contest kit into a project without overwriting anything the project already has.
  * Mathodology entries that already exist are left alone; the caller can offer an update separately.
  */
-export function installKit(kitRoot: string, projectDir: string, opts: { searchMcp: boolean }): KitInstallResult {
+export function installKit(kitRoot: string, projectDir: string): KitInstallResult {
   const installed: string[] = []
   const skipped: string[] = []
 
@@ -123,18 +123,5 @@ export function installKit(kitRoot: string, projectDir: string, opts: { searchMc
     mkdirSync(join(projectDir, dir), { recursive: true })
   }
 
-  if (opts.searchMcp) {
-    const server = {
-      command: 'uvx',
-      args: ['free-search-mcp'],
-      env: { SEARCH_MCP_DOWNLOAD_DIR: '~/.cache/search-mcp/downloads' }
-    }
-    write('.mcp.json', JSON.stringify({ mcpServers: { search: server } }, null, 2) + '\n')
-    write(
-      '.codex/config.toml',
-      '[mcp_servers.search]\ncommand = "uvx"\nargs = ["free-search-mcp"]\n\n' +
-        '[mcp_servers.search.env]\nSEARCH_MCP_DOWNLOAD_DIR = "~/.cache/search-mcp/downloads"\n'
-    )
-  }
   return { installed, skipped }
 }

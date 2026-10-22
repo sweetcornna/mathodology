@@ -2,13 +2,17 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, protocol, 
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { extname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { MenuCommand, StudioCalls, StudioPushes } from '@shared/ipc'
 import type { AgentInfo, Project, Settings } from '@shared/types'
-import { detectAgents } from './agents/detect'
-import { listFigures, listFiles, previewFile, safeJoin } from './files'
+import { agentEnv, detectAgents } from './agents/detect'
+import { ArtifactStore } from './artifacts'
+import { McpPool, migrateConnectors, syncConnectors } from './connectors'
+import { listFiles, previewBytes, previewFile, safeJoin } from './files'
 import { installKit, readKit } from './kit'
+import { cite, parseResults } from './literature'
+import { ReviewManager } from './reviews'
 import { ADAPTERS, SessionManager } from './sessions'
 import { Store } from './store'
 
@@ -44,7 +48,8 @@ function defaultSettings(): Settings {
     defaultAgent: 'claude',
     defaultPermissionMode: 'ask',
     sendWithEnter: true,
-    enableSearchMcp: true,
+    // Filled in from the saved settings, or with the search server for new installs.
+    connectors: [],
     agents: { claude: { ...blank }, codex: { ...blank }, gemini: { ...blank } }
   }
 }
@@ -52,6 +57,9 @@ function defaultSettings(): Settings {
 let store: Store
 let settings: Settings
 let sessions: SessionManager
+let artifacts: ArtifactStore
+let reviews: ReviewManager
+const mcp = new McpPool(agentEnv)
 let win: BrowserWindow | null = null
 let agentCache: AgentInfo[] | null = null
 
@@ -82,12 +90,19 @@ const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>
   }),
   'settings:get': () => settings,
   'settings:set': (patch) => {
+    const before = settings.connectors
     settings = {
       ...settings,
       ...patch,
       agents: patch.agents ? { ...settings.agents, ...patch.agents } : settings.agents
     }
     store.saveSettings(settings)
+    if (patch.connectors) {
+      const removed = before.filter((c) => !settings.connectors.some((x) => x.id === c.id)).map((c) => c.id)
+      for (const p of store.projects.filter((p) => p.kitInstalled && existsSync(p.path))) {
+        if (syncConnectors(p.path, settings.connectors, removed).length) push('files:changed', { projectId: p.id })
+      }
+    }
     if (patch.theme) applyTheme()
     if (patch.agents) agentCache = null
     return settings
@@ -117,7 +132,8 @@ const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>
       kitInstalled: false
     }
     if (input.installKit) {
-      installKit(kitRoot, path, { searchMcp: settings.enableSearchMcp })
+      installKit(kitRoot, path)
+      syncConnectors(path, settings.connectors)
       project.kitInstalled = true
     }
     store.upsertProject(project)
@@ -126,7 +142,8 @@ const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>
   'projects:installKit': (projectId) => {
     const project = store.project(projectId)
     if (!project) throw new Error('Unknown project')
-    installKit(kitRoot, project.path, { searchMcp: settings.enableSearchMcp })
+    installKit(kitRoot, project.path)
+    syncConnectors(project.path, settings.connectors)
     const next = { ...project, kitInstalled: true }
     store.upsertProject(next)
     push('files:changed', { projectId })
@@ -142,6 +159,7 @@ const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>
   'sessions:delete': (sessionId) => {
     sessions.interrupt(sessionId)
     store.removeSession(sessionId)
+    reviews.remove(sessionId)
   },
   'sessions:events': (sessionId) => store.events(sessionId),
   'sessions:send': (input) => sessions.send(input),
@@ -158,11 +176,61 @@ const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>
     if (!project) throw new Error('Unknown project')
     return previewFile(project.path, rel)
   },
-  'files:figures': (projectId) => {
+  'artifacts:list': (projectId) => {
     const project = store.project(projectId)
-    if (!project || !existsSync(project.path)) return []
-    return listFigures(project.path)
+    if (!project) return []
+    // While a turn runs, new files are left for the turn's own scan to attribute.
+    if (existsSync(project.path) && !sessions.projectBusy(projectId)) artifacts.capture(project, 'scan', { origin: 'external' })
+    return artifacts.list(projectId)
   },
+  'artifacts:read': (projectId, artifactId, v) => {
+    const project = store.project(projectId)
+    const artifact = artifacts.get(projectId, artifactId)
+    if (!project || !artifact) throw new Error('Unknown artifact')
+    const bytes = artifacts.read(projectId, artifactId, v)
+    const path = join(project.path, artifact.rel)
+    if (!bytes) return { path, kind: 'too-large', size: artifact.versions.find((x) => x.v === v)?.size ?? 0 }
+    return previewBytes(path, bytes)
+  },
+  'artifacts:restore': (projectId, artifactId, v) => {
+    const project = store.project(projectId)
+    if (!project) throw new Error('Unknown project')
+    const restored = artifacts.restore(project, artifactId, v)
+    push('files:changed', { projectId })
+    push('artifacts:changed', { projectId })
+    return restored?.artifact ?? null
+  },
+  'sessions:dequeue': (sessionId, queuedId) => sessions.dequeue(sessionId, queuedId),
+  'connectors:check': (connector) => mcp.check(connector),
+  'lit:search': async (query, category) => {
+    const search = settings.connectors.find((c) => c.builtin)
+    if (!search) throw new Error('The search connector is missing.')
+    const text = await mcp.callText(search, 'search', { query, category: category || 'paper', max_results: 12, format: 'json' })
+    return parseResults(text)
+  },
+  'lit:cite': async (projectId, paper) => {
+    const project = store.project(projectId)
+    if (!project) throw new Error('Unknown project')
+    const search = settings.connectors.find((c) => c.builtin)
+    // The retraction check runs alongside the BibTeX lookup and never blocks the citation.
+    const retracted =
+      search && paper.doi
+        ? mcp
+            .callText(search, 'paper_graph', { paper: paper.doi, direction: 'references', limit: 1, format: 'json' }, 30_000)
+            .then((t) => Boolean((JSON.parse(t) as { paper?: { retracted?: boolean } }).paper?.retracted))
+            .catch(() => undefined)
+        : undefined
+    const result = await cite(project.path, paper, (url, init) => net.fetch(url, init), retracted)
+    push('files:changed', { projectId })
+    return result
+  },
+  'reviews:list': (sessionId) => reviews.list(sessionId),
+  'reviews:start': (sessionId) => {
+    if (sessions.isRunning(sessionId)) throw new Error('Wait for the current turn to finish before reviewing.')
+    return reviews.start(sessionId)
+  },
+  'reviews:cancel': (reviewId) => reviews.cancel(reviewId),
+  'reviews:setStatus': (sessionId, reviewId, findingId, status) => reviews.setStatus(sessionId, reviewId, findingId, status),
   'shell:openPath': async (path) => {
     await shell.openPath(path)
   },
@@ -287,12 +355,25 @@ function createWindow(): void {
   })
 }
 
+const MIME: Record<string, string> = {
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
+  '.svg': 'image/svg+xml', '.pdf': 'application/pdf'
+}
+
 function registerFileProtocol(): void {
   // studio-file://project/<projectId>/<relative path>
+  // studio-file://artifact/<projectId>/<artifactId>/<version>  (a stored version's bytes)
   protocol.handle('studio-file', (request) => {
     try {
       const url = new URL(request.url)
       const [projectId, ...parts] = url.pathname.replace(/^\/+/, '').split('/')
+      if (url.host === 'artifact') {
+        const artifact = artifacts.get(decodeURIComponent(projectId), decodeURIComponent(parts[0] ?? ''))
+        const bytes = artifact && artifacts.read(decodeURIComponent(projectId), artifact.id, Number(parts[1]))
+        if (!artifact || !bytes) return new Response('Not found', { status: 404 })
+        const type = MIME[extname(artifact.rel).toLowerCase()] ?? 'application/octet-stream'
+        return new Response(new Uint8Array(bytes), { headers: { 'content-type': type } })
+      }
       const project = store.project(decodeURIComponent(projectId))
       if (url.host !== 'project' || !project) return new Response('Not found', { status: 404 })
       const abs = safeJoin(project.path, parts.map(decodeURIComponent).join('/'))
@@ -309,11 +390,21 @@ app.whenReady().then(() => {
   store = new Store(join(app.getPath('userData'), 'studio'))
   registerFileProtocol()
   settings = store.loadSettings(defaultSettings())
+  const legacy = settings as Settings & { enableSearchMcp?: boolean }
+  settings.connectors = migrateConnectors({ connectors: settings.connectors.length ? settings.connectors : undefined, enableSearchMcp: legacy.enableSearchMcp })
+  delete legacy.enableSearchMcp
+  // Projects made before connectors existed get the same servers in all three CLIs' configs.
+  for (const p of store.projects.filter((p) => p.kitInstalled && existsSync(p.path))) syncConnectors(p.path, settings.connectors)
   applyTheme()
-  sessions = new SessionManager(store, () => settings, {
+  artifacts = new ArtifactStore(join(app.getPath('userData'), 'studio', 'artifacts'))
+  sessions = new SessionManager(store, artifacts, () => settings, {
     event: (e) => push('session:event', e),
     changed: (s) => push('session:changed', s),
-    filesChanged: (projectId) => push('files:changed', { projectId })
+    filesChanged: (projectId) => push('files:changed', { projectId }),
+    artifactsChanged: (projectId) => push('artifacts:changed', { projectId })
+  })
+  reviews = new ReviewManager(join(app.getPath('userData'), 'studio', 'reviews'), store, () => settings, {
+    changed: (r) => push('review:changed', r)
   })
   registerIpc()
   buildMenu()
@@ -328,6 +419,8 @@ app.on('before-quit', (event) => {
   if (quitting || !sessions) return
   event.preventDefault()
   quitting = true
+  void reviews?.shutdown()
+  void mcp.close()
   void sessions.shutdown().finally(() => {
     store.flush()
     app.quit()

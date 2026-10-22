@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import type { PermissionMode } from '@shared/types'
+import type { ModelInfo, PermissionMode } from '@shared/types'
 import {
+  askCli,
   classifyTool,
   parseJson,
   spawnLines,
@@ -8,6 +9,7 @@ import {
   stderrTail,
   toolTitle,
   type AgentAdapter,
+  type AgentInspection,
   type Turn,
   type TurnRequest,
   type TurnSink
@@ -265,11 +267,60 @@ export function claudeArgs(req: TurnRequest): string[] {
   if (req.permissionMode !== 'bypass') args.push('--permission-prompt-tool', 'stdio')
   else args.push('--dangerously-skip-permissions')
   if (req.model) args.push('--model', req.model)
+  if (req.effort) args.push('--effort', req.effort)
   if (req.resumeId) args.push('--resume', req.resumeId)
   else if (req.newSessionId) args.push('--session-id', req.newSessionId)
   if (req.systemAppend) args.push('--append-system-prompt', req.systemAppend)
+  if (req.ephemeral) args.push('--no-session-persistence')
   args.push(...splitArgs(req.settings.extraArgs))
   return args
+}
+
+/** Turn the model list from Claude Code's `initialize` control response into Studio's shape. */
+export function claudeModels(list: unknown): ModelInfo[] {
+  if (!Array.isArray(list)) return []
+  return list.flatMap((raw): ModelInfo[] => {
+    const m = raw as Json
+    const value = String(m.value ?? '')
+    if (!value) return []
+    const efforts = Array.isArray(m.supportedEffortLevels) ? m.supportedEffortLevels.map(String) : undefined
+    return [
+      {
+        // The "default" entry follows the account's recommended model, so Studio passes no --model.
+        id: value === 'default' ? '' : value,
+        label: String(m.displayName ?? value),
+        description: typeof m.description === 'string' ? m.description : undefined,
+        model: typeof m.resolvedModel === 'string' ? m.resolvedModel : undefined,
+        efforts: efforts?.length ? efforts : undefined
+      }
+    ]
+  })
+}
+
+/** Ask Claude Code for its models and account through the SDK `initialize` request; no prompt is sent. */
+function inspectClaude(binary: string, env: NodeJS.ProcessEnv): Promise<AgentInspection> {
+  return askCli<AgentInspection>(
+    binary,
+    ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'],
+    env,
+    (msg) => {
+      if (msg.type !== 'control_response') return undefined
+      const outer = (msg.response ?? {}) as Json
+      const body = (outer.response ?? outer) as Json
+      const account = (body.account ?? {}) as Json
+      return {
+        models: claudeModels(body.models),
+        account:
+          account.subscriptionType || account.email
+            ? {
+                plan: typeof account.subscriptionType === 'string' ? account.subscriptionType : undefined,
+                email: typeof account.email === 'string' ? account.email : undefined
+              }
+            : undefined
+      }
+    },
+    { first: [{ type: 'control_request', request_id: 'studio-inspect', request: { subtype: 'initialize' } }] }
+  ).then((r) => r ?? { models: [] })
 }
 
 export const claudeAdapter: AgentAdapter = {
@@ -280,11 +331,12 @@ export const claudeAdapter: AgentAdapter = {
   supportsResume: true,
   versionArgs: ['--version'],
   models: [
-    { id: '', label: 'Default' },
-    { id: 'opus', label: 'Opus' },
-    { id: 'sonnet', label: 'Sonnet' },
-    { id: 'haiku', label: 'Haiku' }
+    { id: '', label: 'Default', model: 'claude' },
+    { id: 'opus', label: 'Opus', model: 'claude-opus' },
+    { id: 'sonnet', label: 'Sonnet', model: 'claude-sonnet' },
+    { id: 'haiku', label: 'Haiku', model: 'claude-haiku' }
   ],
+  inspect: inspectClaude,
   start(req: TurnRequest, sink: TurnSink): Turn {
     const parser = new ClaudeStreamParser(sink)
     const { child, exited, kill } = spawnLines(req.binary, claudeArgs(req), req.cwd, req.env, (l) => parser.line(l))

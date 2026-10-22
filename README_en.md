@@ -12,8 +12,14 @@ the work to the evidence and use specialists when their contribution helps.
 workbench. It drives the Claude Code, Codex or Gemini CLI already signed in on
 your machine inside a contest project that carries these skills, with the
 conversation, tool calls, approvals, task list, files, figures and paper preview
-in one window. It calls no model API itself and collects no data. Builds target
-macOS on Apple silicon and include onboarding and settings.
+in one window. Figures, tables and code the agent writes are versioned with
+their provenance, so any two versions can be compared or restored; a read-only
+review checks each claim in the replies against the recorded tool calls,
+outputs and files; a Literature panel finds papers through the search connector
+and writes their BibTeX into the project; and connectors (MCP servers) are set
+up once in Settings for all three agents. It calls no model API itself and
+collects no data. Builds target macOS on Apple silicon and include onboarding
+and settings.
 
 ## Scientific figures and image2
 

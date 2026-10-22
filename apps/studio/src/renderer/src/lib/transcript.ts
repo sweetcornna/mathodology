@@ -1,4 +1,4 @@
-import type { FileChange, NoticeCode, SessionEvent, TodoItem, ToolKind, Usage } from '@shared/types'
+import type { ArtifactKind, FileChange, NoticeCode, SessionEvent, TodoItem, ToolKind, Usage, VersionOrigin } from '@shared/types'
 
 export interface ToolNode {
   callId: string
@@ -30,6 +30,18 @@ export type Item =
   | { type: 'notice'; key: string; level: 'info' | 'warning' | 'error'; text: string; code?: NoticeCode; vars?: Record<string, string> }
   | { type: 'turn'; key: string; ok: boolean; durationMs?: number; usage?: Partial<Usage>; summary?: string }
   | { type: 'changes'; key: string; files: FileStat[] }
+  | { type: 'generated'; key: string; files: GeneratedFile[] }
+
+/** An artifact version produced during one turn, for the card row under that turn. */
+export interface GeneratedFile {
+  artifactId: string
+  rel: string
+  v: number
+  kind: ArtifactKind
+  origin: VersionOrigin
+  added?: number
+  removed?: number
+}
 
 export interface FileStat {
   path: string
@@ -109,6 +121,7 @@ export function buildTranscript(events: SessionEvent[]): Transcript {
   const perms = new Map<string, PermissionItem>()
   let todos: TodoItem[] = []
   let turnEdits: ToolNode[] = []
+  let turnArtifacts = new Map<string, GeneratedFile>()
   let runningTool: ToolNode | undefined
 
   const lastGroup = (): Extract<Item, { type: 'tools' }> | null => {
@@ -179,10 +192,23 @@ export function buildTranscript(events: SessionEvent[]): Transcript {
       case 'notice':
         items.push({ type: 'notice', key: `n${e.seq}`, level: e.level, text: e.text, code: e.code, vars: e.vars })
         break
+      case 'artifact.version':
+        // Later versions in the same turn replace earlier ones; the card shows the newest.
+        turnArtifacts.delete(e.artifactId)
+        turnArtifacts.set(e.artifactId, { artifactId: e.artifactId, rel: e.rel, v: e.v, kind: e.artifactKind, origin: e.origin })
+        break
       case 'turn.completed': {
         const files = mergeStats(turnEdits)
-        if (files.length) items.push({ type: 'changes', key: `c${e.seq}`, files })
+        if (turnArtifacts.size) {
+          const stats = new Map(files.map((f) => [f.path.split('/').slice(-2).join('/'), f]))
+          const generated = [...turnArtifacts.values()].map((g) => {
+            const s = stats.get(g.rel.split('/').slice(-2).join('/'))
+            return s ? { ...g, added: s.added, removed: s.removed } : g
+          })
+          items.push({ type: 'generated', key: `a${e.seq}`, files: generated })
+        } else if (files.length) items.push({ type: 'changes', key: `c${e.seq}`, files })
         turnEdits = []
+        turnArtifacts = new Map()
         runningTool = undefined
         items.push({ type: 'turn', key: `d${e.seq}`, ok: e.ok, durationMs: e.durationMs, usage: e.usage, summary: e.summary })
         break

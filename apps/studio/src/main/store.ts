@@ -8,13 +8,13 @@ interface StateFile {
   sessions: Session[]
 }
 
-function writeAtomic(path: string, data: string): void {
+export function writeAtomic(path: string, data: string): void {
   const tmp = `${path}.${process.pid}.tmp`
   writeFileSync(tmp, data, 'utf8')
   renameSync(tmp, path)
 }
 
-function readJson<T>(path: string, fallback: T): T {
+export function readJson<T>(path: string, fallback: T): T {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as T
   } catch {

@@ -1,7 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { splitArgs } from '@shared/args'
 import type {
+  AgentAccount,
   AgentId,
   AgentSettings,
+  ModelInfo,
   PermissionMode,
   SessionEventBody,
   ToolKind
@@ -12,6 +16,7 @@ export interface TurnRequest {
   cwd: string
   prompt: string
   model?: string
+  effort?: string
   permissionMode: PermissionMode
   /** The CLI's own session/thread id from an earlier turn. */
   resumeId?: string
@@ -19,6 +24,8 @@ export interface TurnRequest {
   newSessionId?: string
   /** Appended to the agent's system prompt when the CLI supports it. */
   systemAppend?: string
+  /** A side run (such as a review) that should not be saved in the CLI's session history. */
+  ephemeral?: boolean
   settings: AgentSettings
   env: NodeJS.ProcessEnv
 }
@@ -36,16 +43,22 @@ export interface Turn {
   done: Promise<void>
 }
 
+export interface AgentInspection {
+  models: ModelInfo[]
+  account?: AgentAccount
+}
+
 export interface AgentAdapter {
   id: AgentId
   name: string
   binaryName: string
   supportsApproval: boolean
   supportsResume: boolean
-  models: { id: string; label: string }[]
+  /** Used when the installed CLI cannot report its own models. */
+  models: ModelInfo[]
   versionArgs: string[]
-  /** Models reported by the installed CLI, when it can list them offline. */
-  listModels?(binary: string, env: NodeJS.ProcessEnv): Promise<{ id: string; label: string }[]>
+  /** Ask the installed CLI for its models and account, without starting a conversation. */
+  inspect?(binary: string, env: NodeJS.ProcessEnv): Promise<AgentInspection>
   start(req: TurnRequest, sink: TurnSink): Turn
 }
 
@@ -65,14 +78,7 @@ export class LineSplitter {
   }
 }
 
-/** Split a user-configured extra-args string, honouring simple quotes. */
-export function splitArgs(s: string): string[] {
-  const out: string[] = []
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(s))) out.push(m[1] ?? m[2] ?? m[3])
-  return out
-}
+export { splitArgs }
 
 export function classifyTool(name: string): ToolKind {
   const n = name.toLowerCase()
@@ -168,6 +174,43 @@ export function spawnLines(
     }
   }
   return { child, exited, kill }
+}
+
+/**
+ * Run a CLI briefly and talk to it in JSON lines, for questions such as "which models are
+ * available". `answer` sees each message and returns a result to finish; `null` means the CLI
+ * did not answer in time or exited first.
+ */
+export function askCli<T>(
+  binary: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  answer: (msg: Record<string, unknown>, send: (obj: unknown) => void) => T | undefined,
+  opts: { first?: unknown[]; timeoutMs?: number } = {}
+): Promise<T | null> {
+  return new Promise((resolve) => {
+    let settled = false
+    const spawned = spawnLines(binary, args, tmpdir(), env, (line) => {
+      const msg = parseJson(line)
+      if (!msg || settled) return
+      const result = answer(msg, send)
+      if (result !== undefined) finish(result)
+    })
+    const send = (obj: unknown): void => {
+      if (!spawned.child.stdin.destroyed) spawned.child.stdin.write(`${JSON.stringify(obj)}\n`)
+    }
+    const finish = (result: T | null): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      spawned.kill('SIGTERM')
+      resolve(result)
+    }
+    const timer = setTimeout(() => finish(null), opts.timeoutMs ?? 15_000)
+    spawned.child.stdin.on('error', () => undefined)
+    void spawned.exited.then(() => finish(null))
+    for (const obj of opts.first ?? []) send(obj)
+  })
 }
 
 /** Lines that CLIs print when they need an interactive sign-in, which a headless run cannot answer. */

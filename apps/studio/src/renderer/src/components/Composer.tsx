@@ -8,20 +8,24 @@ import {
   FileText,
   FolderOpen,
   Hand,
+  ListOrdered,
+  Paperclip,
+  Pencil,
   PencilLine,
   Plus,
+  ShieldCheck,
   Telescope,
   X,
   Zap
 } from 'lucide-react'
-import type { AgentId, Attachment, PermissionMode, SessionEvent, TodoItem } from '@shared/types'
+import type { Attachment, PermissionMode, QueuedMessage, SessionEvent, TodoItem } from '@shared/types'
 import { PERMISSION_MODES } from '@shared/ipc'
 import { api, isMac, mod } from '../lib/api'
 import { useT, type MessageKey } from '../lib/i18n'
 import { buildTranscript, formatTokens, type PermissionItem } from '../lib/transcript'
 import { useStudio } from '../store'
-import { AgentGlyph } from './Logo'
-import { Menu, MenuItem, MenuLabel, MenuSep, Spinner, Tip } from './ui'
+import { ModelPicker } from './ModelPicker'
+import { Menu, MenuItem, MenuLabel, Spinner, Tip } from './ui'
 
 const EMPTY: SessionEvent[] = []
 
@@ -32,72 +36,12 @@ const MODE_ICON: Record<PermissionMode, typeof Hand> = {
   bypass: Zap
 }
 
+/** Last insertion handled, so a composer that mounts later does not repeat it. */
+let handledInsert = 0
+
 export interface ComposerHandle {
   focus(): void
   setText(text: string): void
-}
-
-export function AgentPicker({ pill }: { pill?: boolean }) {
-  const t = useT()
-  const agents = useStudio((s) => s.agents)
-  const draft = useStudio((s) => s.draft)
-  const setDraft = useStudio((s) => s.setDraft)
-  const current = agents.find((a) => a.id === draft.agent)
-  const fallback = useStudio((s) => s.settings?.agents[s.draft.agent]?.defaultModel ?? '')
-  const effective = draft.model || fallback
-  const model = current?.models.find((m) => m.id === effective)
-
-  return (
-    <Menu
-      side="top"
-      align="end"
-      width={280}
-      trigger={
-        <button
-          className={`flex items-center gap-1.5 text-fg-3 transition-colors hover:text-fg ${
-            pill ? 'h-7 rounded-full bg-surface-2 px-2.5 text-[0.857rem] hover:bg-surface-3' : 'h-6 rounded-[6px] px-1.5 text-[0.857rem] hover:bg-surface-2'
-          }`}
-        >
-          <AgentGlyph agent={draft.agent} size={14} />
-          <span className="text-fg-2">{current?.name ?? draft.agent}</span>
-          <span>{effective ? (model?.label ?? effective) : t('composer.default')}</span>
-          <ChevronDown size={12} />
-        </button>
-      }
-    >
-      <MenuLabel>{t('composer.agent')}</MenuLabel>
-      {agents.map((a) => (
-        <MenuItem
-          key={a.id}
-          icon={<AgentGlyph agent={a.id} size={16} />}
-          disabled={!a.available}
-          onSelect={() => setDraft({ agent: a.id as AgentId, model: '' })}
-          right={
-            a.id === draft.agent ? (
-              <Check size={14} className="text-accent" />
-            ) : !a.available ? (
-              <span className="text-[0.786rem] text-fg-3">{t('composer.unavailable')}</span>
-            ) : a.version ? (
-              <span className="text-[0.786rem] text-fg-3">{a.version}</span>
-            ) : null
-          }
-        >
-          {a.name}
-        </MenuItem>
-      ))}
-      {current && current.models.length > 1 && (
-        <>
-          <MenuSep />
-          <MenuLabel>{t('composer.model')}</MenuLabel>
-          {current.models.map((m) => (
-            <MenuItem key={m.id || 'default'} onSelect={() => setDraft({ model: m.id })} right={m.id === draft.model ? <Check size={14} className="text-accent" /> : null}>
-              {m.id ? m.label : t('composer.default')}
-            </MenuItem>
-          ))}
-        </>
-      )}
-    </Menu>
-  )
 }
 
 export function ModePicker({ pill }: { pill?: boolean }) {
@@ -257,9 +201,65 @@ function TaskCard({ todos }: { todos: TodoItem[] }) {
   )
 }
 
-/** Approval and task cards stacked above the composer for the active session. */
-function Dock() {
+/** Messages sent while the agent was busy; each starts the next turn in order. */
+function QueueCard({ sessionId, queue, running, onEdit }: { sessionId: string; queue: QueuedMessage[]; running: boolean; onEdit: (q: QueuedMessage) => void }) {
+  const t = useT()
+  const send = useStudio((s) => s.send)
+  const remove = (id: string): Promise<unknown> => api.call('sessions:dequeue', sessionId, id)
+  const sendNext = async (): Promise<void> => {
+    const next = queue[0]
+    await remove(next.id)
+    await send(next.text, next.attachments)
+  }
+  return (
+    <div className="card px-3 py-2">
+      <div className="flex h-6 items-center gap-2 text-[0.857rem] text-fg-3">
+        <ListOrdered size={13} />
+        <span>{t('queue.title', { n: queue.length })}</span>
+        {!running && <span className="truncate">· {t('queue.paused')}</span>}
+        <span className="flex-1" />
+        {!running && (
+          <button className="btn btn-secondary btn-sm h-6" onClick={() => void sendNext()}>
+            {t('queue.sendNext')}
+          </button>
+        )}
+      </div>
+      <ul className="scroll mt-1 flex max-h-40 flex-col">
+        {queue.map((q, i) => (
+          <li key={q.id} className="group flex h-7 items-center gap-2 text-[0.929rem]">
+            <span className="w-4 shrink-0 text-center text-[0.786rem] text-fg-4 tabular-nums">{i + 1}</span>
+            <span className="min-w-0 flex-1 truncate text-fg-2">{q.text}</span>
+            {q.attachments.length > 0 && <Paperclip size={12} className="shrink-0 text-fg-3" />}
+            <span className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+              <Tip label={t('queue.edit')}>
+                <button
+                  className="icon-btn-sm"
+                  aria-label={t('queue.edit')}
+                  onClick={async () => {
+                    await remove(q.id)
+                    onEdit(q)
+                  }}
+                >
+                  <Pencil size={12} />
+                </button>
+              </Tip>
+              <Tip label={t('common.remove')}>
+                <button className="icon-btn-sm" aria-label={t('common.remove')} onClick={() => void remove(q.id)}>
+                  <X size={12} />
+                </button>
+              </Tip>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** Approval, task and queue cards stacked above the composer for the active session. */
+function Dock({ onEdit }: { onEdit: (q: QueuedMessage) => void }) {
   const sessionId = useStudio((s) => s.activeSessionId)
+  const queue = useStudio((s) => s.sessions.find((x) => x.id === s.activeSessionId)?.queue)
   const events = useStudio((s) => (sessionId ? s.events[sessionId] ?? EMPTY : EMPTY))
   const running = useStudio((s) => {
     const st = s.sessions.find((x) => x.id === sessionId)?.status
@@ -267,10 +267,11 @@ function Dock() {
   })
   const { todos, pending } = useMemo(() => buildTranscript(events), [events])
   const showTodos = todos.length > 0 && (running || todos.some((x) => x.status !== 'completed'))
-  if (!pending.length && !showTodos) return null
+  if (!pending.length && !showTodos && !queue?.length) return null
   return (
     <div className="mb-2 flex flex-col gap-2">
       {showTodos && <TaskCard todos={todos} />}
+      {sessionId && queue && queue.length > 0 && <QueueCard sessionId={sessionId} queue={queue} running={running} onEdit={onEdit} />}
       {pending.length > 0 && <ApprovalCard key={pending[0].requestId} perm={pending[0]} more={pending.length - 1} />}
     </div>
   )
@@ -297,6 +298,7 @@ export const Composer = forwardRef<ComposerHandle, { disabled?: boolean; home?: 
     const session = s.sessions.find((x) => x.id === s.activeSessionId)
     return session?.status === 'running' || session?.status === 'waiting'
   })
+  const hasSession = useStudio((s) => Boolean(s.activeSessionId))
   const [text, setText] = useState('')
   const [files, setFiles] = useState<Attachment[]>([])
   const [dragging, setDragging] = useState(false)
@@ -313,6 +315,19 @@ export const Composer = forwardRef<ComposerHandle, { disabled?: boolean; home?: 
     }
   }))
 
+  // Citations and other snippets from the side panels land at the end of the draft.
+  const insert = useStudio((s) => s.composerInsert)
+  useEffect(() => {
+    if (!insert || insert.n <= handledInsert) return
+    handledInsert = insert.n
+    setText((v) => (v && !/\s$/.test(v) ? `${v}\n${insert.text}` : v + insert.text))
+    requestAnimationFrame(() => {
+      const el = area.current
+      el?.focus()
+      el?.setSelectionRange(el.value.length, el.value.length)
+    })
+  }, [insert])
+
   useEffect(() => {
     const el = area.current
     if (!el) return
@@ -320,7 +335,8 @@ export const Composer = forwardRef<ComposerHandle, { disabled?: boolean; home?: 
     el.style.height = `${Math.min(el.scrollHeight, 300)}px`
   }, [text])
 
-  const canSend = !disabled && !running && (text.trim().length > 0 || files.length > 0)
+  // While a turn runs, sending adds the message to the session's queue.
+  const canSend = !disabled && (text.trim().length > 0 || files.length > 0)
 
   const submit = (): void => {
     if (!canSend) return
@@ -350,6 +366,11 @@ export const Composer = forwardRef<ComposerHandle, { disabled?: boolean; home?: 
             <MenuItem icon={<FileText size={14} />} onSelect={async () => addPaths(await api.call('dialog:pickFiles'))}>
               {t('composer.attachFiles')}
             </MenuItem>
+            {hasSession && (
+              <MenuItem icon={<ShieldCheck size={14} />} disabled={running} onSelect={() => void useStudio.getState().startReview()}>
+                {t('review.start')}
+              </MenuItem>
+            )}
             <MenuItem
               icon={<FolderOpen size={14} />}
               onSelect={() => {
@@ -381,7 +402,7 @@ export const Composer = forwardRef<ComposerHandle, { disabled?: boolean; home?: 
             className={`block max-h-[300px] w-full resize-none self-center bg-transparent focus-visible:shadow-none px-1 py-[5px] text-[1rem] leading-[1.43] text-fg outline-none placeholder:text-fg-3 ${home ? 'min-h-[48px] px-2' : 'min-h-[28px]'}`}
           />
   )
-  const sendButton = running ? (
+  const sendButton = running && !canSend ? (
             <Tip label={`${t('composer.stop')}  Esc`} side="top">
               <button className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink text-ink-fg transition-transform active:scale-95" onClick={interrupt} aria-label={t('composer.stop')}>
                 <span className="h-2.5 w-2.5 rounded-[2px] bg-current" />
@@ -392,7 +413,8 @@ export const Composer = forwardRef<ComposerHandle, { disabled?: boolean; home?: 
               className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-ink text-ink-fg transition-all enabled:hover:opacity-85 enabled:active:scale-95 disabled:bg-surface-3 disabled:text-fg-3"
               disabled={!canSend}
               onClick={submit}
-              aria-label={t('composer.send')}
+              aria-label={t(running ? 'queue.add' : 'composer.send')}
+              title={running ? t('queue.add') : undefined}
             >
               <ArrowUp size={16} strokeWidth={2.4} />
             </button>
@@ -400,7 +422,15 @@ export const Composer = forwardRef<ComposerHandle, { disabled?: boolean; home?: 
 
   return (
     <div>
-      {!home && <Dock />}
+      {!home && (
+        <Dock
+          onEdit={(q) => {
+            setText(q.text)
+            setFiles(q.attachments)
+            requestAnimationFrame(() => area.current?.focus())
+          }}
+        />
+      )}
       <div
         className={`relative rounded-[var(--radius-composer)] bg-composer transition-shadow ${
           dragging ? 'shadow-[0_0_0_2px_var(--accent),var(--composer-shadow)]' : 'shadow-[var(--composer-shadow)]'
@@ -442,7 +472,7 @@ export const Composer = forwardRef<ComposerHandle, { disabled?: boolean; home?: 
         <div className="mt-1.5 flex h-6 items-center gap-1 px-2">
           <ModePicker />
           <span className="flex-1" />
-          <AgentPicker />
+          <ModelPicker />
           <UsageHint />
         </div>
       )}

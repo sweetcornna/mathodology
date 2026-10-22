@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import type { PermissionMode } from '@shared/types'
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+import type { AgentAccount, ModelInfo, PermissionMode } from '@shared/types'
 import {
   classifyTool,
   parseJson,
@@ -9,6 +12,7 @@ import {
   stderrTail,
   toolTitle,
   type AgentAdapter,
+  type AgentInspection,
   type Turn,
   type TurnRequest,
   type TurnSink
@@ -134,6 +138,85 @@ export function geminiArgs(req: TurnRequest): string[] {
   return args
 }
 
+/** "gemini-3.1-pro-preview" → "Gemini 3.1 Pro Preview", "auto-gemini-3" → "Auto (Gemini 3)". */
+function geminiLabel(id: string): string {
+  const words = (s: string): string =>
+    s
+      .split('-')
+      .map((w) => (/^\d/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+      .join(' ')
+  return id.startsWith('auto-') ? `Auto (${words(id.slice(5))})` : words(id)
+}
+
+/** Order: automatic routing first, then newer versions, then pro before flash before lite. */
+function geminiRank(id: string): [number, number, number] {
+  const version = Number(/gemini-(\d+(?:\.\d+)?)/.exec(id)?.[1] ?? 0)
+  const tier = /lite/.test(id) ? 2 : /flash/.test(id) ? 1 : 0
+  return [id.startsWith('auto-') ? 0 : 1, -version, tier]
+}
+
+/**
+ * Gemini CLI has no model-list command, but its bundle declares the models it targets as
+ * constants (default, preview, latest). Reading them from the installed copy keeps the list in
+ * step with the user's CLI version.
+ */
+export function geminiModelsFromSource(source: string): ModelInfo[] {
+  const ids = new Set<string>()
+  for (const m of source.matchAll(/\b(?:var|const|let) ((?:DEFAULT|PREVIEW|LATEST|BASE)_GEMINI_[A-Z0-9_]*MODEL(?:_AUTO)?) = "([^"]+)"/g)) {
+    if (/EMBEDDING|CUSTOM_TOOLS/.test(m[1]) || !/^(auto-)?gemini-/.test(m[2])) continue
+    ids.add(m[2])
+  }
+  const sorted = [...ids].sort((a, b) => {
+    const [x, y] = [geminiRank(a), geminiRank(b)]
+    return x[0] - y[0] || x[1] - y[1] || x[2] - y[2] || a.localeCompare(b)
+  })
+  return sorted.map((id) => ({ id, label: geminiLabel(id), model: id }))
+}
+
+function geminiPackageDir(binary: string): string | null {
+  let dir = dirname(realpathSync(binary))
+  for (let i = 0; i < 4; i++) {
+    if (existsSync(join(dir, 'package.json')) && existsSync(join(dir, 'bundle'))) return dir
+    dir = dirname(dir)
+  }
+  return null
+}
+
+function geminiAccount(): AgentAccount | undefined {
+  try {
+    const settings = JSON.parse(readFileSync(join(homedir(), '.gemini', 'settings.json'), 'utf8'))
+    const kind = String(settings?.security?.auth?.selectedType ?? settings?.selectedAuthType ?? '')
+    const plan = kind.startsWith('oauth') ? 'Google account' : kind.includes('api-key') ? 'API key' : kind.includes('vertex') ? 'Vertex AI' : undefined
+    let email: string | undefined
+    try {
+      const active = JSON.parse(readFileSync(join(homedir(), '.gemini', 'google_accounts.json'), 'utf8'))?.active
+      if (plan === 'Google account' && typeof active === 'string') email = active
+    } catch {
+      // No cached Google account.
+    }
+    return plan ? { plan, email } : undefined
+  } catch {
+    return undefined
+  }
+}
+
+async function inspectGemini(binary: string): Promise<AgentInspection> {
+  const account = geminiAccount()
+  try {
+    const pkg = geminiPackageDir(binary)
+    if (!pkg) return { models: [], account }
+    const bundle = join(pkg, 'bundle')
+    const source = readdirSync(bundle)
+      .filter((f) => f.endsWith('.js'))
+      .map((f) => readFileSync(join(bundle, f), 'utf8'))
+      .join('\n')
+    const models = geminiModelsFromSource(source)
+    return { models: models.length ? [{ id: '', label: 'Default', model: 'gemini' }, ...models] : [], account }
+  } catch {
+    return { models: [], account }
+  }
+}
+
 export const geminiAdapter: AgentAdapter = {
   id: 'gemini',
   name: 'Gemini CLI',
@@ -142,12 +225,13 @@ export const geminiAdapter: AgentAdapter = {
   supportsResume: true,
   versionArgs: ['--version'],
   models: [
-    { id: '', label: 'Default' },
+    { id: '', label: 'Default', model: 'gemini' },
     { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro (preview)' },
     { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (preview)' },
     { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
     { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' }
   ],
+  inspect: (binary) => inspectGemini(binary),
   start(req: TurnRequest, sink: TurnSink): Turn {
     const parser = new GeminiStreamParser(sink)
     let needsSignIn = false

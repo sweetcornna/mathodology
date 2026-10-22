@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Bot, ExternalLink, FolderOpen, Info, Keyboard, Package, Palette, RefreshCw, SlidersHorizontal } from 'lucide-react'
-import type { AgentId, AgentSettings, PermissionMode } from '@shared/types'
+import { Bot, CircleCheck, CircleX, ExternalLink, FolderOpen, Info, Keyboard, Package, Palette, Plug, Plus, RefreshCw, SlidersHorizontal, Trash2 } from 'lucide-react'
+import type { AgentId, AgentSettings, Connector, ConnectorCheck, PermissionMode } from '@shared/types'
+import { joinArgs, splitArgs } from '@shared/args'
 import { PERMISSION_MODES } from '@shared/ipc'
 import { api, mod } from '../lib/api'
 import { useT, type MessageKey } from '../lib/i18n'
 import { useStudio } from '../store'
-import { AgentGlyph } from './Logo'
+import { AgentGlyph } from './BrandIcon'
 import { Modal, Row, Segmented, Spinner, Switch } from './ui'
 
 const INSTALL: Record<AgentId, { cmd: string; url: string }> = {
@@ -77,9 +78,151 @@ function General() {
       <Row label={t('settings.sendWithEnter')} desc={t('settings.sendWithEnterDesc', { mod })}>
         <Switch checked={s.sendWithEnter} onChange={(sendWithEnter) => void save({ sendWithEnter })} />
       </Row>
-      <Row label={t('settings.searchMcp')} desc={t('settings.searchMcpDesc')}>
-        <Switch checked={s.enableSearchMcp} onChange={(enableSearchMcp) => void save({ enableSearchMcp })} />
-      </Row>
+    </Section>
+  )
+}
+
+function connectorLine(c: Connector): string {
+  return c.url ?? joinArgs([c.command ?? '', ...(c.args ?? [])])
+}
+
+/** Same rule as the main process: a key every CLI accepts, unique among the connectors. */
+function newId(name: string, taken: string[]): string {
+  const base = name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'server'
+  let id = base
+  for (let i = 2; taken.includes(id); i++) id = `${base}-${i}`
+  return id
+}
+
+function ConnectorRow({ c }: { c: Connector }) {
+  const t = useT()
+  const s = useStudio((x) => x.settings)!
+  const save = useStudio((x) => x.saveSettings)
+  const [check, setCheck] = useState<ConnectorCheck | 'running' | null>(null)
+  const put = (next: Connector | null): void =>
+    void save({ connectors: next ? s.connectors.map((x) => (x.id === c.id ? next : x)) : s.connectors.filter((x) => x.id !== c.id) })
+  return (
+    <div className="py-3">
+      <div className="flex items-center gap-3">
+        <Plug size={15} className="shrink-0 text-fg-3" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 text-[0.95rem] font-medium">
+            {c.name}
+            {c.builtin && <span className="kbd">{t('connectors.builtin')}</span>}
+          </div>
+          <div className="truncate font-mono text-[0.78rem] text-fg-3" title={connectorLine(c)}>
+            {connectorLine(c)}
+          </div>
+        </div>
+        <button
+          className="btn btn-ghost btn-sm"
+          disabled={check === 'running'}
+          onClick={async () => {
+            setCheck('running')
+            setCheck(await api.call('connectors:check', c))
+          }}
+        >
+          {check === 'running' ? <Spinner size={12} /> : null}
+          {t('connectors.check')}
+        </button>
+        {!c.builtin && (
+          <button className="icon-btn-sm" aria-label={t('common.remove')} onClick={() => put(null)}>
+            <Trash2 size={13} />
+          </button>
+        )}
+        <Switch checked={c.enabled} onChange={(enabled) => put({ ...c, enabled })} label={c.name} />
+      </div>
+      {check && check !== 'running' && (
+        <div className={`mt-2 ml-[27px] flex items-start gap-1.5 text-[0.82rem] ${check.ok ? 'text-fg-2' : 'text-danger-text'}`}>
+          {check.ok ? <CircleCheck size={13} className="mt-0.5 shrink-0 text-success" /> : <CircleX size={13} className="mt-0.5 shrink-0" />}
+          <span className="min-w-0 break-words">
+            {check.ok ? t('connectors.ok', { n: check.tools.length }) + (check.tools.length ? ` · ${check.tools.slice(0, 12).join(', ')}` : '') : check.error}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AddConnector({ onDone }: { onDone: () => void }) {
+  const t = useT()
+  const s = useStudio((x) => x.settings)!
+  const save = useStudio((x) => x.saveSettings)
+  const [kind, setKind] = useState<'stdio' | 'http'>('stdio')
+  const [name, setName] = useState('')
+  const [line, setLine] = useState('')
+  const [env, setEnv] = useState('')
+  const parts = splitArgs(line)
+  const valid = name.trim() && (kind === 'http' ? /^https?:\/\/\S+$/.test(line.trim()) : parts.length > 0)
+  const add = (): void => {
+    const id = newId(name, s.connectors.map((c) => c.id))
+    const vars = Object.fromEntries(
+      env
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.includes('='))
+        .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()])
+    )
+    const c: Connector =
+      kind === 'http'
+        ? { id, name: name.trim(), enabled: true, url: line.trim() }
+        : { id, name: name.trim(), enabled: true, command: parts[0], args: parts.slice(1), ...(Object.keys(vars).length ? { env: vars } : {}) }
+    void save({ connectors: [...s.connectors, c] })
+    onDone()
+  }
+  return (
+    <div className="mt-2 flex flex-col gap-2.5 rounded-[10px] bg-surface-2 p-3">
+      <div className="flex items-center gap-2">
+        <input className="field h-8 flex-1" placeholder={t('connectors.name')} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        <Segmented
+          value={kind}
+          onChange={setKind}
+          options={[
+            { value: 'stdio', label: t('connectors.local') },
+            { value: 'http', label: t('connectors.remote') }
+          ]}
+        />
+      </div>
+      <input
+        className="field h-8 font-mono text-[0.82rem]"
+        placeholder={kind === 'http' ? 'https://example.com/mcp' : 'npx -y @scope/server --flag'}
+        value={line}
+        onChange={(e) => setLine(e.target.value)}
+      />
+      {kind === 'stdio' && (
+        <textarea className="field min-h-[56px] py-1.5 font-mono text-[0.82rem]" placeholder={t('connectors.env')} value={env} onChange={(e) => setEnv(e.target.value)} />
+      )}
+      <div className="flex justify-end gap-2">
+        <button className="btn btn-ghost btn-sm" onClick={onDone}>
+          {t('common.cancel')}
+        </button>
+        <button className="btn btn-primary btn-sm" disabled={!valid} onClick={add}>
+          {t('connectors.add')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function Connectors() {
+  const t = useT()
+  const s = useStudio((x) => x.settings)!
+  const [adding, setAdding] = useState(false)
+  return (
+    <Section title={t('settings.connectors')}>
+      <p className="pb-3 text-[0.88rem] leading-relaxed text-fg-3">{t('connectors.intro')}</p>
+      {s.connectors.map((c) => (
+        <ConnectorRow key={c.id} c={c} />
+      ))}
+      <div className="py-3">
+        {adding ? (
+          <AddConnector onDone={() => setAdding(false)} />
+        ) : (
+          <button className="btn btn-secondary btn-sm" onClick={() => setAdding(true)}>
+            <Plus size={13} /> {t('connectors.new')}
+          </button>
+        )}
+      </div>
     </Section>
   )
 }
@@ -146,6 +289,11 @@ function AgentCard({ id }: { id: AgentId }) {
             </span>
           </div>
           <div className="truncate font-mono text-[0.76rem] text-fg-3">{info.path ?? INSTALL[id].cmd}</div>
+          {info.available && (
+            <div className="mt-0.5 truncate text-[0.76rem] text-fg-3">
+              {[info.account?.plan, info.account?.email, t('settings.modelCount', { n: Math.max(0, info.models.length - 1) })].filter(Boolean).join(' · ')}
+            </div>
+          )}
         </div>
         <span className="text-[0.76rem] text-fg-3">{info.supportsApproval ? t('settings.approval') : t('settings.noApproval')}</span>
       </div>
@@ -160,11 +308,22 @@ function AgentCard({ id }: { id: AgentId }) {
         />
         <span className="text-fg-2">{t('settings.defaultModel')}</span>
         <select className="field h-8" value={local.defaultModel} onChange={(e) => commit({ defaultModel: e.target.value })}>
-          {info.models.map((m) => (
-            <option key={m.id || 'default'} value={m.id}>
-              {m.id ? m.label : t('composer.default')}
-            </option>
-          ))}
+          {[...new Set(info.models.map((m) => m.group ?? ''))].map((group) => {
+            const options = info.models
+              .filter((m) => (m.group ?? '') === group)
+              .map((m) => (
+                <option key={`${group}:${m.id || 'default'}`} value={m.id}>
+                  {m.id ? m.label : t('composer.default')}
+                </option>
+              ))
+            return group ? (
+              <optgroup key={group} label={group}>
+                {options}
+              </optgroup>
+            ) : (
+              options
+            )
+          })}
         </select>
         <span className="text-fg-2">{t('settings.extraArgs')}</span>
         <input
@@ -303,6 +462,7 @@ function About() {
 const SECTIONS: { id: string; label: MessageKey; icon: typeof Info }[] = [
   { id: 'general', label: 'settings.general', icon: SlidersHorizontal },
   { id: 'agents', label: 'settings.agents', icon: Bot },
+  { id: 'connectors', label: 'settings.connectors', icon: Plug },
   { id: 'appearance', label: 'settings.appearance', icon: Palette },
   { id: 'kit', label: 'settings.kit', icon: Package },
   { id: 'shortcuts', label: 'settings.shortcuts', icon: Keyboard },
@@ -337,6 +497,7 @@ export function SettingsDialog() {
         <div className="scroll min-w-0 flex-1 px-8 py-6">
           {section === 'general' && <General />}
           {section === 'agents' && <Agents />}
+          {section === 'connectors' && <Connectors />}
           {section === 'appearance' && <Appearance />}
           {section === 'kit' && <Kit />}
           {section === 'shortcuts' && <Shortcuts />}

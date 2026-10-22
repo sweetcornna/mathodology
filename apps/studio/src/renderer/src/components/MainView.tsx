@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react'
 import {
   Archive,
+  BookOpen,
   ChartScatter,
   ChevronDown,
   FileSearch,
   FolderOpen,
   FolderPlus,
-  Images,
+  Layers,
   ListChecks,
   PanelLeftOpen,
   Pencil,
@@ -15,6 +16,7 @@ import {
   Plus,
   Rocket,
   ScrollText,
+  ShieldCheck,
   Sigma,
   Trash2,
   Wrench
@@ -22,7 +24,8 @@ import {
 import { api, isMac, mod } from '../lib/api'
 import { useT, type MessageKey } from '../lib/i18n'
 import { useStudio, type PaneTab } from '../store'
-import { AgentPicker, Composer, ModePicker, type ComposerHandle } from './Composer'
+import { Composer, ModePicker, type ComposerHandle } from './Composer'
+import { ModelPicker } from './ModelPicker'
 import { Logo } from './Logo'
 import { Transcript } from './Transcript'
 import { Menu, MenuItem, MenuSep, Tip } from './ui'
@@ -37,7 +40,8 @@ const STARTERS: { key: string; icon: typeof Sigma }[] = [
 
 const PANE_TOGGLES: { tab: PaneTab; icon: typeof Sigma; label: MessageKey }[] = [
   { tab: 'files', icon: FolderOpen, label: 'pane.files' },
-  { tab: 'figures', icon: Images, label: 'pane.figures' },
+  { tab: 'artifacts', icon: Layers, label: 'pane.artifacts' },
+  { tab: 'literature', icon: BookOpen, label: 'pane.literature' },
   { tab: 'tasks', icon: ListChecks, label: 'pane.tasks' }
 ]
 
@@ -49,6 +53,7 @@ function TitleMenu() {
   const remove = useStudio((s) => s.deleteSession)
   const confirm = useStudio((s) => s.confirm)
   const rename = useStudio((s) => s.renameSession)
+  const startReview = useStudio((s) => s.startReview)
   if (!session) {
     return <span className="truncate px-1.5 text-[0.929rem] font-medium text-fg-2">{project?.name ?? ''}</span>
   }
@@ -70,6 +75,9 @@ function TitleMenu() {
       </MenuItem>
       <MenuItem icon={<Archive size={14} />} onSelect={() => void update(session.id, { archived: !session.archived })}>
         {t(session.archived ? 'session.unarchive' : 'session.archive')}
+      </MenuItem>
+      <MenuItem icon={<ShieldCheck size={14} />} disabled={session.status === 'running' || session.status === 'waiting'} onSelect={() => void startReview(session.id)}>
+        {t('review.start')}
       </MenuItem>
       {project && (
         <MenuItem icon={<FolderOpen size={14} />} onSelect={() => void api.call('shell:openPath', project.path)}>
@@ -208,7 +216,7 @@ function Home({ composer }: { composer: React.RefObject<ComposerHandle | null> }
         <Composer ref={composer} home />
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <ProjectPill />
-          <AgentPicker pill />
+          <ModelPicker pill />
           <ModePicker pill />
         </div>
         <div className="mt-8">

@@ -1,12 +1,14 @@
 import { execFile } from 'node:child_process'
-import type { FileChange, PermissionMode, SessionEventBody, TodoItem, Usage } from '@shared/types'
+import type { AgentAccount, FileChange, ModelInfo, PermissionMode, SessionEventBody, TodoItem, Usage } from '@shared/types'
 import {
+  askCli,
   parseJson,
   spawnLines,
   splitArgs,
   stderrTail,
   toolTitle,
   type AgentAdapter,
+  type AgentInspection,
   type Turn,
   type TurnRequest,
   type TurnSink
@@ -297,21 +299,94 @@ export class CodexAppServerParser {
   }
 }
 
-function listCodexModels(binary: string, env: NodeJS.ProcessEnv): Promise<{ id: string; label: string }[]> {
+/** "Claude Opus 5.5 · OpenASI · routing group" → label "Claude Opus 5.5", group "OpenASI · routing group". */
+function splitGroup(name: string): { label: string; group?: string } {
+  const at = name.indexOf(' · ')
+  return at < 0 ? { label: name } : { label: name.slice(0, at), group: name.slice(at + 3) }
+}
+
+/** Models from app-server `model/list`, or the same catalogue from `codex debug models`. */
+export function codexModels(list: unknown): ModelInfo[] {
+  if (!Array.isArray(list)) return []
+  const models = list.flatMap((raw): ModelInfo[] => {
+    const m = raw as Json
+    const id = String(m.model ?? m.id ?? m.slug ?? '')
+    if (!id || m.hidden === true || (m.visibility !== undefined && m.visibility !== 'list')) return []
+    const efforts = ((m.supportedReasoningEfforts ?? m.supported_reasoning_levels ?? []) as Json[])
+      .map((e) => String(e.reasoningEffort ?? e.effort ?? ''))
+      .filter(Boolean)
+    const defaultEffort = m.defaultReasoningEffort ?? m.default_reasoning_level
+    return [
+      {
+        id,
+        ...splitGroup(String(m.displayName ?? m.display_name ?? id)),
+        description: typeof m.description === 'string' && m.description ? m.description : undefined,
+        efforts: efforts.length ? efforts : undefined,
+        defaultEffort: typeof defaultEffort === 'string' ? defaultEffort : undefined
+      }
+    ]
+  })
+  const preferred = list.find((m) => (m as Json).isDefault === true) as Json | undefined
+  const fallback = models.find((m) => m.id === String(preferred?.model ?? preferred?.id ?? '')) ?? models[0]
+  const base: ModelInfo = { id: '', label: 'Default', model: fallback?.id, description: fallback?.label }
+  if (fallback?.efforts) Object.assign(base, { efforts: fallback.efforts, defaultEffort: fallback.defaultEffort })
+  return [base, ...models]
+}
+
+function codexAccount(raw: unknown): AgentAccount | undefined {
+  const a = (raw ?? {}) as Json
+  if (a.type === 'chatgpt') {
+    const plan = typeof a.planType === 'string' ? a.planType.charAt(0).toUpperCase() + a.planType.slice(1) : ''
+    return { plan: plan ? `ChatGPT ${plan}` : 'ChatGPT', email: typeof a.email === 'string' ? a.email : undefined }
+  }
+  if (a.type === 'apiKey') return { plan: 'API key' }
+  if (a.type === 'amazonBedrock') return { plan: 'Amazon Bedrock' }
+  return undefined
+}
+
+function debugModels(binary: string, env: NodeJS.ProcessEnv): Promise<ModelInfo[]> {
   return new Promise((resolve) => {
     execFile(binary, ['debug', 'models'], { env, timeout: 15_000, maxBuffer: 16 << 20 }, (_err, stdout) => {
       try {
-        const models = (JSON.parse(stdout).models ?? []) as Json[]
-        resolve(
-          models
-            .filter((m) => m.visibility === 'list' && m.slug)
-            .map((m) => ({ id: String(m.slug), label: String(m.display_name ?? m.slug) }))
-        )
+        resolve(codexModels(JSON.parse(stdout).models))
       } catch {
         resolve([])
       }
     })
   })
+}
+
+/** Ask a short-lived app-server for the model catalogue and account; older CLIs fall back to `debug models`. */
+async function inspectCodex(binary: string, env: NodeJS.ProcessEnv): Promise<AgentInspection> {
+  let next = 0
+  const raw: unknown[] = []
+  let account: AgentAccount | undefined
+  const done = await askCli<boolean>(
+    binary,
+    ['app-server'],
+    env,
+    (msg, send) => {
+      // Server-initiated requests and notifications carry a method; only responses matter here.
+      if (msg.method) return undefined
+      if (msg.id === 1) {
+        send({ method: 'initialized', params: {} })
+        send({ id: (next = 2), method: 'model/list', params: { limit: 200 } })
+      } else if (msg.id === next && next >= 2 && msg.id !== 99) {
+        const result = (msg.result ?? {}) as Json
+        raw.push(...((result.data ?? []) as unknown[]))
+        if (typeof result.nextCursor === 'string' && result.nextCursor && next < 20) {
+          send({ id: ++next, method: 'model/list', params: { limit: 200, cursor: result.nextCursor } })
+        } else send({ id: 99, method: 'account/read', params: {} })
+      } else if (msg.id === 99) {
+        account = codexAccount(((msg.result ?? {}) as Json).account)
+        return true
+      }
+      return undefined
+    },
+    { first: [{ id: 1, method: 'initialize', params: { clientInfo: { name: 'mathodology-studio', version: '0.1.0' }, capabilities: null } }] }
+  )
+  const models = raw.length ? codexModels(raw) : await debugModels(binary, env)
+  return { models: models.length > 1 ? models : [], account: done ? account : undefined }
 }
 
 export const codexAdapter: AgentAdapter = {
@@ -321,10 +396,8 @@ export const codexAdapter: AgentAdapter = {
   supportsApproval: true,
   supportsResume: true,
   versionArgs: ['--version'],
-  models: [{ id: '', label: 'Default' }],
-  async listModels(binary, env) {
-    return [{ id: '', label: 'Default' }, ...(await listCodexModels(binary, env))]
-  },
+  models: [{ id: '', label: 'Default', model: 'gpt' }],
+  inspect: inspectCodex,
   start(req: TurnRequest, sink: TurnSink): Turn {
     const parser = new CodexAppServerParser(sink)
     let nextId = 1
@@ -389,6 +462,8 @@ export const codexAdapter: AgentAdapter = {
       const turn = await call('turn/start', {
         threadId: parser.threadId,
         input: [{ type: 'text', text: req.prompt, text_elements: [] }],
+        model: req.model || null,
+        effort: req.effort || null,
         summary: 'detailed'
       })
       parser.turnId = String(((turn.turn ?? {}) as Json).id ?? parser.turnId)

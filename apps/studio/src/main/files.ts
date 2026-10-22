@@ -53,50 +53,25 @@ export function previewFile(root: string, rel: string): FilePreview {
   const path = safeJoin(root, rel)
   const size = statSync(path).size
   const ext = extname(path).toLowerCase()
+  if (IMAGE_TYPES[ext] && size > IMAGE_LIMIT) return { path, kind: 'too-large', size }
+  if (ext === '.pdf') return { path, kind: 'pdf', size }
+  if (!IMAGE_TYPES[ext] && size > TEXT_LIMIT) return { path, kind: 'too-large', size }
+  return previewBytes(path, readFileSync(path))
+}
+
+/** Preview of file bytes that may not be on disk any more, such as a stored earlier version. */
+export function previewBytes(path: string, buf: Buffer): FilePreview {
+  const size = buf.length
+  const ext = extname(path).toLowerCase()
   if (IMAGE_TYPES[ext]) {
     if (size > IMAGE_LIMIT) return { path, kind: 'too-large', size }
-    const data = readFileSync(path).toString('base64')
-    return { path, kind: 'image', size, content: `data:${IMAGE_TYPES[ext]};base64,${data}` }
+    return { path, kind: 'image', size, content: `data:${IMAGE_TYPES[ext]};base64,${buf.toString('base64')}` }
   }
   if (ext === '.pdf') return { path, kind: 'pdf', size }
   if (size > TEXT_LIMIT) return { path, kind: 'too-large', size }
-  const buf = readFileSync(path)
   const looksText = TEXT_EXT.has(ext) || !buf.subarray(0, 8000).includes(0)
   if (!looksText) return { path, kind: 'binary', size }
   const content = buf.toString('utf8')
   const kind = ext === '.md' ? 'markdown' : ext === '.csv' || ext === '.tsv' ? 'csv' : 'text'
   return { path, kind, size, content }
-}
-
-const FIGURE_EXT = new Set(['.png', '.jpg', '.jpeg', '.svg', '.gif', '.webp', '.pdf'])
-const SKIP_DIRS = new Set([...HIDDEN, '.claude', '.codex', '.agents', '.gemini', 'attachments'])
-
-/** Image and PDF outputs anywhere in the project, newest first. */
-export function listFigures(root: string, limit = 300): FileEntry[] {
-  const out: FileEntry[] = []
-  const walk = (dir: string, depth: number): void => {
-    if (depth > 6 || out.length >= limit * 2) return
-    let names: string[]
-    try {
-      names = readdirSync(dir)
-    } catch {
-      return
-    }
-    for (const name of names) {
-      if (SKIP_DIRS.has(name) || name.startsWith('.')) continue
-      const path = join(dir, name)
-      let st
-      try {
-        st = statSync(path)
-      } catch {
-        continue
-      }
-      if (st.isDirectory()) walk(path, depth + 1)
-      else if (FIGURE_EXT.has(extname(name).toLowerCase())) {
-        out.push({ name, path, rel: relative(root, path).split(sep).join('/'), dir: false, size: st.size, mtime: st.mtimeMs })
-      }
-    }
-  }
-  walk(root, 0)
-  return out.sort((a, b) => b.mtime - a.mtime).slice(0, limit)
 }

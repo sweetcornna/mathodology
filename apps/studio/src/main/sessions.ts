@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
-import { basename, extname, join } from 'node:path'
+import { basename, extname, isAbsolute, join, relative, sep } from 'node:path'
 import type {
   AgentId,
   CreateSessionInput,
@@ -8,9 +8,11 @@ import type {
   Session,
   SessionEvent,
   SessionEventBody,
-  Settings
+  Settings,
+  Project
 } from '@shared/types'
 import type { AgentAdapter, Turn } from './agents/base'
+import type { ArtifactStore, Attribution } from './artifacts'
 import { claudeAdapter } from './agents/claude'
 import { codexAdapter } from './agents/codex'
 import { agentEnv, resolveBinary } from './agents/detect'
@@ -36,6 +38,22 @@ export interface SessionHooks {
   event(event: SessionEvent): void
   changed(session: Session): void
   filesChanged(projectId: string): void
+  artifactsChanged(projectId: string): void
+}
+
+const QUEUE_LIMIT = 20
+
+/** Project-relative paths a file-writing tool call names, from its recorded changes or input. */
+function namedPaths(project: Project, call: Extract<SessionEventBody, { kind: 'tool.call' }>): string[] {
+  const input = (call.input ?? {}) as Record<string, unknown>
+  const raw = [
+    ...(call.changes ?? []).map((c) => c.path),
+    ...['file_path', 'path', 'notebook_path', 'absolute_path', 'filename'].map((k) => input[k]).filter((v): v is string => typeof v === 'string')
+  ]
+  return raw.flatMap((p) => {
+    const rel = isAbsolute(p) ? relative(project.path, p) : p
+    return rel && !rel.startsWith('..') && !isAbsolute(rel) ? [rel.split(sep).join('/')] : []
+  })
 }
 
 function uniqueTarget(dir: string, name: string): string {
@@ -51,12 +69,42 @@ export class SessionManager {
 
   constructor(
     private readonly store: Store,
+    private readonly artifacts: ArtifactStore,
     private readonly settings: () => Settings,
     private readonly hooks: SessionHooks
   ) {}
 
+  /** Record new artifact versions and announce them in the session's transcript. */
+  private capture(sessionId: string, project: Project, rels: string[] | 'scan', by: Attribution): void {
+    const found = this.artifacts.capture(project, rels, by)
+    for (const { artifact, version } of found) {
+      this.emit(sessionId, {
+        kind: 'artifact.version',
+        artifactId: artifact.id,
+        rel: artifact.rel,
+        v: version.v,
+        origin: version.origin,
+        artifactKind: artifact.kind,
+        callId: version.callId
+      })
+    }
+    if (found.length) this.hooks.artifactsChanged(project.id)
+  }
+
+  /** Remove a message that is still waiting in the queue. */
+  dequeue(sessionId: string, id: string): Session | undefined {
+    const session = this.store.session(sessionId)
+    if (!session?.queue?.length) return session
+    return this.update(sessionId, { queue: session.queue.filter((q) => q.id !== id) })
+  }
+
   isRunning(sessionId: string): boolean {
     return this.turns.has(sessionId)
+  }
+
+  /** Whether an agent turn is running in the project; its changes belong to that turn. */
+  projectBusy(projectId: string): boolean {
+    return [...this.turns.keys()].some((id) => this.store.session(id)?.projectId === projectId)
   }
 
   create(input: CreateSessionInput): Session {
@@ -67,6 +115,7 @@ export class SessionManager {
       title: input.title?.trim() || '',
       agent: input.agent,
       model: input.model || undefined,
+      effort: input.effort || undefined,
       permissionMode: input.permissionMode,
       createdAt: now,
       updatedAt: now,
@@ -104,9 +153,21 @@ export class SessionManager {
   async send(input: SendMessageInput): Promise<void> {
     const session = this.store.session(input.sessionId)
     if (!session) throw new Error('Unknown session')
-    if (this.turns.has(session.id)) throw new Error('This session is already working')
+    if (this.turns.has(session.id)) {
+      // Queued on the session so it survives a reload; the next turn starts when this one ends.
+      const queue = session.queue ?? []
+      if (queue.length >= QUEUE_LIMIT) throw new Error('Too many queued messages')
+      this.update(session.id, {
+        queue: [...queue, { id: randomUUID(), text: input.text, attachments: input.attachments, createdAt: Date.now() }]
+      })
+      return
+    }
     const project = this.store.project(session.projectId)
     if (!project) throw new Error('Unknown project')
+
+    // Edits made between turns (by you or other programs) are recorded before the agent starts.
+    const outside = this.artifacts.capture(project, 'scan', { origin: 'external' })
+    if (outside.length) this.hooks.artifactsChanged(project.id)
 
     const attached: string[] = []
     if (input.attachments.length) {
@@ -119,7 +180,9 @@ export class SessionManager {
       }
       this.hooks.filesChanged(project.id)
     }
-    this.emit(session.id, { kind: 'user.message', text: input.text, attachments: attached })
+    const turnSeq = this.emit(session.id, { kind: 'user.message', text: input.text, attachments: attached }).seq
+    const calls = new Map<string, Extract<SessionEventBody, { kind: 'tool.call' }>>()
+    let continueQueue = false
 
     const prompt = attached.length
       ? `${input.text}\n\nAttached files (copied into the project): ${attached.join(', ')}`
@@ -130,18 +193,14 @@ export class SessionManager {
     const env = await agentEnv()
     const binary = resolveBinary(adapter, settings, env)
 
-    let current: Session = {
-      ...session,
-      title: session.title || input.text.replace(/\s+/g, ' ').trim().slice(0, 48) || 'Untitled',
-      status: 'running',
-      updatedAt: Date.now()
-    }
+    let current: Session = session
+    // Start from the stored session each time: the queue, title or model may change mid-turn.
     const save = (patch: Partial<Session>): void => {
-      current = { ...current, ...patch, updatedAt: Date.now() }
+      current = { ...(this.store.session(session.id) ?? current), ...patch, updatedAt: Date.now() }
       this.store.upsertSession(current)
       this.hooks.changed(current)
     }
-    save({})
+    save({ title: session.title || input.text.replace(/\s+/g, ' ').trim().slice(0, 48) || 'Untitled', status: 'running' })
 
     if (!binary) {
       this.emit(session.id, {
@@ -167,6 +226,7 @@ export class SessionManager {
         cwd: project.path,
         prompt,
         model: current.model || settings.agents[session.agent].defaultModel || undefined,
+        effort: current.effort || undefined,
         permissionMode: current.permissionMode,
         resumeId,
         newSessionId,
@@ -180,7 +240,13 @@ export class SessionManager {
           if (body.kind === 'permission.request') save({ status: 'waiting' })
           if (body.kind === 'permission.resolved' && current.status === 'waiting') save({ status: 'running' })
           if (body.kind === 'tool.result') this.hooks.filesChanged(project.id)
+          if (body.kind === 'tool.call') calls.set(body.callId, body)
           if (body.kind === 'notice' && resumeId && RESUME_FAILED.test(body.text)) resumeFailed = true
+          if (body.kind === 'turn.completed') {
+            continueQueue = body.ok
+            // Files written by scripts or commands appear here, attributed to the turn as a whole.
+            this.capture(session.id, project, 'scan', { origin: 'turn', sessionId: session.id, turnSeq })
+          }
           if (body.kind === 'turn.completed' && body.usage) {
             const u = current.usage
             save({
@@ -193,6 +259,18 @@ export class SessionManager {
             })
           }
           this.emit(session.id, body)
+          if (body.kind === 'tool.result' && !body.isError) {
+            const call = calls.get(body.callId)
+            if (call && (call.toolKind === 'edit' || call.toolKind === 'write')) {
+              this.capture(session.id, project, namedPaths(project, call), {
+                origin: 'tool',
+                sessionId: session.id,
+                turnSeq,
+                callId: call.callId,
+                tool: call.name
+              })
+            }
+          }
           if (body.kind === 'turn.completed') {
             save({ status: body.ok || body.summary === 'interrupted' ? 'idle' : 'error' })
             if (resumeFailed) {
@@ -211,6 +289,12 @@ export class SessionManager {
       this.turns.delete(session.id)
       if (current.status === 'running' || current.status === 'waiting') save({ status: 'idle' })
       this.hooks.filesChanged(project.id)
+      // After an interrupt or failure the queue waits for you; otherwise the next message starts.
+      const next = this.store.session(session.id)?.queue?.[0]
+      if (next && continueQueue) {
+        this.dequeue(session.id, next.id)
+        void this.send({ sessionId: session.id, text: next.text, attachments: next.attachments }).catch(() => undefined)
+      }
     })
   }
 

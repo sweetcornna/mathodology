@@ -3,9 +3,13 @@ import type {
   AgentId,
   AgentInfo,
   AppInfo,
+  Artifact,
   Attachment,
+  FindingStatus,
   PermissionMode,
   Project,
+  Review,
+  ReviewFinding,
   Session,
   SessionEvent,
   Settings
@@ -13,7 +17,7 @@ import type {
 import type { StudioCalls } from '@shared/ipc'
 import { api } from './lib/api'
 
-export type PaneTab = 'files' | 'figures' | 'tasks' | 'preview'
+export type PaneTab = 'files' | 'artifacts' | 'literature' | 'tasks' | 'preview'
 
 interface StreamBlock {
   text: string
@@ -23,6 +27,8 @@ interface StreamBlock {
 interface Draft {
   agent: AgentId
   model: string
+  /** Reasoning effort; '' keeps the model's default. */
+  effort: string
   permissionMode: PermissionMode
 }
 
@@ -44,6 +50,16 @@ interface StudioState {
   paneOpen: boolean
   paneTab: PaneTab
   previewRel: string | null
+  /** Artifacts of the active project with their version history. */
+  artifacts: Artifact[]
+  /** The artifact and version open in the side pane's viewer. */
+  artifactView: { artifactId: string; v?: number } | null
+  /** Transcript item to scroll to and highlight once it renders. */
+  focusKey: string | null
+  /** Reviews per session, oldest first. */
+  reviews: Record<string, Review[]>
+  /** Text another panel asked the composer to insert; `n` changes on every request. */
+  composerInsert: { text: string; n: number } | null
   dialog: null | 'settings' | 'new-project' | 'onboarding' | 'palette'
   settingsSection: string
   filesVersion: number
@@ -69,6 +85,16 @@ interface StudioState {
   setDraft(patch: Partial<Draft>): void
   togglePane(tab?: PaneTab): void
   openPreview(rel: string): void
+  loadArtifacts(): Promise<void>
+  openArtifact(artifactId: string | null, v?: number): void
+  /** Show the turn that started at `turnSeq` in its session. */
+  jumpTo(sessionId: string, turnSeq?: number): Promise<void>
+  startReview(sessionId?: string): Promise<void>
+  cancelReview(reviewId: string): void
+  setFindingStatus(review: Review, findingId: string, status: FindingStatus): Promise<void>
+  /** Send a review finding back to the session's agent as a request to fix it. */
+  askToFix(finding: ReviewFinding): Promise<void>
+  insertIntoComposer(text: string): void
   showToast(text: string, tone?: 'info' | 'error'): void
   confirm(opts: ConfirmOptions): Promise<boolean>
   prompt(opts: PromptOptions): Promise<string | null>
@@ -118,11 +144,16 @@ export const useStudio = create<StudioState>((set, get) => ({
   events: {},
   streaming: {},
   live: {},
-  draft: { agent: 'claude', model: '', permissionMode: 'ask' },
+  draft: { agent: 'claude', model: '', effort: '', permissionMode: 'ask' },
   sidebarOpen: true,
   paneOpen: false,
   paneTab: 'files',
   previewRel: null,
+  artifacts: [],
+  artifactView: null,
+  focusKey: null,
+  reviews: {},
+  composerInsert: null,
   dialog: null,
   settingsSection: 'general',
   filesVersion: 0,
@@ -145,7 +176,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       projects,
       sessions,
       activeProjectId: project?.id ?? null,
-      draft: { agent: settings.defaultAgent, model: '', permissionMode: settings.defaultPermissionMode },
+      draft: { agent: settings.defaultAgent, model: '', effort: '', permissionMode: settings.defaultPermissionMode },
       dialog: settings.onboarded ? null : 'onboarding',
       ready: true
     })
@@ -195,6 +226,17 @@ export const useStudio = create<StudioState>((set, get) => ({
     api.on('files:changed', ({ projectId }) => {
       if (projectId === get().activeProjectId) set((st) => ({ filesVersion: st.filesVersion + 1 }))
     })
+    api.on('review:changed', (r) => {
+      set((st) => {
+        const list = st.reviews[r.sessionId] ?? []
+        const next = list.some((x) => x.id === r.id) ? list.map((x) => (x.id === r.id ? r : x)) : [...list, r]
+        return { reviews: { ...st.reviews, [r.sessionId]: next } }
+      })
+    })
+    api.on('artifacts:changed', ({ projectId }) => {
+      if (projectId === get().activeProjectId) void get().loadArtifacts()
+    })
+    void get().loadArtifacts()
     void get().refreshAgents()
   },
 
@@ -213,8 +255,10 @@ export const useStudio = create<StudioState>((set, get) => ({
   },
 
   selectProject(id) {
-    set({ activeProjectId: id, activeSessionId: null, previewRel: null })
+    const changed = id !== get().activeProjectId
+    set({ activeProjectId: id, activeSessionId: null, previewRel: null, ...(changed ? { artifacts: [], artifactView: null } : {}) })
     remember(id, null)
+    if (changed) void get().loadArtifacts()
   },
 
   async selectSession(id) {
@@ -224,12 +268,17 @@ export const useStudio = create<StudioState>((set, get) => ({
     }
     const session = get().sessions.find((s) => s.id === id)
     if (!session) return
+    if (session.projectId !== get().activeProjectId) {
+      set({ artifacts: [], artifactView: null, previewRel: null })
+      queueMicrotask(() => void get().loadArtifacts())
+    }
     set({
       activeSessionId: id,
       activeProjectId: session.projectId,
-      draft: { agent: session.agent, model: session.model ?? '', permissionMode: session.permissionMode }
+      draft: { agent: session.agent, model: session.model ?? '', effort: session.effort ?? '', permissionMode: session.permissionMode }
     })
     remember(session.projectId, id)
+    if (!get().reviews[id]) void api.call('reviews:list', id).then((list) => set((st) => ({ reviews: { ...st.reviews, [id]: list } })))
     if (!get().events[id]) {
       const events = await api.call('sessions:events', id)
       set((st) => ({ events: { ...st.events, [id]: events } }))
@@ -243,6 +292,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       draft: {
         agent: s?.defaultAgent ?? 'claude',
         model: '',
+        effort: '',
         permissionMode: s?.defaultPermissionMode ?? 'ask'
       }
     })
@@ -290,6 +340,7 @@ export const useStudio = create<StudioState>((set, get) => ({
         projectId,
         agent: st.draft.agent,
         model: st.draft.model || undefined,
+        effort: st.draft.effort || undefined,
         permissionMode: st.draft.permissionMode
       })
       set((x) => ({ sessions: [...x.sessions, session], events: { ...x.events, [session.id]: [] } }))
@@ -318,7 +369,7 @@ export const useStudio = create<StudioState>((set, get) => ({
     const id = get().activeSessionId
     if (id) {
       const d = get().draft
-      void get().updateSession(id, { agent: d.agent, model: d.model || undefined, permissionMode: d.permissionMode })
+      void get().updateSession(id, { agent: d.agent, model: d.model || undefined, effort: d.effort || undefined, permissionMode: d.permissionMode })
     }
   },
 
@@ -331,6 +382,56 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   openPreview(rel) {
     set({ previewRel: rel, paneOpen: true, paneTab: 'preview' })
+  },
+
+  async loadArtifacts() {
+    const projectId = get().activeProjectId
+    if (!projectId) return set({ artifacts: [] })
+    const artifacts = await api.call('artifacts:list', projectId)
+    if (get().activeProjectId === projectId) set({ artifacts })
+  },
+
+  openArtifact(artifactId, v) {
+    set(artifactId ? { artifactView: { artifactId, v }, paneOpen: true, paneTab: 'artifacts' } : { artifactView: null })
+  },
+
+  async startReview(sessionId) {
+    const id = sessionId ?? get().activeSessionId
+    if (!id) return
+    try {
+      await api.call('reviews:start', id)
+    } catch (err) {
+      get().showToast(String((err as Error).message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''), 'error')
+    }
+  },
+
+  cancelReview(reviewId) {
+    void api.call('reviews:cancel', reviewId)
+  },
+
+  async setFindingStatus(review, findingId, status) {
+    await api.call('reviews:setStatus', review.sessionId, review.id, findingId, status)
+  },
+
+  async askToFix(finding) {
+    const en = get().settings?.locale === 'en'
+    const parts = [
+      en ? `A review of this session flagged a problem: ${finding.title}` : `审阅发现了一个问题：${finding.title}`,
+      finding.detail,
+      finding.evidence.length ? (en ? 'Evidence: ' : '证据：') + finding.evidence.join(', ') : '',
+      finding.suggestion ? (en ? 'Suggested fix: ' : '建议：') + finding.suggestion : '',
+      en ? 'Please check it and fix it if it holds.' : '请核实，如果属实就修复。'
+    ]
+    await get().send(parts.filter(Boolean).join('\n\n'), [])
+  },
+
+  insertIntoComposer(text) {
+    set((st) => ({ composerInsert: { text, n: (st.composerInsert?.n ?? 0) + 1 } }))
+  },
+
+  async jumpTo(sessionId, turnSeq) {
+    if (get().activeSessionId !== sessionId) await get().selectSession(sessionId)
+    set({ focusKey: turnSeq === undefined ? null : `u${turnSeq}` })
   },
 
   confirm(opts) {

@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Bot,
   Check,
@@ -26,7 +26,10 @@ import { buildTranscript, formatTokens, type FileStat, type Item, type ToolNode 
 import { activityLabel, summarize } from '../lib/verbs'
 import { useT } from '../lib/i18n'
 import { useStudio } from '../store'
+import { GeneratedRow } from './Artifacts'
 import { Markdown } from './Markdown'
+import { DiffStat, DiffView } from './Preview'
+import { ReviewCard } from './ReviewCard'
 import { GlyphSpinner, Spinner } from './ui'
 
 const EMPTY: SessionEvent[] = []
@@ -64,14 +67,6 @@ function CopyButton({ text }: { text: string }) {
     >
       {done ? <Check size={13} /> : <Copy size={13} />}
     </button>
-  )
-}
-
-export function DiffStat({ added, removed }: { added: number; removed: number }) {
-  return (
-    <span className="shrink-0 text-[0.786rem] font-medium tabular-nums">
-      <span className="text-diff-add">+{added}</span> <span className="text-diff-del">−{removed}</span>
-    </span>
   )
 }
 
@@ -150,27 +145,6 @@ function inputDetail(node: ToolNode): { lang: string; text: string } | null {
   if (node.changes?.length) return { lang: '', text: node.changes.map((c) => `${c.kind}  ${c.path}`).join('\n') }
   if (node.input && Object.keys(i).length) return { lang: 'json', text: JSON.stringify(node.input, null, 2) }
   return null
-}
-
-function DiffView({ text }: { text: string }) {
-  return (
-    <pre className="selectable m-0 max-h-80 overflow-auto py-1.5 font-mono text-[0.786rem] leading-[1.5]">
-      {text.split('\n').map((line, i) => {
-        const cls = line.startsWith('+')
-          ? 'bg-[color-mix(in_srgb,var(--diff-add)_14%,transparent)] text-fg'
-          : line.startsWith('-')
-            ? 'bg-[color-mix(in_srgb,var(--diff-del)_14%,transparent)] text-fg'
-            : line.startsWith('@@')
-              ? 'text-fg-3'
-              : 'text-fg-2'
-        return (
-          <div key={i} className={`px-2.5 ${cls}`}>
-            {line || ' '}
-          </div>
-        )
-      })}
-    </pre>
-  )
 }
 
 function Section({ label, text, tone, extra }: { label: string; text: string; tone?: 'error'; extra?: React.ReactNode }) {
@@ -420,6 +394,8 @@ const ItemView = memo(function ItemView({ item }: { item: Item }) {
       return <Notice level={item.level} text={item.text} code={item.code} vars={item.vars} />
     case 'changes':
       return <ChangesCard files={item.files} />
+    case 'generated':
+      return <GeneratedRow files={item.files} />
     case 'turn':
       return <TurnFooter item={item} />
   }
@@ -455,6 +431,16 @@ export function Transcript({ sessionId }: { sessionId: string }) {
   const scroller = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
 
+  const focusKey = useStudio((s) => s.focusKey)
+  const reviewedThrough = useStudio((s) => s.reviews[sessionId]?.at(-1)?.throughSeq)
+  // A review sits after the last item it covered, so later turns read below it.
+  const reviewAt = useMemo(() => {
+    if (reviewedThrough === undefined) return -2
+    for (let i = items.length - 1; i >= 0; i--) if (Number(items[i].key.slice(1)) <= reviewedThrough) return i
+    return items.length - 1
+  }, [items, reviewedThrough])
+  const lastSeq = events[events.length - 1]?.seq ?? 0
+  const reviewId = useStudio((s) => s.reviews[sessionId]?.at(-1)?.id)
   const live = streaming ? Object.entries(streaming) : []
   const running = session?.status === 'running' || session?.status === 'waiting'
   const thinkingLive = live.some(([, b]) => b.thinking)
@@ -468,6 +454,25 @@ export function Transcript({ sessionId }: { sessionId: string }) {
     const el = scroller.current
     if (el) el.scrollTop = el.scrollHeight
   }, [sessionId])
+  // A review started from the end of the conversation is followed like a new turn.
+  useEffect(() => {
+    const el = scroller.current
+    if (!reviewId || !el || reviewAt !== items.length - 1) return
+    pinned.current = true
+    el.scrollTop = el.scrollHeight
+  }, [reviewId]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Provenance links land on the turn that produced a version.
+  useEffect(() => {
+    if (!focusKey) return
+    const target = scroller.current?.querySelector<HTMLElement>(`[data-key="${focusKey}"]`)
+    if (!target) return
+    pinned.current = false
+    target.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    target.classList.remove('focus-flash')
+    void target.offsetWidth
+    target.classList.add('focus-flash')
+    useStudio.setState({ focusKey: null })
+  }, [focusKey, items])
 
   return (
     <div
@@ -480,8 +485,14 @@ export function Transcript({ sessionId }: { sessionId: string }) {
       }}
     >
       <div className="mx-auto flex w-full max-w-[var(--column)] flex-col gap-[14px] px-8 pt-4 pb-14">
-        {items.map((item) => (
-          <ItemView key={item.key} item={item} />
+        {reviewAt === -1 && <ReviewCard sessionId={sessionId} lastSeq={lastSeq} />}
+        {items.map((item, i) => (
+          <Fragment key={item.key}>
+            <div data-key={item.key}>
+              <ItemView item={item} />
+            </div>
+            {i === reviewAt && <ReviewCard sessionId={sessionId} lastSeq={lastSeq} />}
+          </Fragment>
         ))}
         {live.map(([id, block]) =>
           block.thinking ? <Thinking key={id} text={block.text} live /> : <Markdown key={id} text={block.text} className="streaming" />

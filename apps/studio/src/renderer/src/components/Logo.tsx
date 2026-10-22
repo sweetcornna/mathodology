@@ -25,24 +25,3 @@ export function Logo({ size = 22, tile = true }: { size?: number; tile?: boolean
     </svg>
   )
 }
-
-/** A neutral letter tile identifying an agent CLI; no third-party logos are reproduced. */
-export function AgentGlyph({ agent, size = 14, muted }: { agent: string; size?: number; muted?: boolean }) {
-  const color = agent === 'claude' ? '#c9785d' : agent === 'codex' ? '#3a9b7f' : '#5a86d6'
-  const letter = agent === 'claude' ? 'C' : agent === 'codex' ? 'X' : 'G'
-  return (
-    <span
-      className={`inline-grid shrink-0 place-items-center rounded-[4px] font-semibold ${muted ? 'text-fg-3' : 'text-white'}`}
-      style={{
-        width: size,
-        height: size,
-        background: muted ? 'var(--surface-2)' : color,
-        fontSize: size * 0.6,
-        lineHeight: 1
-      }}
-      aria-hidden
-    >
-      {letter}
-    </span>
-  )
-}

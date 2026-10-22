@@ -17,52 +17,15 @@ import {
 } from 'lucide-react'
 import type { FileEntry, FilePreview, SessionEvent } from '@shared/types'
 import { api, fileUrl } from '../lib/api'
-import { highlight } from '../lib/highlight'
 import { useT } from '../lib/i18n'
 import { buildTranscript, formatTokens } from '../lib/transcript'
 import { useStudio, type PaneTab } from '../store'
-import { Markdown } from './Markdown'
+import { ArtifactsTab } from './Artifacts'
+import { LiteratureTab } from './Literature'
+import { formatSize, PreviewBody } from './Preview'
 import { Spinner, Tip } from './ui'
 
 const EMPTY: SessionEvent[] = []
-
-/** File extensions the code preview highlights, mapped to highlighter language names. */
-const CODE_LANGS: Record<string, string> = {
-  py: 'python',
-  sh: 'bash',
-  zsh: 'bash',
-  json: 'json',
-  tex: 'latex',
-  bib: 'latex',
-  m: 'matlab',
-  r: 'r',
-  jl: 'julia',
-  js: 'javascript',
-  mjs: 'javascript',
-  ts: 'typescript',
-  toml: 'toml',
-  yaml: 'yaml',
-  yml: 'yaml',
-  sql: 'sql'
-}
-
-function CodeView({ rel, text }: { rel: string; text: string }) {
-  const lang = CODE_LANGS[rel.split('.').pop()?.toLowerCase() ?? '']
-  const [html, setHtml] = useState<string | null>(null)
-  useEffect(() => {
-    let alive = true
-    setHtml(null)
-    if (lang) void highlight(text, lang).then((h) => alive && setHtml(h))
-    return () => {
-      alive = false
-    }
-  }, [text, lang])
-  return html ? (
-    <div className="scroll selectable code-block-body min-h-0 flex-1 px-4 py-3" dangerouslySetInnerHTML={{ __html: html }} />
-  ) : (
-    <pre className="scroll selectable m-0 min-h-0 flex-1 px-4 py-3 font-mono text-[0.786rem] leading-[1.6] whitespace-pre text-fg-2">{text}</pre>
-  )
-}
 
 function fileIcon(name: string) {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
@@ -71,12 +34,6 @@ function fileIcon(name: string) {
   if (['py', 'm', 'r', 'jl', 'ts', 'js', 'ipynb', 'sh', 'tex', 'json', 'toml'].includes(ext)) return FileCode
   if (['md', 'txt'].includes(ext)) return FileText
   return File
-}
-
-function formatSize(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
 /** Expanded folders, kept across pane tab switches for the life of the window. */
@@ -233,74 +190,6 @@ function TasksTab() {
   )
 }
 
-function CsvTable({ text }: { text: string }) {
-  const rows = useMemo(() => {
-    const sep = text.includes('\t') && !text.split('\n')[0].includes(',') ? '\t' : ','
-    return text
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .slice(0, 300)
-      .map((l) => l.split(sep))
-  }, [text])
-  return (
-    <div className="scroll min-h-0 flex-1">
-      <table className="w-full border-collapse font-mono text-[0.76rem] tabular-nums">
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className={i === 0 ? 'sticky top-0 bg-surface-2 font-semibold' : 'border-t border-line'}>
-              {r.map((c, j) => (
-                <td key={j} className="px-2.5 py-1 whitespace-nowrap">
-                  {c}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function FiguresTab() {
-  const t = useT()
-  const project = useStudio((s) => s.projects.find((p) => p.id === s.activeProjectId))
-  const version = useStudio((s) => s.filesVersion)
-  const openPreview = useStudio((s) => s.openPreview)
-  const [figures, setFigures] = useState<FileEntry[] | null>(null)
-
-  useEffect(() => {
-    if (project) void api.call('files:figures', project.id).then(setFigures)
-  }, [project, version])
-
-  if (!project) return null
-  if (figures === null)
-    return (
-      <div className="grid flex-1 place-items-center text-fg-3">
-        <Spinner />
-      </div>
-    )
-  if (!figures.length) return <div className="grid flex-1 place-items-center px-8 text-center text-[0.929rem] text-fg-3">{t('pane.noFigures')}</div>
-  return (
-    <div className="scroll grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-2.5 p-3">
-      {figures.map((f) => (
-        <button key={f.path} className="group flex flex-col gap-1.5 text-left" onClick={() => openPreview(f.rel)} title={f.rel}>
-          <div className="grid aspect-[4/3] w-full place-items-center overflow-hidden rounded-[8px] bg-white shadow-[0_0_0_1px_var(--border)] transition-shadow group-hover:shadow-[0_0_0_1px_var(--border-strong),var(--shadow-md)]">
-            {f.name.toLowerCase().endsWith('.pdf') ? (
-              <span className="flex flex-col items-center gap-1 text-[0.786rem] text-fg-3">
-                <FileText size={22} />
-                PDF
-              </span>
-            ) : (
-              <img src={fileUrl(project.id, f.rel, Math.round(f.mtime))} loading="lazy" className="h-full w-full object-contain" alt={f.name} />
-            )}
-          </div>
-          <span className="truncate px-0.5 text-[0.786rem] text-fg-2">{f.rel}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
 function PreviewTab() {
   const t = useT()
   const project = useStudio((s) => s.projects.find((p) => p.id === s.activeProjectId))
@@ -342,27 +231,8 @@ function PreviewTab() {
         <div className="grid flex-1 place-items-center text-fg-3">
           <Spinner />
         </div>
-      ) : preview.kind === 'image' ? (
-        <div className="scroll grid min-h-0 flex-1 place-items-center bg-[repeating-conic-gradient(var(--surface-2)_0%_25%,transparent_0%_50%)] bg-[length:16px_16px] p-4">
-          <img src={preview.content} className="max-w-full rounded-[6px] shadow-[var(--shadow-md)]" alt={rel} />
-        </div>
-      ) : preview.kind === 'pdf' ? (
-        <iframe title={rel} src={fileUrl(project.id, rel, version)} className="min-h-0 w-full flex-1 border-0 bg-white" />
-      ) : preview.kind === 'markdown' ? (
-        <div className="scroll min-h-0 flex-1 px-5 py-4">
-          <Markdown className="serif" text={preview.content ?? ''} />
-        </div>
-      ) : preview.kind === 'csv' ? (
-        <CsvTable text={preview.content ?? ''} />
-      ) : preview.kind === 'text' ? (
-        <CodeView rel={rel} text={preview.content ?? ''} />
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-[0.88rem] text-fg-3">
-          {preview.kind === 'too-large' ? t('pane.tooLarge') : t('pane.binary')}
-          <button className="btn btn-secondary btn-sm" onClick={() => void api.call('shell:openPath', preview.path)}>
-            <ExternalLink size={13} /> {t('pane.openExternal')}
-          </button>
-        </div>
+        <PreviewBody preview={preview} rel={rel} pdfSrc={fileUrl(project.id, rel, version)} />
       )}
     </div>
   )
@@ -373,7 +243,8 @@ export function SidePane() {
   const tab = useStudio((s) => s.paneTab)
   const tabs: { id: PaneTab; label: string }[] = [
     { id: 'files', label: t('pane.files') },
-    { id: 'figures', label: t('pane.figures') },
+    { id: 'artifacts', label: t('pane.artifacts') },
+    { id: 'literature', label: t('pane.literature') },
     { id: 'tasks', label: t('pane.tasks') },
     { id: 'preview', label: t('pane.preview') }
   ]
@@ -399,7 +270,8 @@ export function SidePane() {
         </Tip>
       </div>
       {tab === 'files' && <FilesTab />}
-      {tab === 'figures' && <FiguresTab />}
+      {tab === 'artifacts' && <ArtifactsTab />}
+      {tab === 'literature' && <LiteratureTab />}
       {tab === 'tasks' && <TasksTab />}
       {tab === 'preview' && <PreviewTab />}
     </aside>

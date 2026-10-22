@@ -1,6 +1,6 @@
 import { Command } from 'cmdk'
 import { Dialog as RDialog } from 'radix-ui'
-import { FolderOpen, FolderPlus, ListChecks, MessageSquare, Moon, PanelLeft, PanelRight, Plus, Settings, Sun } from 'lucide-react'
+import { BookOpen, FolderOpen, FolderPlus, Layers, ListChecks, MessageSquare, Moon, PanelLeft, PanelRight, Plus, Settings, ShieldCheck, Sun } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { mod } from '../lib/api'
 import { useT } from '../lib/i18n'
@@ -69,6 +69,17 @@ export function CommandPalette() {
                 <Item value="tasks panel" icon={<ListChecks size={15} />} onSelect={() => run(() => st().togglePane('tasks'))}>
                   {t('pane.tasks')}
                 </Item>
+                <Item value="artifacts panel figures" icon={<Layers size={15} />} onSelect={() => run(() => st().togglePane('artifacts'))}>
+                  {t('pane.artifacts')}
+                </Item>
+                <Item value="literature papers search references bibliography" icon={<BookOpen size={15} />} onSelect={() => run(() => st().togglePane('literature'))}>
+                  {t('pane.literature')}
+                </Item>
+                {st().activeSessionId && (
+                  <Item value="review session check" icon={<ShieldCheck size={15} />} onSelect={() => run(() => void st().startReview())}>
+                    {t('review.start')}
+                  </Item>
+                )}
                 <Item
                   value="toggle theme dark light"
                   icon={theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}

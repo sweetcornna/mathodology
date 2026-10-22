@@ -813,3 +813,20 @@ select.field {
   animation: word-in 160ms var(--ease) both;
 }
 }
+
+/* A transcript item reached from a provenance link */
+@keyframes focus-flash {
+  0%,
+  35% {
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 8px var(--accent-soft);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+.focus-flash {
+  border-radius: 10px;
+  animation: focus-flash 1.8s var(--ease);
+}

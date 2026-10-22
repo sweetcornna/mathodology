@@ -16,10 +16,33 @@ export interface AgentInfo {
   available: boolean
   /** Short reason when unavailable or degraded. */
   note?: string
-  models: { id: string; label: string }[]
+  /** Models the CLI reports for the signed-in account; the first entry, id '', is the CLI's default. */
+  models: ModelInfo[]
+  /** Who the CLI is signed in as, when it says. */
+  account?: AgentAccount
   /** Whether the adapter can pause a tool call for the user's approval. */
   supportsApproval: boolean
   supportsResume: boolean
+}
+
+export interface ModelInfo {
+  /** Value passed to the CLI; '' means the CLI's own default. */
+  id: string
+  label: string
+  description?: string
+  /** Underlying model name, when it differs from `id`; used to pick the provider icon. */
+  model?: string
+  /** Provider or routing group, for CLIs that serve models from several sources. */
+  group?: string
+  /** Reasoning effort levels the model accepts, in increasing order. */
+  efforts?: string[]
+  defaultEffort?: string
+}
+
+export interface AgentAccount {
+  /** Plan or credential kind, e.g. "Claude Max" or "API key". */
+  plan?: string
+  email?: string
 }
 
 export interface Project {
@@ -40,6 +63,8 @@ export interface Session {
   title: string
   agent: AgentId
   model?: string
+  /** Reasoning effort for models that accept one; unset uses the model's default. */
+  effort?: string
   permissionMode: PermissionMode
   /** The agent CLI's own session/thread id, used to resume. */
   nativeSessionId?: string
@@ -49,6 +74,15 @@ export interface Session {
   archived: boolean
   status: SessionStatus
   usage: Usage
+  /** Messages sent while a turn was running; each starts the next turn in order. */
+  queue?: QueuedMessage[]
+}
+
+export interface QueuedMessage {
+  id: string
+  text: string
+  attachments: Attachment[]
+  createdAt: number
 }
 
 export interface Usage {
@@ -133,6 +167,8 @@ export type SessionEventBody =
     }
   /** Live token count for the running turn; streamed only, never persisted. */
   | { kind: 'turn.progress'; tokens: number }
+  /** A project file gained a new version during this turn. */
+  | { kind: 'artifact.version'; artifactId: string; rel: string; v: number; origin: VersionOrigin; artifactKind: ArtifactKind; callId?: string }
 
 export type SessionEvent = SessionEventBody & {
   sessionId: string
@@ -156,6 +192,7 @@ export interface CreateSessionInput {
   projectId: string
   agent: AgentId
   model?: string
+  effort?: string
   permissionMode: PermissionMode
   title?: string
 }
@@ -178,6 +215,82 @@ export interface FileEntry {
   dir: boolean
   size: number
   mtime: number
+}
+
+export type ArtifactKind = 'figure' | 'table' | 'document' | 'code' | 'data'
+
+/**
+ * How Studio knows where a version came from, strongest evidence first:
+ * - `tool`: a tool call that named this file (Write, Edit, a Codex file change) was observed.
+ * - `turn`: the file changed while an agent turn ran, but no call named it (e.g. a script wrote it).
+ * - `user`: restored from an earlier version inside Studio.
+ * - `external`: changed outside any agent turn, by you or another program.
+ */
+export type VersionOrigin = 'tool' | 'turn' | 'user' | 'external'
+
+export interface ArtifactVersion {
+  v: number
+  sha256: string
+  size: number
+  createdAt: number
+  origin: VersionOrigin
+  sessionId?: string
+  /** `seq` of the user message that started the turn. */
+  turnSeq?: number
+  /** The tool call that produced it, for `tool` versions. */
+  callId?: string
+  tool?: string
+  /** Whether Studio kept a copy of the bytes (large files are tracked by checksum only). */
+  stored: boolean
+  restoredFrom?: number
+}
+
+/** A project output with its full history; versions are never changed once recorded. */
+export interface Artifact {
+  id: string
+  rel: string
+  kind: ArtifactKind
+  createdAt: number
+  updatedAt: number
+  versions: ArtifactVersion[]
+  /** The file is no longer on disk; its history is kept. */
+  missing?: boolean
+}
+
+export type FindingSeverity = 'fail' | 'warn' | 'inconclusive' | 'pass'
+export type FindingStatus = 'open' | 'resolved' | 'dismissed'
+
+/** One judgement a reviewer made about a claim in the session. */
+export interface ReviewFinding {
+  id: string
+  severity: FindingSeverity
+  title: string
+  detail: string
+  /** Project paths or `call:<id>` references the finding rests on. */
+  evidence: string[]
+  suggestion?: string
+  status: FindingStatus
+}
+
+/**
+ * A read-only check of a session: a second agent run traces the session's claims to the
+ * recorded tool calls, outputs and files, without editing anything or redoing the work.
+ */
+export interface Review {
+  id: string
+  sessionId: string
+  agent: AgentId
+  model?: string
+  status: 'running' | 'done' | 'error' | 'cancelled'
+  createdAt: number
+  finishedAt?: number
+  /** Last event `seq` the review covered. */
+  throughSeq: number
+  /** Tool calls the reviewer has made so far. */
+  steps: number
+  summary?: string
+  findings: ReviewFinding[]
+  error?: string
 }
 
 export interface FilePreview {
@@ -207,9 +320,56 @@ export interface Settings {
   defaultAgent: AgentId
   defaultPermissionMode: PermissionMode
   sendWithEnter: boolean
-  /** Register the keyless search MCP server in new projects. */
-  enableSearchMcp: boolean
+  /** MCP servers written into every project's Claude Code, Codex and Gemini CLI configuration. */
+  connectors: Connector[]
   agents: Record<AgentId, AgentSettings>
+}
+
+/**
+ * An MCP server the agents can use: a local command (stdio) or a remote URL (streamable HTTP).
+ * Studio writes enabled connectors into each project's `.mcp.json`, `.codex/config.toml` and
+ * `.gemini/settings.json`, leaving entries it does not manage alone.
+ */
+export interface Connector {
+  /** Also the server's name in the agents' configuration. */
+  id: string
+  name: string
+  enabled: boolean
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  url?: string
+  /** Shipped with Studio (the Mathodology search server); can be turned off but not removed. */
+  builtin?: boolean
+}
+
+export interface ConnectorCheck {
+  ok: boolean
+  tools: string[]
+  error?: string
+}
+
+/** A paper found through the search connector. */
+export interface LitResult {
+  title: string
+  url: string
+  snippet: string
+  /** Authors or venue, when the source puts them before the abstract. */
+  byline?: string
+  date?: string
+  doi?: string
+  arxiv?: string
+  citedBy?: number
+}
+
+export interface LitCitation {
+  key: string
+  bibtex: string
+  /** Project-relative path of the bibliography it was added to. */
+  file: string
+  added: boolean
+  /** Crossref or OpenAlex reports a retraction for this DOI. */
+  retracted?: boolean
 }
 
 export interface KitInfo {
