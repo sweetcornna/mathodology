@@ -53,6 +53,20 @@ codex mcp add --env "SEARCH_MCP_DOWNLOAD_DIR=$HOME/.cache/search-mcp/downloads" 
 配置或用户主动关闭的下载功能。仓库不安装 image2 服务；agent 会在绘图时
 询问实际工具、已配置接口或手动使用方式。
 
+## 桌面应用
+
+Mathodology Studio 在仓库中运行，需要 Node.js 22.12+ 和 pnpm 10：
+
+```bash
+cd apps/studio
+pnpm install
+pnpm dev
+```
+
+`pnpm dist` 构建未签名的 macOS DMG。Studio 新建项目时安装技能、角色、工作提示词
+和 humanizer，不覆盖已有文件；每次启动更新 humanizer，并把 free-search-mcp 刷新到最新版。
+详见 [Studio 说明](../apps/studio/README.md)。
+
 ## 更新和迁移
 
 先备份本地修改。干净的仓库副本使用：

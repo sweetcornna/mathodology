@@ -1,0 +1,54 @@
+appId: io.github.sweetcornna.mathodology-studio
+productName: Mathodology Studio
+copyright: Copyright © 2026 Mathodology contributors
+directories:
+  output: release/${version}
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+asarUnpack: []
+# The UI ships in Chinese and English; drop Chromium's other locale packs.
+electronLanguages: [en, en_GB, zh_CN, zh_TW]
+# The contest kit (skills, roles, workflows) ships beside the app and is copied into projects.
+extraResources:
+  - from: ../../.claude/skills
+    to: kit/.claude/skills
+    filter:
+      - mathodology-whole-project/**
+      - mathodology-agent-pipeline/**
+      - mathodology-evidence-search/**
+      - mathodology-figure-presets/**
+      - mathodology-award-gates/**
+      - '!**/__pycache__/**'
+      - '!**/*.pyc'
+  - from: ../../.claude/agents
+    to: kit/.claude/agents
+  - from: ../../.claude/workflows
+    to: kit/.claude/workflows
+  - from: ../../.codex/agents
+    to: kit/.codex/agents
+  - from: ../../LICENSE
+    to: kit/LICENSE
+mac:
+  category: public.app-category.education
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  identity: null
+  hardenedRuntime: false
+dmg:
+  title: ${productName} ${version}
+win:
+  icon: build/icon.png
+  target: nsis
+linux:
+  icon: build/icon.png
+  target: AppImage
+  category: Education
+npmRebuild: false
+publish: null

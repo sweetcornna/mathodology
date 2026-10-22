@@ -15,15 +15,10 @@ availability question. For evidence use
 
 ## Start or resume a modeling task
 
-Read the problem, available data, existing results and applicable contest rules.
-Ask about missing constraints that would change the answer. Reuse established
-preferences and continue from the current evidence. Keep a short note of important
-assumptions and decisions if it helps continuity; no special schema is needed.
-
 Work in the user's chosen directory or an ignored `work/` directory in this
-checkout. Produce only artifacts needed for the requested deliverable. Keep
+checkout. Produce only artifacts needed for the requested deliverable and keep
 numerical results traceable. Use specialists where they help and the host allows
-it; an independent review can challenge important claims without fixed panels.
+it.
 
 ## Maintain and distribute
 

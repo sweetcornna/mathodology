@@ -23,6 +23,10 @@ particular handoff format. Scale review to the claims and the deadline.
 - Can reported numbers be traced to data, code, a derivation or a stated assumption?
 - Are evidence gaps, failed runs and material limitations disclosed?
 
+A longer checklist (paper-vs-code conformance, claim baselines, common random
+numbers, recommendation consistency, citation closeout, rendered-PDF QA) is in
+[references/review-checklist.md](references/review-checklist.md).
+
 Use relevant questions, not every possible test. When scenarios share comparable
 random inputs, paired simulations may improve precision; explain the coupling.
 Use Monte Carlo uncertainty for estimated probabilities, and disclose the number

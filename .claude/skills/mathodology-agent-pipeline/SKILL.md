@@ -38,11 +38,10 @@ results, not the history of experiments. Review with
 
 ## Focused collaboration
 
-When delegation is useful and available, give a specialist a bounded question,
-relevant data, current assumptions and a concrete output. Agree file ownership
-for concurrent editing. Ask for ordinary prose: finding, reasoning, artifact
-paths and unresolved uncertainty. The lead integrates the answer and resolves
-conflicting evidence; it does not collect points or gate every intermediate step.
+Delegate when work is parallel or benefits from an isolated context: give a
+specialist a bounded question, relevant data, current assumptions and a concrete
+output, and agree file ownership for concurrent editing. The lead integrates the
+answer and resolves conflicting evidence. Small tasks are done by one agent.
 
 For a fresh task, a compact prompt is:
 

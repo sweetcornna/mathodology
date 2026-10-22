@@ -6,7 +6,7 @@
 |---|---|
 | [mathodology-whole-project](../.claude/skills/mathodology-whole-project/SKILL.md) | 任务入口、安装和备份 |
 | [mathodology-agent-pipeline](../.claude/skills/mathodology-agent-pipeline/SKILL.md) | 灵活建模与协作提示词 |
-| [mathodology-figure-presets](../.claude/skills/mathodology-figure-presets/SKILL.md) | 20 类图表、image2 和效果样张 |
+| [mathodology-figure-presets](../.claude/skills/mathodology-figure-presets/SKILL.md) | 46 类图表、实验组件、image2 和效果样张 |
 | [mathodology-evidence-search](../.claude/skills/mathodology-evidence-search/SKILL.md) | 证据、数据和许可核验 |
 | [mathodology-award-gates](../.claude/skills/mathodology-award-gates/SKILL.md) | 数学与论文审稿问题 |
 | [mathodology-project-orientation](../.claude/skills/mathodology-project-orientation/SKILL.md) | 仓库边界 |

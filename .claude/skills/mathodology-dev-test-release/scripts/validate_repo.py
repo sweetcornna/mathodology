@@ -14,11 +14,11 @@ import subprocess
 import tempfile
 from urllib.parse import unquote, urlsplit
 
-ROOT_FILES = {'AGENTS.md', 'README.md', 'README_en.md', 'LICENSE', '.gitignore', '.mcp.json'}
+ROOT_FILES = {'AGENTS.md', 'CLAUDE.md', 'README.md', 'README_en.md', 'LICENSE', '.gitignore', '.mcp.json'}
 DOC_FILES = {f'docs/{name}{suffix}.md' for name in ['SKILLS', 'INSTALL', 'WORKFLOWS', 'BACKUP']
              for suffix in ['', '_zh']}
-PREFIXES = ('.claude/skills/', '.claude/agents/', '.claude/workflows/')
-IGNORED = {'.git', '.agents', '.codex', '__pycache__', 'work', '.DS_Store'}
+PREFIXES = ('.claude/skills/', '.claude/agents/', '.claude/workflows/', '.codex/agents/', 'apps/studio/')
+IGNORED = {'.git', '.agents', '.codex', '__pycache__', 'work', '.DS_Store', 'node_modules', 'out', 'release'}
 NAME = re.compile(r'mathodology-[a-z0-9]+(?:-[a-z0-9]+)*\Z')
 
 

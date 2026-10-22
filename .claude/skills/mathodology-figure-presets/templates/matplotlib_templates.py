@@ -1,8 +1,9 @@
-"""Twenty editable, data-driven chart templates; no workflow engine or demo data.
+"""Twenty editable, data-driven chart templates (F01–F20); no workflow engine or demo data.
 
 Copy this file into the task's working directory, call the relevant function with
 real arrays, customize the returned Figure, then save_figure(fig, output_stem).
 Requires numpy and matplotlib; clustered_heatmap additionally uses scipy.
+advanced_templates.py (F21–F46) imports its helpers from this file.
 """
 from pathlib import Path
 
@@ -364,14 +365,24 @@ def spatiotemporal(time_edges, position_edges, field, *, value_label):
 
 
 # F16: display computed Sobol indices; do not invent Monte Carlo uncertainty.
-def global_sensitivity(first_order, total_order, labels):
+def global_sensitivity(first_order, total_order, labels, *, first_interval=None,
+                       total_interval=None, interval_label=None):
     first, total = _vectors(first_order, total_order)
     fig, ax = _axes('Global sensitivity · supplied Sobol indices')
     y = np.arange(len(first))
     ax.barh(y-.17, first, height=.3, color=BLUE, label='First order')
     ax.barh(y+.17, total, height=.3, color=ORANGE, label='Total order')
+    for values, interval, offset in [(first, first_interval, -.17), (total, total_interval, .17)]:
+        if interval is not None:  # e.g. experiment_kits.sobol_indices bootstrap bounds
+            if interval_label is None:
+                raise ValueError('State what the intervals are with interval_label.')
+            low, high = _interval(*interval)
+            ax.errorbar(values, y+offset, xerr=[values-low, high-values], fmt='none',
+                        ecolor='black', elinewidth=.8, capsize=2)
     ax.set(yticks=y, yticklabels=labels, xlabel='Fraction of output variance')
     ax.legend(frameon=False)
+    if interval_label:
+        ax.set_title(f'Whiskers: {interval_label}', fontsize=9)
     return fig
 
 

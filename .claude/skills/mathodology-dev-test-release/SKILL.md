@@ -15,27 +15,24 @@ python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
 The standard-library checker covers skill/role metadata, local Markdown links,
-known skill references and allowed repository paths. Individual commands are
+known skill references and allowed repository paths (skills, roles, workflows,
+docs and `apps/studio/`). Individual commands are
 `metadata`, `links`, `boundary` and `selftest`. It supports a source export without
 Git; in a checkout it also inspects tracked paths. It does not enforce document
 heading counts, search wording, updater contracts or contest run schemas.
 
-When changing a utility, exercise its actual behavior. The figure demonstration
-script and PDF overview utility have self-tests; backup can be verified by
-extracting the archive and checking its checksum. Read
-[backup and installation guidance](../mathodology-whole-project/SKILL.md).
-
-When changing prompts, review representative user scenarios and inspect generated
-figures. Do not add tests that simply restate prompt sentences. Do not report
-that a prompt guarantees consistent future model behavior.
+The figure demonstration script and PDF overview utility have self-tests; backup
+can be verified by extracting the archive and checking its checksum
+([backup and installation guidance](../mathodology-whole-project/SKILL.md)).
 
 ## Explicitly requested releases
 
 Release work is repository maintenance, separate from the modeling guidance.
 Inspect the current remote branch, recent releases and existing tags. Choose the
 next version consistently with that history and describe migration requirements
-when removing an old entry point or utility. Do not invent a package manifest,
-application build or CI pipeline for this skills pack.
+when removing an old entry point or utility. The only package manifest is
+Mathodology Studio's in `apps/studio/`; do not add another manifest,
+application build or CI pipeline for the skills pack itself.
 
 Review the actual changes, run relevant checks and verify retained asset licenses.
 Use a focused branch and pull request when that matches repository practice.
