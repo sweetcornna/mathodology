@@ -1,20 +1,24 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, protocol, shell, type MenuItemConstructorOptions } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { extname, join, resolve } from 'node:path'
+import { extname, isAbsolute, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { MenuCommand, StudioCalls, StudioPushes } from '@shared/ipc'
 import type { AgentInfo, Project, Settings } from '@shared/types'
-import { agentEnv, detectAgents } from './agents/detect'
+import { killAllAgents } from './agents/base'
+import { agentEnv, detectAgents, resolveBinary } from './agents/detect'
 import { ArtifactStore } from './artifacts'
 import { McpPool, migrateConnectors, syncConnectors } from './connectors'
-import { listFiles, previewBytes, previewFile, safeJoin } from './files'
+import { listFiles, previewBytes, previewFile, safeJoin, within } from './files'
+import { runner, syncHumanizer, type HumanizerCache } from './humanizer'
 import { installKit, readKit } from './kit'
-import { cite, parseResults } from './literature'
+import { cite, mergeResults, parseGraph, parseResults, publishedVersion } from './literature'
+import { checkBibliography, checkEntry, parseBibtex, withDoi, type Fetcher } from './refcheck'
 import { ReviewManager } from './reviews'
 import { ADAPTERS, SessionManager } from './sessions'
-import { Store } from './store'
+import { Store, writeAtomic } from './store'
+import { refreshSearchServer } from './updates'
 
 const isDev = !app.isPackaged && Boolean(process.env.ELECTRON_RENDERER_URL)
 
@@ -48,6 +52,7 @@ function defaultSettings(): Settings {
     defaultAgent: 'claude',
     defaultPermissionMode: 'ask',
     sendWithEnter: true,
+    installHumanizer: true,
     // Filled in from the saved settings, or with the search server for new installs.
     connectors: [],
     agents: { claude: { ...blank }, codex: { ...blank }, gemini: { ...blank } }
@@ -60,6 +65,8 @@ let sessions: SessionManager
 let artifacts: ArtifactStore
 let reviews: ReviewManager
 const mcp = new McpPool(agentEnv)
+/** Registry lookups go through Chromium's network stack, so system proxies apply; none may hang. */
+const registryFetch: Fetcher = (url, init) => net.fetch(url, { ...init, signal: AbortSignal.timeout(20_000) })
 let win: BrowserWindow | null = null
 let agentCache: AgentInfo[] | null = null
 
@@ -71,6 +78,29 @@ function applyTheme(): void {
   nativeTheme.themeSource = settings.theme
 }
 
+let humanizerQueue: Promise<void> = Promise.resolve()
+/** GitHub and the marketplace are asked about new humanizer versions once per launch. */
+const humanizerCache: HumanizerCache = {}
+
+/**
+ * Give a kit project the humanizer for its three agents, or update it, in the background and one
+ * project at a time (the Claude marketplace step clones a repository). Failures only skip the project.
+ */
+function ensureHumanizer(project: Project): void {
+  if (!settings.installHumanizer || !existsSync(project.path)) return
+  humanizerQueue = humanizerQueue.then(async () => {
+    const env = await agentEnv()
+    const result = await syncHumanizer(project.path, {
+      claudeBinary: resolveBinary(ADAPTERS.claude, settings, env),
+      run: runner(env),
+      fetch: (url) => registryFetch(url),
+      cache: humanizerCache
+    })
+    if (result.error) console.warn(`humanizer for ${project.path}: ${result.error}`)
+    if (result.claude !== 'present' || result.skill !== 'present') push('files:changed', { projectId: project.id })
+  }).catch((err) => console.warn('humanizer install failed', err))
+}
+
 function slug(name: string): string {
   return (
     name
@@ -79,6 +109,17 @@ function slug(name: string): string {
       .replace(/\s+/g, '-')
       .slice(0, 64) || 'project'
   )
+}
+
+/** Which connector entries Studio wrote into a project's agent configs; the others are the user's. */
+function connectorLedger(projectId: string): string {
+  return join(app.getPath('userData'), 'studio', 'connectors', `${projectId}.json`)
+}
+
+/** Paths the renderer may open: project files and Studio's own data folder, nothing else. */
+function openable(path: string): boolean {
+  if (!isAbsolute(path)) return false
+  return resolve(path) === resolve(app.getPath('userData')) || store.projects.some((p) => within(p.path, path))
 }
 
 const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>) => unknown } = {
@@ -100,11 +141,12 @@ const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>
     if (patch.connectors) {
       const removed = before.filter((c) => !settings.connectors.some((x) => x.id === c.id)).map((c) => c.id)
       for (const p of store.projects.filter((p) => p.kitInstalled && existsSync(p.path))) {
-        if (syncConnectors(p.path, settings.connectors, removed).length) push('files:changed', { projectId: p.id })
+        if (syncConnectors(p.path, settings.connectors, connectorLedger(p.id), removed).length) push('files:changed', { projectId: p.id })
       }
     }
     if (patch.theme) applyTheme()
     if (patch.agents) agentCache = null
+    if (patch.installHumanizer) for (const p of store.projects.filter((p) => p.kitInstalled)) ensureHumanizer(p)
     return settings
   },
   'agents:detect': async (refresh) => {
@@ -133,30 +175,40 @@ const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>
     }
     if (input.installKit) {
       installKit(kitRoot, path)
-      syncConnectors(path, settings.connectors)
+      syncConnectors(path, settings.connectors, connectorLedger(project.id))
       project.kitInstalled = true
     }
     store.upsertProject(project)
+    if (project.kitInstalled) ensureHumanizer(project)
     return project
   },
   'projects:installKit': (projectId) => {
     const project = store.project(projectId)
     if (!project) throw new Error('Unknown project')
     installKit(kitRoot, project.path)
-    syncConnectors(project.path, settings.connectors)
+    syncConnectors(project.path, settings.connectors, connectorLedger(projectId))
     const next = { ...project, kitInstalled: true }
     store.upsertProject(next)
     push('files:changed', { projectId })
+    ensureHumanizer(next)
     return next
   },
   'projects:remove': (projectId) => {
-    for (const s of store.sessions.filter((s) => s.projectId === projectId)) sessions.interrupt(s.id)
+    if (!store.project(projectId)) return
+    // Interrupted turns wind down after this; they no longer save or record anything.
+    for (const s of store.sessions.filter((s) => s.projectId === projectId)) {
+      sessions.interrupt(s.id)
+      reviews.remove(s.id)
+    }
     store.removeProject(projectId)
+    rmSync(connectorLedger(projectId), { force: true })
   },
   'sessions:list': () => store.sessions,
   'sessions:create': (input) => sessions.create(input),
   'sessions:update': (sessionId, patch) => sessions.update(sessionId, patch),
   'sessions:delete': (sessionId) => {
+    // The id names files in the data folder, so only a stored session's is used.
+    if (!store.session(sessionId)) return
     sessions.interrupt(sessionId)
     store.removeSession(sessionId)
     reviews.remove(sessionId)
@@ -185,7 +237,7 @@ const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>
   },
   'artifacts:read': (projectId, artifactId, v) => {
     const project = store.project(projectId)
-    const artifact = artifacts.get(projectId, artifactId)
+    const artifact = project && artifacts.get(projectId, artifactId)
     if (!project || !artifact) throw new Error('Unknown artifact')
     const bytes = artifacts.read(projectId, artifactId, v)
     const path = join(project.path, artifact.rel)
@@ -206,32 +258,50 @@ const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>
     const search = settings.connectors.find((c) => c.builtin)
     if (!search) throw new Error('The search connector is missing.')
     const text = await mcp.callText(search, 'search', { query, category: category || 'paper', max_results: 12, format: 'json' })
-    return parseResults(text)
+    return mergeResults(parseResults(text), category)
   },
   'lit:cite': async (projectId, paper) => {
     const project = store.project(projectId)
     if (!project) throw new Error('Unknown project')
-    const search = settings.connectors.find((c) => c.builtin)
-    // The retraction check runs alongside the BibTeX lookup and never blocks the citation.
-    const retracted =
-      search && paper.doi
-        ? mcp
-            .callText(search, 'paper_graph', { paper: paper.doi, direction: 'references', limit: 1, format: 'json' }, 30_000)
-            .then((t) => Boolean((JSON.parse(t) as { paper?: { retracted?: boolean } }).paper?.retracted))
-            .catch(() => undefined)
-        : undefined
-    const result = await cite(project.path, paper, (url, init) => net.fetch(url, init), retracted)
-    push('files:changed', { projectId })
+    const result = await cite(project.path, paper, registryFetch)
+    if (result.added) push('files:changed', { projectId })
     return result
   },
-  'reviews:list': (sessionId) => reviews.list(sessionId),
+  'lit:graph': async (paper) => {
+    const search = settings.connectors.find((c) => c.builtin)
+    if (!search) throw new Error('The search connector is missing.')
+    const text = await mcp.callText(search, 'paper_graph', { paper: paper.doi ?? paper.title, direction: 'both', limit: 8, format: 'json' }, 60_000)
+    return parseGraph(text)
+  },
+  'lit:published': (paper) => publishedVersion(paper, registryFetch),
+  'refs:check': async (projectId, file) => {
+    const project = store.project(projectId)
+    if (!project) throw new Error('Unknown project')
+    return checkBibliography(project.path, file, registryFetch, (done, total) => push('refs:progress', { projectId, done, total }))
+  },
+  'refs:setDoi': async (projectId, file, key, doi) => {
+    const project = store.project(projectId)
+    if (!project) throw new Error('Unknown project')
+    const abs = safeJoin(project.path, file)
+    if (!abs.endsWith('.bib')) throw new Error('Not a bibliography file')
+    const next = withDoi(readFileSync(abs, 'utf8'), key, doi)
+    if (next === null) throw new Error(`${key} already has a DOI or is not in ${file}`)
+    writeAtomic(abs, next)
+    push('files:changed', { projectId })
+    const entry = parseBibtex(next).find((e) => e.key === key)!
+    return checkEntry(entry, registryFetch)
+  },
+  // Review files are named after the session, so only stored sessions are looked up.
+  'reviews:list': (sessionId) => (store.session(sessionId) ? reviews.list(sessionId) : []),
   'reviews:start': (sessionId) => {
     if (sessions.isRunning(sessionId)) throw new Error('Wait for the current turn to finish before reviewing.')
     return reviews.start(sessionId)
   },
   'reviews:cancel': (reviewId) => reviews.cancel(reviewId),
-  'reviews:setStatus': (sessionId, reviewId, findingId, status) => reviews.setStatus(sessionId, reviewId, findingId, status),
+  'reviews:setStatus': (sessionId, reviewId, findingId, status) =>
+    store.session(sessionId) ? reviews.setStatus(sessionId, reviewId, findingId, status) : undefined,
   'shell:openPath': async (path) => {
+    if (!openable(path)) throw new Error('Studio only opens files inside a project.')
     await shell.openPath(path)
   },
   'shell:reveal': (path) => shell.showItemInFolder(path),
@@ -367,15 +437,17 @@ function registerFileProtocol(): void {
     try {
       const url = new URL(request.url)
       const [projectId, ...parts] = url.pathname.replace(/^\/+/, '').split('/')
+      const project = store.project(decodeURIComponent(projectId))
+      if (!project) return new Response('Not found', { status: 404 })
       if (url.host === 'artifact') {
-        const artifact = artifacts.get(decodeURIComponent(projectId), decodeURIComponent(parts[0] ?? ''))
-        const bytes = artifact && artifacts.read(decodeURIComponent(projectId), artifact.id, Number(parts[1]))
+        const artifact = artifacts.get(project.id, decodeURIComponent(parts[0] ?? ''))
+        const bytes = artifact && artifacts.read(project.id, artifact.id, Number(parts[1]))
         if (!artifact || !bytes) return new Response('Not found', { status: 404 })
         const type = MIME[extname(artifact.rel).toLowerCase()] ?? 'application/octet-stream'
         return new Response(new Uint8Array(bytes), { headers: { 'content-type': type } })
       }
-      const project = store.project(decodeURIComponent(projectId))
-      if (url.host !== 'project' || !project) return new Response('Not found', { status: 404 })
+      if (url.host !== 'project') return new Response('Not found', { status: 404 })
+      // safeJoin resolves links, so a link in the project cannot serve a file outside it.
       const abs = safeJoin(project.path, parts.map(decodeURIComponent).join('/'))
       return net.fetch(pathToFileURL(abs).toString())
     } catch {
@@ -394,7 +466,7 @@ app.whenReady().then(() => {
   settings.connectors = migrateConnectors({ connectors: settings.connectors.length ? settings.connectors : undefined, enableSearchMcp: legacy.enableSearchMcp })
   delete legacy.enableSearchMcp
   // Projects made before connectors existed get the same servers in all three CLIs' configs.
-  for (const p of store.projects.filter((p) => p.kitInstalled && existsSync(p.path))) syncConnectors(p.path, settings.connectors)
+  for (const p of store.projects.filter((p) => p.kitInstalled && existsSync(p.path))) syncConnectors(p.path, settings.connectors, connectorLedger(p.id))
   applyTheme()
   artifacts = new ArtifactStore(join(app.getPath('userData'), 'studio', 'artifacts'))
   sessions = new SessionManager(store, artifacts, () => settings, {
@@ -403,12 +475,22 @@ app.whenReady().then(() => {
     filesChanged: (projectId) => push('files:changed', { projectId }),
     artifactsChanged: (projectId) => push('artifacts:changed', { projectId })
   })
-  reviews = new ReviewManager(join(app.getPath('userData'), 'studio', 'reviews'), store, () => settings, {
-    changed: (r) => push('review:changed', r)
-  })
+  reviews = new ReviewManager(
+    join(app.getPath('userData'), 'studio', 'reviews'),
+    store,
+    () => settings,
+    { changed: (r) => push('review:changed', r) },
+    registryFetch
+  )
   registerIpc()
   buildMenu()
   createWindow()
+  // Kit projects get the humanizer, or a newer version of it, unless it is switched off.
+  for (const p of store.projects.filter((p) => p.kitInstalled)) ensureHumanizer(p)
+  void agentEnv()
+    .then((env) => refreshSearchServer(settings.connectors, runner(env), homedir()))
+    .then((outcome) => outcome === 'failed' && console.warn('could not refresh free-search-mcp'))
+    .catch((err) => console.warn('free-search-mcp refresh failed', err))
   app.on('activate', () => {
     if (!BrowserWindow.getAllWindows().length) createWindow()
   })
@@ -419,9 +501,13 @@ app.on('before-quit', (event) => {
   if (quitting || !sessions) return
   event.preventDefault()
   quitting = true
-  void reviews?.shutdown()
   void mcp.close()
-  void sessions.shutdown().finally(() => {
+  // Turns and reviews get a few seconds to stop; any agent process still running is then killed.
+  void Promise.race([
+    Promise.allSettled([sessions.shutdown(), reviews?.shutdown()]),
+    new Promise((r) => setTimeout(r, 3500))
+  ]).finally(() => {
+    killAllAgents()
     store.flush()
     app.quit()
   })

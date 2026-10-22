@@ -12,7 +12,10 @@ import type {
   PermissionMode,
   FindingStatus,
   LitCitation,
+  LitGraph,
   LitResult,
+  RefEntryCheck,
+  RefReport,
   Project,
   Review,
   SendMessageInput,
@@ -60,7 +63,19 @@ export interface StudioCalls {
   /** Papers for a query through the search connector; `category` narrows the source (e.g. `paper.math`). */
   'lit:search': (query: string, category?: string) => LitResult[]
   /** Fetch a BibTeX entry for the paper and add it to the project's bibliography unless it is there. */
+  /**
+   * Ask the DOI system about the paper, then add a BibTeX entry to the project's bibliography unless
+   * it is there; a DOI that does not exist or names another paper is refused.
+   */
   'lit:cite': (projectId: string, paper: LitResult) => LitCitation
+  /** The paper's references and citing works through the search connector's citation graph. */
+  'lit:graph': (paper: LitResult) => LitGraph
+  /** The peer-reviewed version of a preprint, when a registry links one or a title matches closely. */
+  'lit:published': (paper: LitResult) => LitResult | null
+  /** Check a bibliography (default: the first .bib in `paper/`) against the DOI registries; progress arrives as `refs:progress`. */
+  'refs:check': (projectId: string, file?: string) => RefReport
+  /** Write a DOI into an entry that has none and check the entry again. */
+  'refs:setDoi': (projectId: string, file: string, key: string, doi: string) => RefEntryCheck
   'reviews:list': (sessionId: string) => Review[]
   /** Start a read-only review of the session with its own agent; progress arrives as `review:changed`. */
   'reviews:start': (sessionId: string) => Review
@@ -80,6 +95,7 @@ export interface StudioPushes {
   'project:changed': Project
   'files:changed': { projectId: string }
   'artifacts:changed': { projectId: string }
+  'refs:progress': { projectId: string; done: number; total: number }
   'review:changed': Review
   'menu:command': MenuCommand
 }

@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { FindingSeverity, FindingStatus, Project, Review, ReviewFinding, Session, SessionEvent, Settings } from '@shared/types'
 import type { Turn } from './agents/base'
 import { agentEnv, resolveBinary } from './agents/detect'
+import { traceCitations, traceSummary } from './citetrace'
+import type { Fetcher } from './refcheck'
 import { ADAPTERS } from './sessions'
 import { readJson, writeAtomic, type Store } from './store'
 
@@ -98,7 +100,7 @@ export function buildDigest(session: Session, project: Project, events: SessionE
   return [head, ...kept].join('\n\n')
 }
 
-export function reviewPrompt(digest: string, language: 'zh-CN' | 'en'): string {
+export function reviewPrompt(digest: string, language: 'zh-CN' | 'en', citations = ''): string {
   const lang = language === 'en' ? 'English' : 'Simplified Chinese'
   return `You are checking another agent's work in a mathematical-modeling project. Stay read-only: do not edit or create files and do not run anything that writes. Do not redo the analysis.
 
@@ -113,7 +115,7 @@ Severity:
 Reply with exactly one JSON object in a \`\`\`json fenced block and nothing after it:
 {"summary": "two or three sentences", "findings": [{"severity": "fail|warn|inconclusive|pass", "title": "short claim being judged", "detail": "what the evidence shows", "evidence": ["relative/path or call:<id>"], "suggestion": "what to do, for fail and warn"}]}
 Write summary, titles, details and suggestions in ${lang}. Keep each detail under 80 words.
-
+${citations ? `\n${citations}\n` : ''}
 ${digest}`
 }
 
@@ -155,21 +157,48 @@ export function parseReview(text: string): { summary: string; findings: ReviewFi
   return null
 }
 
+/** Studio's citation findings and the reviewer's, most severe first; the trace's lead on ties. */
+export function mergeFindings(citations: ReviewFinding[], reviewer: ReviewFinding[]): ReviewFinding[] {
+  return [...citations, ...reviewer].sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity))
+}
+
 export interface ReviewHooks {
   changed(review: Review): void
 }
 
+const TRACE_TIMEOUT = 45_000
+/** How long quitting waits for running reviews to record that they stopped. */
+const SHUTDOWN_WAIT = 2_000
+const CUT_OFF = 'Studio closed before the review finished.'
+
 /** Runs and stores reviews. Each session's reviews live in one JSON file beside its events. */
 export class ReviewManager {
   private running = new Map<string, Turn>()
+  private cancelled = new Set<string>()
+  /** Reviews in progress, from start to their last save; aborting stops the citation trace. */
+  private active = new Map<string, { review: Review; abort: AbortController; done: Promise<void> }>()
 
   constructor(
     private readonly dir: string,
     private readonly store: Store,
     private readonly settings: () => Settings,
-    private readonly hooks: ReviewHooks
+    private readonly hooks: ReviewHooks,
+    /** Registry lookups for the citation trace. */
+    private readonly fetch: Fetcher
   ) {
     mkdirSync(dir, { recursive: true })
+    // A review saved as running was cut off when Studio last quit or crashed; nothing will finish it.
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith('.json')) continue
+      try {
+        const list = readJson<Review[]>(join(dir, name), [])
+        if (!Array.isArray(list) || !list.some((r) => r.status === 'running')) continue
+        const stopped = list.map((r): Review => (r.status === 'running' ? { ...r, status: 'cancelled', error: CUT_OFF, finishedAt: Date.now() } : r))
+        writeAtomic(join(dir, name), JSON.stringify(stopped))
+      } catch {
+        // left as it is; the next launch tries again
+      }
+    }
   }
 
   private path(sessionId: string): string {
@@ -181,6 +210,8 @@ export class ReviewManager {
   }
 
   private save(review: Review): void {
+    // A session deleted while its review ran keeps no review file.
+    if (!this.store.session(review.sessionId)) return
     const list = this.list(review.sessionId)
     const i = list.findIndex((r) => r.id === review.id)
     if (i >= 0) list[i] = review
@@ -191,6 +222,7 @@ export class ReviewManager {
   }
 
   remove(sessionId: string): void {
+    for (const { review } of this.active.values()) if (review.sessionId === sessionId) this.cancel(review.id)
     rmSync(this.path(sessionId), { force: true })
   }
 
@@ -204,7 +236,17 @@ export class ReviewManager {
   }
 
   cancel(reviewId: string): void {
+    const active = this.active.get(reviewId)
+    if (!active) return
+    this.cancelled.add(reviewId)
+    active.abort.abort()
     this.running.get(reviewId)?.interrupt()
+  }
+
+  /** Record how a review ended, keeping the findings already saved with it. */
+  private finish(review: Review, patch: Partial<Review>): void {
+    const saved = this.list(review.sessionId).find((r) => r.id === review.id) ?? review
+    this.save({ ...saved, ...patch, finishedAt: Date.now() })
   }
 
   async start(sessionId: string): Promise<Review> {
@@ -213,7 +255,6 @@ export class ReviewManager {
     if (!session || !project) throw new Error('Unknown session')
     const events = this.store.events(sessionId)
     const settings = this.settings()
-    const adapter = ADAPTERS[session.agent]
     const review: Review = {
       id: randomUUID(),
       sessionId,
@@ -226,12 +267,49 @@ export class ReviewManager {
       findings: []
     }
     this.save(review)
+    const abort = new AbortController()
+    const done = this.run(review, session, project, events, settings, abort)
+      .catch((err) => {
+        try {
+          this.finish(review, { status: 'error', error: String((err as Error)?.message ?? err) })
+        } catch {
+          // nowhere left to record it
+        }
+      })
+      .finally(() => {
+        this.active.delete(review.id)
+        this.running.delete(review.id)
+        this.cancelled.delete(review.id)
+      })
+    this.active.set(review.id, { review, abort, done })
+    return review
+  }
+
+  private async run(review: Review, session: Session, project: Project, events: SessionEvent[], settings: Settings, abort: AbortController): Promise<void> {
+    const adapter = ADAPTERS[session.agent]
+    // Studio traces citations itself first, so the reviewer can spend its effort on substance. At the time
+    // limit (or on cancel) lookups still out count as unverifiable; every finding already made is kept.
+    const timer = setTimeout(() => abort.abort(), TRACE_TIMEOUT)
+    const traced = await traceCitations({ project, events, fetch: this.fetch, language: settings.locale, signal: abort.signal }).catch(() => null)
+    clearTimeout(timer)
+    const citationFindings: ReviewFinding[] = (traced?.findings ?? []).map((f) => ({ ...f, id: randomUUID() }))
+    if (traced) review.trace = traced.trace
+    if (this.cancelled.has(review.id)) {
+      this.save({ ...review, status: 'cancelled', findings: citationFindings, finishedAt: Date.now() })
+      return
+    }
+    if (citationFindings.length) this.save({ ...review, findings: citationFindings })
 
     const env = await agentEnv()
+    // A cancel can arrive while the environment is read.
+    if (this.cancelled.has(review.id)) {
+      this.save({ ...review, status: 'cancelled', findings: citationFindings, finishedAt: Date.now() })
+      return
+    }
     const binary = resolveBinary(adapter, settings, env)
     if (!binary) {
-      this.save({ ...review, status: 'error', error: `${adapter.name} was not found.`, finishedAt: Date.now() })
-      return review
+      this.save({ ...review, status: 'error', error: `${adapter.name} was not found.`, findings: citationFindings, finishedAt: Date.now() })
+      return
     }
 
     const texts: string[] = []
@@ -241,7 +319,7 @@ export class ReviewManager {
       {
         binary,
         cwd: project.path,
-        prompt: reviewPrompt(buildDigest(session, project, events), settings.locale),
+        prompt: reviewPrompt(buildDigest(session, project, events), settings.locale, traced ? traceSummary(traced.trace, traced.findings) : ''),
         model: review.model,
         effort: session.effort || undefined,
         permissionMode: 'plan',
@@ -254,7 +332,7 @@ export class ReviewManager {
           if (body.kind === 'assistant.text' && !body.parentCallId) texts.push(body.text)
           if (body.kind === 'tool.call') {
             review.steps++
-            this.hooks.changed({ ...review })
+            this.hooks.changed({ ...review, findings: citationFindings })
           }
           // The reviewer only reads; anything that asks for approval is refused.
           if (body.kind === 'permission.request') turn.respondPermission(body.requestId, false)
@@ -265,24 +343,38 @@ export class ReviewManager {
       }
     )
     this.running.set(review.id, turn)
-    void turn.done.finally(() => {
-      this.running.delete(review.id)
-      const parsed = parseReview(texts.join('\n\n'))
-      const finishedAt = Date.now()
-      if (interrupted) this.save({ ...review, status: 'cancelled', finishedAt })
-      else if (parsed) this.save({ ...review, status: 'done', summary: parsed.summary, findings: parsed.findings, finishedAt })
-      else
-        this.save({
-          ...review,
-          status: 'error',
-          error: errorText || clip(texts.join('\n\n'), 1500) || 'The reviewer did not return any findings.',
-          finishedAt
-        })
-    })
-    return review
+    await turn.done.catch(() => undefined)
+    this.running.delete(review.id)
+    const parsed = parseReview(texts.join('\n\n'))
+    const finishedAt = Date.now()
+    if (interrupted) this.save({ ...review, status: 'cancelled', findings: citationFindings, finishedAt })
+    else if (parsed) this.save({ ...review, status: 'done', summary: parsed.summary, findings: mergeFindings(citationFindings, parsed.findings), finishedAt })
+    else if (this.cancelled.has(review.id)) this.save({ ...review, status: 'cancelled', findings: citationFindings, finishedAt })
+    else
+      this.save({
+        ...review,
+        status: 'error',
+        error: errorText || clip(texts.join('\n\n'), 1500) || 'The reviewer did not return any findings.',
+        findings: citationFindings,
+        finishedAt
+      })
   }
 
+  /** Stop every review and wait, at most SHUTDOWN_WAIT, until each has saved that it stopped. */
   async shutdown(): Promise<void> {
-    for (const t of this.running.values()) t.interrupt()
+    const active = [...this.active.values()]
+    for (const a of active) this.cancel(a.review.id)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([Promise.allSettled(active.map((a) => a.done)), new Promise<void>((r) => (timer = setTimeout(r, SHUTDOWN_WAIT)))])
+    clearTimeout(timer)
+    // One still going (an agent that ignores the interrupt) is recorded as stopped all the same.
+    for (const a of active) {
+      if (!this.active.has(a.review.id)) continue
+      try {
+        this.finish(a.review, { status: 'cancelled', error: CUT_OFF })
+      } catch {
+        // the next launch marks it
+      }
+    }
   }
 }

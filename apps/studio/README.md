@@ -16,6 +16,15 @@ CLI's own account and limits. It is MIT-licensed like the rest of the repository
   specialist roles, the workflow prompts and an `AGENTS.md` that Claude Code
   (`CLAUDE.md`), Codex and Gemini CLI (`GEMINI.md`) all read. Existing files are
   never overwritten.
+- **Humanizer.** Kit projects also get [humanizer](https://github.com/blader/humanizer)
+  (MIT), which rewrites AI-sounding prose without changing what it says: the
+  Claude Code plugin at project scope (`claude plugin … --scope project`, user
+  settings untouched) and a copy of the skill in `.agents/skills` for Codex and
+  Gemini CLI. Without the `claude` CLI the skill goes into `.claude/skills`
+  instead. At each launch Studio checks for a newer version: `claude plugin
+  update` for the plugin, and the repository's newest commit for the copies it
+  installed (copies you edited are left alone). It runs in the background, also
+  for existing projects, and can be switched off in Settings.
 - **Sessions.** Any agent per session, switchable between turns. Conversations
   resume through each CLI's own session store.
 - **Models.** The model picker lists what each CLI reports for the signed-in
@@ -45,17 +54,41 @@ CLI's own account and limits. It is MIT-licensed like the rest of the repository
   reviewer traces each substantive claim to that record and the project files
   instead of redoing the work, and returns findings marked fails, doubtful,
   inconclusive or holds, with evidence. Findings can be sent back to the agent
-  as a fix request, resolved or dismissed.
+  as a fix request, resolved or dismissed. Before the reviewer starts, Studio
+  traces every DOI, arXiv id, PMID, trial id, `\cite` key and author-year
+  reference in the replies and in documents the session produced to a tool
+  result, a user message or the project bibliography, and looks up untraced
+  DOIs: one the DOI system does not know is reported as likely made up, a
+  missing `\cite` key or a retracted paper as a failure. These findings carry
+  a "Citation" tag, and the reviewer is told about them so it can judge
+  whether sources support claims instead.
 - **Literature.** A side-pane search over papers, preprints, math, CS,
-  biomedical sources and datasets through the search connector. "Add
-  reference" fetches BibTeX from the DOI registry or arXiv (or builds an entry
-  from the result), gives it a predictable `surnameYEARword` key, appends it to
-  `paper/references.bib` once, and warns if the DOI has been retracted.
+  biomedical sources and datasets through the search connector. Results are
+  labelled published, preprint, dataset or web; a preprint and its journal
+  version are folded into one result, and "Find the published version" follows
+  the registry's version link or a close title match. Each result opens its
+  references and citing works. "Add reference" first asks the DOI system about
+  the DOI: one that does not exist or is registered to a different title is
+  refused; otherwise the registry's BibTeX (or an entry built from its
+  metadata) gets a predictable `surnameYEARword` key and is appended to
+  `paper/references.bib` once, with retractions, withdrawals and corrections
+  reported from Crossref, Retraction Watch and OpenAlex.
+- **Reference check.** The Literature pane's second view checks any `.bib` in
+  the project entry by entry. A DOI is `resolves`, `not found` or
+  `unverifiable`, never guessed: Crossref first, then doi.org's registration
+  agency lookup (DataCite, or CSL metadata for agencies such as ISTIC, CNKI and
+  JaLC). The registered title, first author and year are compared with the
+  entry, and notices are listed. Entries without a DOI get their arXiv DOI or a
+  close Crossref match, which "Write DOI" inserts. "Ask the agent" puts the
+  doubtful entries into the composer as a fix request. Crossref is queried one
+  request at a time and rate limits are retried.
 - **Connectors.** MCP servers, local commands or remote URLs, configured once
   in Settings and written into `.mcp.json` (Claude Code), `.codex/config.toml`
   (Codex) and `.gemini/settings.json` (Gemini CLI) in every project with the
-  kit. Servers you added to those files yourself are left alone. The built-in
-  Mathodology Search runs `free-search-mcp` through `uvx` and needs no key.
+  kit. Servers you added to those files yourself, or edited after Studio wrote
+  them, are left alone, also when one has a connector's name. The built-in
+  Mathodology Search runs `free-search-mcp` through `uvx` and needs no key;
+  each launch refreshes it to the newest release (`uvx free-search-mcp@latest`).
 - **Side pane.** File tree, artifacts, literature, the agent's task list with
   session usage, and previews for PDF, images, Markdown (with math), CSV and
   highlighted source.
@@ -90,7 +123,7 @@ pnpm dev
 | --- | --- |
 | `pnpm dev` | Run with hot reload |
 | `pnpm typecheck` | Type-check the main/preload and renderer projects |
-| `pnpm test` | Run the unit tests (stream parsers, models, artifacts, reviews, connectors, literature) |
+| `pnpm test` | Run the unit tests (stream parsers, models, artifacts, reviews, connectors, literature, reference checks, citation trace, humanizer and search updates) |
 | `pnpm package` | Build an unpacked `.app` under `release/<version>/` |
 | `pnpm dist` | Build the macOS DMG and ZIP |
 
@@ -108,7 +141,8 @@ src/main       Electron main process: storage, project kit, IPC, agent adapters
 src/preload    The typed window.studio bridge (contextIsolation, sandboxed renderer)
 src/renderer   React interface
 src/shared     Types and IPC contracts used by both sides
-tests          Unit tests for the adapters, artifact store, reviews, connectors and literature
+tests          Unit tests for the adapters, artifact store, reviews, connectors, literature,
+               reference checks and citation trace
 ```
 
 Each adapter starts the CLI for a turn and translates its output into one event
@@ -130,15 +164,19 @@ Permission modes map onto each CLI:
 | Full autonomy | `bypassPermissions` | danger-full-access, `never` | `yolo` |
 
 Gemini CLI has no headless approval channel, so its "Ask each time" runs as
-auto-edit. Use Plan only for read-only work with Gemini.
+auto-edit. Use Plan only for read-only work with Gemini. Codex's workspace-write
+sandbox is started with network access (`sandbox_workspace_write.network_access=true`),
+because modeling installs packages with pip and downloads data.
 
 Data lives in the app's user-data folder under `studio/`: `settings.json`,
 `state.json` (projects and sessions), one `events/<session>.jsonl` per session,
 `artifacts/<project>/` (the version index and a content-addressed copy of each
-version up to 25 MB) and `reviews/<session>.json`. Streaming deltas are not
-persisted; finished messages are. Project
-files reach the renderer through a `studio-file://` scheme confined to
-registered project folders.
+version up to 25 MB), `reviews/<session>.json` and `connectors/<project>.json`
+(the connector entries Studio wrote into that project). A state file that cannot
+be parsed is kept as `<name>.corrupt-<time>` before Studio starts over.
+Streaming deltas are not persisted; finished messages are. Project files reach
+the renderer through a `studio-file://` scheme confined to registered project
+folders, symbolic links included.
 
 The kit comes from this repository: `pnpm dev` reads it from the checkout, and
 packaged builds bundle a copy under `Contents/Resources/kit`.

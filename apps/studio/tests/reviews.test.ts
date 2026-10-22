@@ -1,6 +1,22 @@
-import { describe, expect, it } from 'vitest'
-import type { Project, Session, SessionEvent, SessionEventBody } from '../src/shared/types'
-import { buildDigest, parseReview } from '../src/main/reviews'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Project, Review, Session, SessionEvent, SessionEventBody, Settings } from '../src/shared/types'
+import type { Turn, TurnSink } from '../src/main/agents/base'
+import { clearDoiCache, type Fetcher } from '../src/main/refcheck'
+import { buildDigest, parseReview, ReviewManager } from '../src/main/reviews'
+import type { Store } from '../src/main/store'
+
+// The reviewing agent and its environment are stand-ins; each test sets what they do.
+const fake = vi.hoisted(() => ({
+  env: (): Promise<NodeJS.ProcessEnv> => Promise.resolve({}),
+  start: (_req: unknown, _sink: TurnSink): Turn => {
+    throw new Error('no agent in this test')
+  }
+}))
+vi.mock('../src/main/agents/detect', () => ({ agentEnv: () => fake.env(), resolveBinary: () => '/usr/bin/agent' }))
+vi.mock('../src/main/sessions', () => ({ ADAPTERS: { claude: { name: 'Claude Code', start: (req: unknown, sink: TurnSink) => fake.start(req, sink) } } }))
 
 const project: Project = { id: 'p', name: 'Demo', path: '/tmp/demo', contest: 'MCM', createdAt: 0, kitInstalled: true }
 const session = { id: 's', projectId: 'p', agent: 'claude', model: 'opus' } as Session
@@ -77,5 +93,157 @@ describe('parseReview', () => {
     expect(parseReview('Result: {"summary":"s","findings":[]} done')?.findings).toEqual([])
     expect(parseReview('No JSON here')).toBeNull()
     expect(parseReview('```json\n{"summary":"x"}\n```')).toBeNull()
+  })
+})
+
+describe('ReviewManager', () => {
+  const dirs: string[] = []
+  afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })))
+  let sessionEvents: SessionEvent[] = []
+  let deleted = false
+  beforeEach(() => {
+    clearDoiCache()
+    sessionEvents = []
+    deleted = false
+    fake.env = () => Promise.resolve({})
+  })
+  const settings = { locale: 'en', agents: { claude: { defaultModel: '' } } } as unknown as Settings
+  const store = { session: () => (deleted ? undefined : session), project: () => project, events: () => sessionEvents } as unknown as Store
+  const offline: Fetcher = async () => ({ status: 404, ok: false, text: async () => '' })
+
+  function manager(fetch = offline): { reviews: ReviewManager; seen: Review[]; dir: string } {
+    const dir = mkdtempSync(join(tmpdir(), 'studio-reviews-'))
+    dirs.push(dir)
+    const seen: Review[] = []
+    return { reviews: new ReviewManager(dir, store, () => settings, { changed: (r) => seen.push(r) }, fetch), seen, dir }
+  }
+  const ended = (seen: Review[]): Promise<Review> =>
+    vi.waitFor(() => {
+      const last = seen.at(-1)
+      if (!last || last.status === 'running') throw new Error('still running')
+      return last
+    })
+  /** A turn that ends when interrupted, unless it ignores interrupts. */
+  function turnFor(sink: TurnSink, ignoresInterrupt = false): Turn {
+    let end!: () => void
+    const done = new Promise<void>((r) => (end = r))
+    return {
+      interrupt: () => {
+        if (ignoresInterrupt) return
+        sink.emit({ kind: 'turn.completed', ok: false, summary: 'interrupted' })
+        end()
+      },
+      respondPermission: () => undefined,
+      done
+    }
+  }
+
+  it('marks reviews left running by a quit or crash as stopped', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'studio-reviews-'))
+    dirs.push(dir)
+    writeFileSync(join(dir, 's.json'), JSON.stringify([{ id: 'old', sessionId: 's', status: 'running', findings: [] }, { id: 'ok', sessionId: 's', status: 'done', findings: [] }]))
+    const reviews = new ReviewManager(dir, store, () => settings, { changed: () => undefined }, offline)
+    expect(reviews.list('s').map((r) => [r.id, r.status])).toEqual([
+      ['old', 'cancelled'],
+      ['ok', 'done']
+    ])
+    expect(reviews.list('s')[0].error).toMatch(/closed/)
+  })
+
+  it('honours a cancel that arrives while the agent environment is read', async () => {
+    let release!: (env: NodeJS.ProcessEnv) => void
+    fake.env = () => new Promise((r) => (release = r))
+    const start = vi.fn()
+    fake.start = start
+    const { reviews, seen } = manager()
+    const review = await reviews.start('s')
+    await vi.waitFor(() => expect(release).toBeDefined())
+    reviews.cancel(review.id)
+    release({})
+    expect((await ended(seen)).status).toBe('cancelled')
+    expect(start).not.toHaveBeenCalled()
+  })
+
+  it('stops a running review and leaves no file when its session is deleted', async () => {
+    let started = false
+    let interrupted = false
+    fake.start = (_req, sink) => {
+      started = true
+      const turn = turnFor(sink)
+      return { ...turn, interrupt: () => ((interrupted = true), turn.interrupt()) }
+    }
+    const { reviews, dir } = manager()
+    await reviews.start('s')
+    await vi.waitFor(() => expect(started).toBe(true))
+    expect(existsSync(join(dir, 's.json'))).toBe(true)
+    deleted = true
+    reviews.remove('s')
+    await vi.waitFor(() => expect(interrupted).toBe(true))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(existsSync(join(dir, 's.json'))).toBe(false)
+  })
+
+  it('records an error instead of staying running when the run throws', async () => {
+    fake.start = () => {
+      throw new Error('spawn EACCES')
+    }
+    const { reviews, seen } = manager()
+    await reviews.start('s')
+    expect(await ended(seen)).toMatchObject({ status: 'error', error: 'spawn EACCES' })
+  })
+
+  it('keeps the citation findings made before the trace was stopped', async () => {
+    sessionEvents = events([{ kind: 'assistant.text', blockId: 'b', text: 'Sources: 10.1000/fake and 10.1000/slow.' }])
+    let review: Review | undefined
+    const { reviews, seen } = manager(async (url) => {
+      const answer = (status: number, body: unknown) => ({ status, ok: status === 200, text: async () => JSON.stringify(body) })
+      if (url.includes('/ra/10.1000/fake')) return answer(200, [{ status: 'DOI does not exist' }])
+      // The other registry never answers; cancelling stops the wait as the time limit would.
+      if (url.includes('/ra/10.1000/slow')) {
+        reviews.cancel(review!.id)
+        return new Promise(() => undefined)
+      }
+      return answer(404, {})
+    })
+    review = await reviews.start('s')
+    const last = await ended(seen)
+    expect(last.status).toBe('cancelled')
+    expect(last.findings.map((f) => [f.severity, f.title])).toEqual([
+      ['fail', 'DOI does not exist: 10.1000/fake'],
+      ['inconclusive', 'DOI lookups timed out']
+    ])
+  })
+
+  it('saves on shutdown that running reviews stopped', async () => {
+    let started = false
+    fake.start = (_req, sink) => {
+      started = true
+      return turnFor(sink)
+    }
+    const { reviews } = manager()
+    const review = await reviews.start('s')
+    await vi.waitFor(() => expect(started).toBe(true))
+    await reviews.shutdown()
+    expect(reviews.list('s').find((r) => r.id === review.id)?.status).toBe('cancelled')
+  })
+
+  it('waits only briefly on shutdown for an agent that ignores the interrupt', async () => {
+    let started = false
+    fake.start = (_req, sink) => {
+      started = true
+      return turnFor(sink, true)
+    }
+    const { reviews } = manager()
+    const review = await reviews.start('s')
+    await vi.waitFor(() => expect(started).toBe(true))
+    vi.useFakeTimers()
+    try {
+      const stopping = reviews.shutdown()
+      await vi.advanceTimersByTimeAsync(2_000)
+      await stopping
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(reviews.list('s').find((r) => r.id === review.id)).toMatchObject({ status: 'cancelled', error: expect.stringMatching(/closed/) })
   })
 })

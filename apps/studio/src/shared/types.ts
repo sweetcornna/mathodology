@@ -270,6 +270,25 @@ export interface ReviewFinding {
   evidence: string[]
   suggestion?: string
   status: FindingStatus
+  /** Raised by Studio's citation trace rather than by the reviewing agent. */
+  kind?: 'citation'
+}
+
+/** Counts from tracing a session's citations to its own record. */
+export interface CitationTrace {
+  /** Distinct identifiers and author-year references cited in replies and produced documents. */
+  found: number
+  /** Present in a tool result or a user message. */
+  traced: number
+  /** Present only in the project bibliography. */
+  bibOnly: number
+  untraced: number
+  /** DOI lookups the DOI system answered, and how many of those DOIs do not exist. */
+  resolved: number
+  notFound: number
+  unverifiable: number
+  /** DOIs left unchecked because of the lookup cap. */
+  skipped?: number
 }
 
 /**
@@ -290,6 +309,7 @@ export interface Review {
   steps: number
   summary?: string
   findings: ReviewFinding[]
+  trace?: CitationTrace
   error?: string
 }
 
@@ -320,6 +340,8 @@ export interface Settings {
   defaultAgent: AgentId
   defaultPermissionMode: PermissionMode
   sendWithEnter: boolean
+  /** Install the humanizer (Claude Code plugin, skill copy for Codex and Gemini) in kit projects. */
+  installHumanizer: boolean
   /** MCP servers written into every project's Claude Code, Codex and Gemini CLI configuration. */
   connectors: Connector[]
   agents: Record<AgentId, AgentSettings>
@@ -360,6 +382,20 @@ export interface LitResult {
   doi?: string
   arxiv?: string
   citedBy?: number
+  /** Peer-reviewed publication, preprint, dataset or other web page. */
+  kind?: 'published' | 'preprint' | 'dataset' | 'web'
+  /** Other copies of the same work folded into this result, e.g. the preprint of a journal article. */
+  alts?: { url: string; kind: 'published' | 'preprint' | 'dataset' | 'web'; doi?: string; arxiv?: string }[]
+  /** The citation graph flags it as retracted. */
+  retracted?: boolean
+}
+
+/** One hop of a paper's citation graph. */
+export interface LitGraph {
+  references: LitResult[]
+  citations: LitResult[]
+  /** What the lookup left out, e.g. "Showing 10 of 778 citing works". */
+  notes: string[]
 }
 
 export interface LitCitation {
@@ -368,8 +404,115 @@ export interface LitCitation {
   /** Project-relative path of the bibliography it was added to. */
   file: string
   added: boolean
-  /** Crossref or OpenAlex reports a retraction for this DOI. */
+  /** Crossref, Retraction Watch or OpenAlex reports a retraction for this DOI. */
   retracted?: boolean
+  /** What the DOI system said about the paper's DOI. */
+  check?: DoiCheck
+  /** Where the entry's fields came from: the registry's BibTeX or record, or only the search result. */
+  source: 'registry' | 'record' | 'search'
+  /** The registry's title differs from the search result's: the result may carry the wrong DOI. */
+  mismatch?: string
+  /** The DOI does not exist, so nothing was written. */
+  refused?: boolean
+}
+
+/** `invalid` is not DOI syntax; `unverifiable` means no registry answered either way. */
+export type DoiState = 'resolves' | 'not_found' | 'unverifiable' | 'invalid'
+
+export interface RegistryNotice {
+  kind: 'retraction' | 'withdrawal' | 'concern' | 'correction'
+  /** The notice's own DOI, when the registry links one. */
+  doi?: string
+  source?: string
+  year?: number
+}
+
+/** Metadata as the registering agency holds it. */
+export interface RegistryRecord {
+  title: string
+  authors: { family: string; given?: string }[]
+  year?: number
+  venue?: string
+  type?: string
+  publisher?: string
+  /** DOIs of the published version, for a preprint. */
+  publishedAs?: string[]
+  /** This DOI is itself a notice (e.g. a retraction notice) about another DOI. */
+  noticeFor?: { doi: string; kind: RegistryNotice['kind'] }
+}
+
+export interface DoiCheck {
+  doi: string
+  state: DoiState
+  /** The registering agency, lowercase (`crossref`, `datacite`, `istic`…). */
+  registry?: string
+  record?: RegistryRecord
+  notices: RegistryNotice[]
+  error?: string
+}
+
+export type RefVerdict = 'ok' | 'warn' | 'fail' | 'inconclusive'
+
+export type RefProblemCode =
+  | 'invalid_doi'
+  | 'not_found'
+  | 'unverifiable'
+  | 'no_record'
+  | 'title_mismatch'
+  | 'title_differs'
+  | 'author_differs'
+  | 'year_differs'
+  | 'retracted'
+  | 'withdrawn'
+  | 'concern'
+  | 'corrected'
+  | 'is_notice'
+  | 'arxiv_not_found'
+  | 'has_published'
+  | 'no_doi'
+  | 'no_match'
+  | 'no_title'
+
+export interface RefProblem {
+  code: RefProblemCode
+  severity: 'fail' | 'warn' | 'inconclusive' | 'info'
+  /** The registry's value, or the error, for display next to the entry's own. */
+  detail?: string
+}
+
+/** A registry record that matches an entry written without a DOI. */
+export interface RefCandidate {
+  doi: string
+  record: RegistryRecord
+  similarity: number
+  score: number
+  via: 'crossref' | 'arxiv'
+}
+
+export interface RefEntryCheck {
+  key: string
+  type: string
+  /** 1-based line of the entry in its file. */
+  line: number
+  title: string
+  author: string
+  year?: string
+  /** The DOI as written in the entry. */
+  doi?: string
+  verdict: RefVerdict
+  problems: RefProblem[]
+  check?: DoiCheck
+  candidate?: RefCandidate
+}
+
+/** A check of one bibliography file against the DOI registries. */
+export interface RefReport {
+  /** Project-relative path of the file checked. */
+  file: string
+  /** Every .bib file in the project's paper folder, for switching. */
+  files: string[]
+  checkedAt: number
+  entries: RefEntryCheck[]
 }
 
 export interface KitInfo {

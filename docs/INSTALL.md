@@ -63,6 +63,21 @@ settings first. Do not replace a custom server or intentional download opt-out.
 No image2 service is installed: the agent asks about the user's actual tool,
 configured interface or manual usage when figure work begins.
 
+## Desktop app
+
+Mathodology Studio runs from the checkout with Node.js 22.12+ and pnpm 10:
+
+```bash
+cd apps/studio
+pnpm install
+pnpm dev
+```
+
+`pnpm dist` builds an unsigned macOS DMG. Studio installs the skills, roles,
+workflow prompts and humanizer into each project it creates, and leaves existing
+files alone. At each launch it updates humanizer and refreshes free-search-mcp to
+the newest release. See the [Studio README](../apps/studio/README.md).
+
 ## Update and migrate
 
 Back up local edits first. For a clean checkout:

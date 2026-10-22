@@ -134,7 +134,8 @@ export function geminiArgs(req: TurnRequest): string[] {
   else if (req.newSessionId) args.push('--session-id', req.newSessionId)
   args.push(...splitArgs(req.settings.extraArgs))
   const prompt = req.systemAppend ? `${req.systemAppend}\n\n---\n\n${req.prompt}` : req.prompt
-  args.push('-p', prompt)
+  // Attached with `=`: Gemini's parser rejects a separate value that starts with "-" ("- fix ...").
+  args.push(`--prompt=${prompt}`)
   return args
 }
 

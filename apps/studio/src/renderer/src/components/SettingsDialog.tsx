@@ -78,6 +78,9 @@ function General() {
       <Row label={t('settings.sendWithEnter')} desc={t('settings.sendWithEnterDesc', { mod })}>
         <Switch checked={s.sendWithEnter} onChange={(sendWithEnter) => void save({ sendWithEnter })} />
       </Row>
+      <Row label={t('settings.humanizer')} desc={t('settings.humanizerDesc')}>
+        <Switch checked={s.installHumanizer} onChange={(installHumanizer) => void save({ installHumanizer })} />
+      </Row>
     </Section>
   )
 }

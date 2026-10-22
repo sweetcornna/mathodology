@@ -56,7 +56,10 @@ function namedPaths(project: Project, call: Extract<SessionEventBody, { kind: 't
   })
 }
 
-function uniqueTarget(dir: string, name: string): string {
+function uniqueTarget(dir: string, requested: string): string {
+  // Only the file name counts: "../x" or "/abs/x" still lands in the attachments folder.
+  const base = basename(requested)
+  const name = base && base !== '.' && base !== '..' ? base : 'attachment'
   let target = join(dir, name)
   const ext = extname(name)
   const stem = basename(name, ext)
@@ -76,6 +79,8 @@ export class SessionManager {
 
   /** Record new artifact versions and announce them in the session's transcript. */
   private capture(sessionId: string, project: Project, rels: string[] | 'scan', by: Attribution): void {
+    // A project removed mid-turn gets no history back.
+    if (!this.store.project(project.id)) return
     const found = this.artifacts.capture(project, rels, by)
     for (const { artifact, version } of found) {
       this.emit(sessionId, {
@@ -108,6 +113,7 @@ export class SessionManager {
   }
 
   create(input: CreateSessionInput): Session {
+    if (!this.store.project(input.projectId)) throw new Error('Unknown project')
     const now = Date.now()
     const session: Session = {
       id: randomUUID(),
@@ -191,12 +197,17 @@ export class SessionManager {
     const settings = this.settings()
     const adapter = ADAPTERS[session.agent]
     const env = await agentEnv()
+    // Deleted (with its project, perhaps) while the environment was resolved.
+    if (!this.store.session(session.id)) return
     const binary = resolveBinary(adapter, settings, env)
 
     let current: Session = session
     // Start from the stored session each time: the queue, title or model may change mid-turn.
+    // Once the session is deleted, the turn winding down must not bring it back.
     const save = (patch: Partial<Session>): void => {
-      current = { ...(this.store.session(session.id) ?? current), ...patch, updatedAt: Date.now() }
+      const stored = this.store.session(session.id)
+      if (!stored) return
+      current = { ...stored, ...patch, updatedAt: Date.now() }
       this.store.upsertSession(current)
       this.hooks.changed(current)
     }

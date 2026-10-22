@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { extname, join, relative, resolve, sep } from 'node:path'
+import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import type { FileEntry, FilePreview } from '@shared/types'
 
 const HIDDEN = new Set(['.git', 'node_modules', '.DS_Store', '__pycache__', '.venv', '.ipynb_checkpoints'])
@@ -19,11 +19,44 @@ const TEXT_EXT = new Set([
   '.bib', '.csv', '.tsv', '.ipynb', '.sh', '.html', '.css', '.cfg', '.ini', '.log', '.xml', '.sql'
 ])
 
-/** Resolve `rel` inside `root`, refusing paths that escape it. */
+/** `abs` with every link resolved; a path not created yet resolves through its nearest existing parent. */
+function realPath(abs: string): string {
+  const rest: string[] = []
+  let head = abs
+  for (;;) {
+    try {
+      return join(realpathSync.native(head), ...rest)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+      // Only a missing name is walked past: a dangling link could point anywhere.
+      if (lstatSync(head, { throwIfNoEntry: false })) throw new Error('Path outside project')
+      const parent = dirname(head)
+      if (parent === head) throw err
+      rest.unshift(basename(head))
+      head = parent
+    }
+  }
+}
+
+/** Resolve `rel` inside `root`, refusing paths that escape it, also through symbolic links. */
 export function safeJoin(root: string, rel = ''): string {
-  const abs = resolve(root, rel)
-  if (abs !== resolve(root) && !abs.startsWith(resolve(root) + sep)) throw new Error('Path outside project')
+  const base = resolve(root)
+  const abs = resolve(base, rel)
+  if (abs !== base && !abs.startsWith(base + sep)) throw new Error('Path outside project')
+  const real = realPath(abs)
+  const realRoot = realPath(base)
+  if (real !== realRoot && !real.startsWith(realRoot + sep)) throw new Error('Path outside project')
   return abs
+}
+
+/** Whether `path` lies inside `root` once links are resolved. */
+export function within(root: string, path: string): boolean {
+  try {
+    safeJoin(root, path)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function listFiles(root: string, rel = ''): FileEntry[] {

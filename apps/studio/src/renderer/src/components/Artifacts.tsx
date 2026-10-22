@@ -97,7 +97,26 @@ function VersionTag({ v }: { v: number }) {
   return <span className="kbd shrink-0">v{v}</span>
 }
 
-/** The card row under a turn: what the turn produced, newest version of each, click to open. */
+function stem(rel: string): string {
+  return rel.replace(/\.[^./]+$/, '')
+}
+
+function extension(rel: string): string {
+  return rel.slice(rel.lastIndexOf('.') + 1).toUpperCase()
+}
+
+/** A figure under a turn: its image, plus the same figure exported in other formats (PDF, EPS…). */
+interface FigureGroup {
+  image: GeneratedFile
+  thumb: string
+  formats: GeneratedFile[]
+}
+
+/**
+ * What a turn produced, newest version of each, click to open. Figures come first as equal-size
+ * thumbnails, one card per figure whatever formats it was exported in; every other file is a row
+ * in one list, so the block keeps a tidy shape however many files there are.
+ */
 export function GeneratedRow({ files }: { files: GeneratedFile[] }) {
   const t = useT()
   const projectId = useStudio((s) => s.activeProjectId)
@@ -105,48 +124,80 @@ export function GeneratedRow({ files }: { files: GeneratedFile[] }) {
   const open = useStudio((s) => s.openArtifact)
   const [all, setAll] = useState(false)
   const LIMIT = 6
-  // Figures first: they are what people look for under a turn.
-  const sorted = useMemo(() => [...files].sort((a, b) => Number(b.kind === 'figure') - Number(a.kind === 'figure')), [files])
-  const shown = all ? sorted : sorted.slice(0, LIMIT)
+
+  const { figures, rest } = useMemo(() => {
+    const figures: FigureGroup[] = []
+    const byStem = new Map<string, FigureGroup>()
+    for (const f of files) {
+      const artifact = artifacts.find((a) => a.id === f.artifactId)
+      const version = artifact?.versions.find((x) => x.v === f.v)
+      const thumb = projectId && artifact && version ? thumbUrl(projectId, artifact, version) : null
+      if (!thumb || byStem.has(stem(f.rel))) continue
+      const group = { image: f, thumb, formats: [f] }
+      byStem.set(stem(f.rel), group)
+      figures.push(group)
+    }
+    const rest: GeneratedFile[] = []
+    for (const f of files) {
+      const group = byStem.get(stem(f.rel))
+      if (group?.image === f) continue
+      if (group && f.kind === 'figure') group.formats.push(f)
+      else rest.push(f)
+    }
+    return { figures, rest }
+  }, [files, artifacts, projectId])
+
   if (!projectId) return null
+  const hidden = Math.max(0, figures.length - LIMIT) + Math.max(0, rest.length - LIMIT)
+  const shownFigures = all ? figures : figures.slice(0, LIMIT)
+  const shownRest = all ? rest : rest.slice(0, LIMIT)
   return (
-    <div className="rise-in">
-      <div className="mb-1.5 text-[0.857rem] text-fg-3">{t('artifacts.generated', { n: files.length })}</div>
-      <div className="flex flex-wrap gap-2">
-        {shown.map((f) => {
-          const artifact = artifacts.find((a) => a.id === f.artifactId)
-          const version = artifact?.versions.find((x) => x.v === f.v)
-          const thumb = artifact && version ? thumbUrl(projectId, artifact, version) : null
-          const Icon = KIND_ICON[f.kind]
-          const name = basename(f.rel)
-          return thumb ? (
-            <button key={f.artifactId} title={f.rel} onClick={() => open(f.artifactId, f.v)} className="card group flex w-[156px] flex-col overflow-hidden text-left transition-shadow hover:shadow-[0_0_0_1px_var(--border-strong),var(--shadow-md)]">
-              <div className="grid aspect-[4/3] place-items-center overflow-hidden border-b border-line bg-white">
-                <img src={thumb} loading="lazy" className="h-full w-full object-contain" alt={name} />
+    <div className="flex max-w-[560px] flex-col gap-2 rise-in">
+      <div className="text-[0.857rem] text-fg-3">{t('artifacts.generated', { n: files.length })}</div>
+      {shownFigures.length > 0 && (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(164px,1fr))] gap-2">
+          {shownFigures.map(({ image, thumb, formats }) => (
+            <div key={image.artifactId} className="card group flex flex-col overflow-hidden transition-shadow hover:shadow-[0_0_0_1px_var(--border-strong),var(--shadow-md)]">
+              <button title={image.rel} onClick={() => open(image.artifactId, image.v)} className="grid aspect-[4/3] place-items-center overflow-hidden border-b border-line bg-white">
+                <img src={thumb} loading="lazy" className="h-full w-full object-contain p-1" alt={basename(image.rel)} />
+              </button>
+              <div className="flex h-8 items-center gap-1 px-2 text-[0.857rem]">
+                <span className="min-w-0 flex-1 truncate" title={image.rel}>
+                  {basename(stem(image.rel))}
+                </span>
+                {formats.map((f) => (
+                  <button key={f.artifactId} title={f.rel} onClick={() => open(f.artifactId, f.v)} className="kbd shrink-0 hover:bg-surface-3">
+                    {extension(f.rel)}
+                    {f.v > 1 && ` v${f.v}`}
+                  </button>
+                ))}
               </div>
-              <div className="flex h-8 items-center gap-1.5 px-2 text-[0.857rem]">
-                <span className="min-w-0 flex-1 truncate">{name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {shownRest.length > 0 && (
+        <div className="card divide-y divide-line overflow-hidden">
+          {shownRest.map((f) => {
+            const Icon = KIND_ICON[f.kind]
+            return (
+              <button key={f.artifactId} title={f.rel} onClick={() => open(f.artifactId, f.v)} className="flex h-9 w-full items-center gap-2 px-2.5 text-left text-[0.857rem] hover:bg-surface-2">
+                <Icon size={15} className="shrink-0 text-fg-3" />
+                <span className="min-w-0 truncate">{basename(f.rel)}</span>
+                {dirname(f.rel) && <span className="min-w-0 flex-1 truncate text-[0.786rem] text-fg-3">{dirname(f.rel)}</span>}
+                {!dirname(f.rel) && <span className="flex-1" />}
+                {f.added !== undefined && (f.added > 0 || (f.removed ?? 0) > 0) && <DiffStat added={f.added} removed={f.removed ?? 0} />}
                 {f.v > 1 && <VersionTag v={f.v} />}
-              </div>
-            </button>
-          ) : (
-            <button key={f.artifactId} title={f.rel} onClick={() => open(f.artifactId, f.v)} className="card flex h-11 max-w-[260px] items-center gap-2 px-2.5 text-left transition-shadow hover:shadow-[0_0_0_1px_var(--border-strong),var(--shadow-md)]">
-              <Icon size={16} className="shrink-0 text-fg-3" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[0.857rem]">{name}</span>
-                {dirname(f.rel) && <span className="block truncate text-[0.75rem] text-fg-3">{dirname(f.rel)}</span>}
-              </span>
-              {f.added !== undefined && (f.added > 0 || (f.removed ?? 0) > 0) && <DiffStat added={f.added} removed={f.removed ?? 0} />}
-              {f.v > 1 && <VersionTag v={f.v} />}
-            </button>
-          )
-        })}
-        {files.length > LIMIT && (
-          <button className="card flex h-11 items-center px-3 text-[0.857rem] text-fg-2 hover:bg-surface-2" onClick={() => setAll((v) => !v)}>
-            {all ? t('changes.less') : t('artifacts.more', { n: files.length - LIMIT })}
-          </button>
-        )}
-      </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {hidden > 0 && (
+        <button className="self-start text-[0.857rem] text-fg-2 hover:text-fg" onClick={() => setAll((v) => !v)}>
+          {all ? t('changes.less') : t('artifacts.more', { n: hidden })}
+        </button>
+      )}
     </div>
   )
 }

@@ -1,8 +1,10 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { LitCitation, LitResult } from '@shared/types'
+import { normalizeDoi, sourceKind, titleSimilarity } from '@shared/biblio'
+import type { DoiCheck, LitCitation, LitGraph, LitResult, RegistryRecord } from '@shared/types'
+import { findCandidate, resolveDoi, type Fetcher } from './refcheck'
 
-type Fetch = (url: string, init?: { headers?: Record<string, string> }) => Promise<{ ok: boolean; text(): Promise<string> }>
+const UA = 'Mathodology (https://github.com/ymylive/mathodology)'
 
 const DOI = /doi\.org\/(10\.\d{4,9}\/[^\s?#]+)/i
 const ARXIV = /arxiv\.org\/(?:abs|pdf)\/((?:\d{4}\.\d{4,5})|(?:[a-z-]+(?:\.[A-Z]{2})?\/\d{7}))(?:v\d+)?/i
@@ -37,6 +39,71 @@ export function parseResults(json: string): LitResult[] {
       }
     ]
   })
+}
+
+const RANK = { published: 0, preprint: 1, dataset: 2, web: 3 } as const
+
+/**
+ * Label each result's source type and fold copies of one work (same DOI, or near-identical title)
+ * into the best-ranked copy: the journal version first, the preprint kept as an alternative link.
+ */
+export function mergeResults(results: LitResult[], category?: string): LitResult[] {
+  const out: LitResult[] = []
+  for (const r of results) {
+    const kind = sourceKind(r.url, r.doi, category === 'dataset' ? 'dataset' : undefined)
+    const item: LitResult = { ...r, kind }
+    const same = out.find(
+      (o) => (o.doi && item.doi && o.doi.toLowerCase() === item.doi.toLowerCase()) || (o.arxiv && o.arxiv === item.arxiv) || titleSimilarity(o.title, item.title) >= 0.9
+    )
+    if (!same) {
+      out.push(item)
+      continue
+    }
+    const [keep, fold] = RANK[item.kind!] < RANK[same.kind!] ? [item, same] : [same, item]
+    const merged: LitResult = {
+      ...fold,
+      ...keep,
+      byline: keep.byline ?? fold.byline,
+      snippet: keep.snippet || fold.snippet,
+      date: keep.date ?? fold.date,
+      arxiv: keep.arxiv ?? fold.arxiv,
+      citedBy: Math.max(keep.citedBy ?? 0, fold.citedBy ?? 0) || undefined,
+      alts: [...(keep.alts ?? []), ...(fold.url !== keep.url ? [{ url: fold.url, kind: fold.kind!, doi: fold.doi, arxiv: fold.arxiv }] : []), ...(fold.alts ?? [])]
+    }
+    if (!merged.alts?.length) delete merged.alts
+    out[out.indexOf(same)] = merged
+  }
+  return out
+}
+
+/** The search connector's `paper_graph` JSON as results the panel can cite. */
+export function parseGraph(json: string): LitGraph {
+  let data: { references?: Record<string, unknown>[]; citations?: Record<string, unknown>[]; notes?: unknown[] }
+  try {
+    data = JSON.parse(json)
+  } catch {
+    return { references: [], citations: [], notes: [] }
+  }
+  const items = (list: Record<string, unknown>[] | undefined): LitResult[] =>
+    (list ?? []).flatMap((r): LitResult[] => {
+      if (typeof r.title !== 'string') return []
+      const doi = typeof r.doi === 'string' ? (normalizeDoi(r.doi) ?? undefined) : undefined
+      const url = typeof r.url === 'string' ? r.url : doi ? `https://doi.org/${doi}` : ''
+      if (!url) return []
+      return [
+        {
+          title: r.title.trim(),
+          url,
+          snippet: '',
+          date: typeof r.year === 'number' ? String(r.year) : undefined,
+          doi,
+          citedBy: typeof r.cited_by_count === 'number' ? r.cited_by_count : undefined,
+          kind: sourceKind(url, doi),
+          retracted: r.retracted === true || undefined
+        }
+      ]
+    })
+  return { references: items(data.references), citations: items(data.citations), notes: (data.notes ?? []).filter((n): n is string => typeof n === 'string') }
 }
 
 function ascii(s: string): string {
@@ -115,20 +182,48 @@ export function rekey(bib: string, paper: LitResult): { key: string; bibtex: str
 }
 
 /** The registry's BibTeX for a DOI or arXiv id, or null when neither answers. */
-export async function fetchBibtex(paper: LitResult, fetch: Fetch): Promise<string | null> {
+export async function fetchBibtex(paper: LitResult, fetch: Fetcher): Promise<string | null> {
   const tries: [string, Record<string, string>][] = []
-  if (paper.doi) tries.push([`https://doi.org/${paper.doi}`, { Accept: 'application/x-bibtex; charset=utf-8' }])
-  if (paper.arxiv) tries.push([`https://arxiv.org/bibtex/${paper.arxiv}`, {}])
+  if (paper.doi) tries.push([`https://doi.org/${paper.doi}`, { Accept: 'application/x-bibtex; charset=utf-8', 'User-Agent': UA }])
+  if (paper.arxiv) tries.push([`https://arxiv.org/bibtex/${paper.arxiv}`, { 'User-Agent': UA }])
   for (const [url, headers] of tries) {
     try {
       const res = await fetch(url, { headers })
       const text = res.ok ? (await res.text()).trim() : ''
       if (text.startsWith('@')) return text
     } catch {
-      // try the next source, then fall back to the search result
+      // try the next source, then fall back to the registry record or the search result
     }
   }
   return null
+}
+
+const BIB_TYPES: Record<string, string> = {
+  'journal-article': 'article',
+  'article-journal': 'article',
+  'proceedings-article': 'inproceedings',
+  'paper-conference': 'inproceedings',
+  'book-chapter': 'incollection',
+  chapter: 'incollection',
+  book: 'book',
+  monograph: 'book',
+  dissertation: 'phdthesis',
+  thesis: 'phdthesis',
+  report: 'techreport'
+}
+
+/** A BibTeX entry built from the registry's record, when the registry serves no BibTeX itself. */
+export function recordBibtex(record: RegistryRecord, doi: string): string {
+  const type = BIB_TYPES[record.type ?? ''] ?? 'misc'
+  const lines = [`@${type}{KEY,`, `  title = {${bibEscape(record.title)}},`]
+  // A name with no given part is an organisation or a name written whole; braces keep it one unit.
+  if (record.authors.length) lines.push(`  author = {${record.authors.map((a) => (a.given ? bibEscape(`${a.family}, ${a.given}`) : `{${bibEscape(a.family)}}`)).join(' and ')}},`)
+  const venue = { article: 'journal', misc: 'howpublished', techreport: 'institution', phdthesis: 'school' }[type] ?? 'booktitle'
+  if (record.venue) lines.push(`  ${venue} = {${bibEscape(record.venue)}},`)
+  if (record.publisher) lines.push(`  publisher = {${bibEscape(record.publisher)}},`)
+  if (record.year) lines.push(`  year = {${record.year}},`)
+  lines.push(`  doi = {${doi}},`, '}')
+  return lines.join('\n')
 }
 
 /** The project's bibliography: `paper/references.bib`, another .bib in `paper/`, or a new one. */
@@ -166,10 +261,64 @@ export function addToBibliography(projectDir: string, rel: string, key: string, 
   return { key: final, added: true }
 }
 
-export async function cite(projectDir: string, paper: LitResult, fetch: Fetch, retracted?: Promise<boolean | undefined>): Promise<LitCitation> {
-  const fetched = await fetchBibtex(paper, fetch)
-  const { key, bibtex } = rekey(fetched ?? fallbackBibtex(paper), paper)
+/**
+ * Add a paper to the project's bibliography after asking the DOI system about it. A DOI that does
+ * not exist, or that names a different paper than the search result, is not written; a DOI no
+ * registry could answer for is written and reported as unchecked.
+ */
+export async function cite(projectDir: string, paper: LitResult, fetch: Fetcher): Promise<LitCitation> {
   const file = bibliographyPath(projectDir)
-  const result = addToBibliography(projectDir, file, key, bibtex, paper)
-  return { key: result.key, bibtex, file, added: result.added, retracted: await retracted?.catch(() => undefined) }
+  let check: DoiCheck | undefined
+  let target = paper
+  if (paper.doi) {
+    check = await resolveDoi(paper.doi, fetch)
+    if (check.state === 'invalid' || (check.state === 'not_found' && paper.arxiv)) target = { ...paper, doi: undefined }
+    else if (check.state === 'not_found') return { key: '', bibtex: '', file, added: false, refused: true, check, source: 'search' }
+    const registryTitle = check.record?.title
+    if (registryTitle && titleSimilarity(paper.title, registryTitle) < 0.5) {
+      return { key: '', bibtex: '', file, added: false, refused: true, check, mismatch: registryTitle, source: 'search' }
+    }
+  } else if (paper.arxiv) check = await resolveDoi(`10.48550/arXiv.${paper.arxiv}`, fetch)
+  const fetched = await fetchBibtex(target, fetch)
+  const record = check?.state === 'resolves' ? check.record : undefined
+  const built = fetched ?? (record && target.doi ? recordBibtex(record, target.doi) : null)
+  const { key, bibtex } = rekey(built ?? fallbackBibtex(target), target)
+  const result = addToBibliography(projectDir, file, key, bibtex, target)
+  return {
+    key: result.key,
+    bibtex,
+    file,
+    added: result.added,
+    check,
+    source: fetched ? 'registry' : built ? 'record' : 'search',
+    retracted: check?.notices.some((n) => n.kind === 'retraction' || n.kind === 'withdrawal') || undefined
+  }
+}
+
+/** The peer-reviewed version of a preprint: the registry's version link, else a close title match. */
+export async function publishedVersion(paper: LitResult, fetch: Fetcher): Promise<LitResult | null> {
+  const doi = paper.doi ?? (paper.arxiv ? `10.48550/arXiv.${paper.arxiv}` : undefined)
+  const linked = doi ? (await resolveDoi(doi, fetch)).record?.publishedAs?.[0] : undefined
+  let found: { doi: string; record: RegistryRecord } | undefined
+  if (linked) {
+    const check = await resolveDoi(linked, fetch)
+    if (check.state === 'resolves' && check.record) found = { doi: check.doi, record: check.record }
+  }
+  if (!found) {
+    const surname = paper.byline && !/·|cited by/i.test(paper.byline) ? (paper.byline.split(/,|\band\b/)[0].trim().split(/\s+/).pop() ?? '') : ''
+    const candidate = await findCandidate(paper.title, surname, Number(paper.date?.slice(0, 4)) || undefined, fetch, ['journal-article', 'proceedings-article', 'book-chapter'])
+    if (candidate) found = candidate
+  }
+  if (!found) return null
+  const r = found.record
+  return {
+    title: r.title,
+    url: `https://doi.org/${found.doi}`,
+    snippet: '',
+    byline: [r.authors.slice(0, 3).map((a) => a.family).join(', ') + (r.authors.length > 3 ? ' et al.' : ''), r.venue].filter(Boolean).join(' · ') || undefined,
+    date: r.year ? String(r.year) : undefined,
+    doi: found.doi,
+    kind: 'published',
+    alts: [{ url: paper.url, kind: paper.kind ?? 'preprint', doi: paper.doi, arxiv: paper.arxiv }]
+  }
 }

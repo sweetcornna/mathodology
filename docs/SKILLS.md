@@ -6,7 +6,7 @@ Eight skills maintained in `.claude/skills/`. Load only those relevant to the ta
 |---|---|
 | [mathodology-whole-project](../.claude/skills/mathodology-whole-project/SKILL.md) | Task entry, installation and backup |
 | [mathodology-agent-pipeline](../.claude/skills/mathodology-agent-pipeline/SKILL.md) | Adaptable modeling and collaboration prompts |
-| [mathodology-figure-presets](../.claude/skills/mathodology-figure-presets/SKILL.md) | 20 figure presets, image2 and previews |
+| [mathodology-figure-presets](../.claude/skills/mathodology-figure-presets/SKILL.md) | 46 figure presets, experiment kits, image2 and previews |
 | [mathodology-evidence-search](../.claude/skills/mathodology-evidence-search/SKILL.md) | Evidence, data and license verification |
 | [mathodology-award-gates](../.claude/skills/mathodology-award-gates/SKILL.md) | Mathematical and editorial review questions |
 | [mathodology-project-orientation](../.claude/skills/mathodology-project-orientation/SKILL.md) | Repository boundaries |

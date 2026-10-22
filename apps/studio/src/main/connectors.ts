@@ -5,6 +5,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { Connector, ConnectorCheck } from '@shared/types'
+import { readJson, writeAtomic } from './store'
 
 export const SEARCH_CONNECTOR: Connector = {
   id: 'search',
@@ -48,16 +49,44 @@ function writeIfChanged(path: string, text: string): boolean {
   return true
 }
 
+/**
+ * The entries Studio wrote into one config file, by server id, as it wrote them. An existing entry
+ * that matches neither that nor what Studio would write now is the user's (written by hand, or
+ * edited since), even when it shares an id such as `search`: it is never updated or removed.
+ */
+type Written = Record<string, string>
+
+function ours(current: string, written: string | undefined, next: string | undefined): boolean {
+  return current === written || current === next
+}
+
 /** Merge the managed servers into a JSON config's `mcpServers` map, leaving other entries alone. */
-function syncJson(path: string, connectors: Connector[], removed: string[], entry: (c: Connector) => Record<string, unknown>): boolean {
+function syncJson(
+  path: string,
+  connectors: Connector[],
+  removed: string[],
+  entry: (c: Connector) => Record<string, unknown>,
+  written: Written
+): boolean {
   const data = readJsonFile(path)
   if (!data) return false
   const servers = { ...((data.mcpServers as Record<string, unknown> | undefined) ?? {}) }
-  for (const id of removed) delete servers[id]
-  for (const c of connectors) {
-    if (c.enabled) servers[c.id] = entry(c)
-    else delete servers[c.id]
+  const sync = (id: string, next?: Record<string, unknown>): void => {
+    const text = next && JSON.stringify(next)
+    if (Object.hasOwn(servers, id) && !ours(JSON.stringify(servers[id]), written[id], text)) {
+      delete written[id]
+      return
+    }
+    if (next && text) {
+      servers[id] = next
+      written[id] = text
+    } else {
+      delete servers[id]
+      delete written[id]
+    }
   }
+  for (const id of removed) sync(id)
+  for (const c of connectors) sync(c.id, c.enabled ? entry(c) : undefined)
   if (!existsSync(path) && !Object.keys(servers).length) return false
   return writeIfChanged(path, JSON.stringify({ ...data, mcpServers: servers }, null, 2) + '\n')
 }
@@ -80,46 +109,89 @@ function tomlBlock(c: Connector): string {
   return lines.join('\n')
 }
 
+/** A Codex table as compared for ownership: its lines, trimmed, without blank ones. */
+function tomlKey(lines: string[]): string {
+  return lines
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join('\n')
+}
+
 /**
- * Replace the `[mcp_servers.<id>]` tables (and their sub-tables) for the managed ids in a Codex
- * config, keeping every other line as it was.
+ * Replace the `[mcp_servers.<id>]` tables (and their sub-tables) Studio wrote for the managed ids
+ * in a Codex config, keeping every other line as it was. `written` is updated in place.
  */
-export function syncCodexToml(text: string, connectors: Connector[], removed: string[]): string {
+export function syncCodexToml(text: string, connectors: Connector[], removed: string[], written: Written = {}): string {
   const managed = new Set([...connectors.map((c) => c.id), ...removed])
   const header = /^\s*\[\s*mcp_servers\.(?:"([^"]+)"|([A-Za-z0-9_-]+))(?:\.[^\]]*)?\s*\]\s*(#.*)?$/
-  const kept: string[] = []
-  let skipping = false
+  // Each line with the managed server whose table or sub-table it is in.
+  const tagged: { line: string; id?: string }[] = []
+  let id: string | undefined
   for (const line of text.split('\n')) {
     if (/^\s*\[/.test(line)) {
       const m = header.exec(line)
-      skipping = Boolean(m && managed.has(m[1] ?? m[2]))
+      id = m && managed.has(m[1] ?? m[2]) ? (m[1] ?? m[2]) : undefined
     }
-    if (!skipping) kept.push(line)
+    tagged.push({ line, id })
   }
-  const body = kept.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()
-  const blocks = connectors.filter((c) => c.enabled).map(tomlBlock)
+  const replaced = new Set<string>()
+  const blocks: string[] = []
+  const sync = (sid: string, next?: string): void => {
+    const current = tagged.filter((t) => t.id === sid).map((t) => t.line)
+    const key = next && tomlKey(next.split('\n'))
+    if (current.length && !ours(tomlKey(current), written[sid], key)) {
+      delete written[sid]
+      return
+    }
+    replaced.add(sid)
+    if (next && key) {
+      blocks.push(next)
+      written[sid] = key
+    } else delete written[sid]
+  }
+  for (const r of removed) sync(r)
+  for (const c of connectors) sync(c.id, c.enabled ? tomlBlock(c) : undefined)
+  const body = tagged
+    .filter((t) => !t.id || !replaced.has(t.id))
+    .map((t) => t.line)
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd()
   const out = [body, ...blocks].filter(Boolean).join('\n\n')
   return out ? out + '\n' : ''
 }
 
 /**
  * Write the enabled connectors into a project's agent configuration: `.mcp.json` (Claude Code),
- * `.codex/config.toml` (Codex) and `.gemini/settings.json` (Gemini CLI). `removed` lists ids of
- * connectors that were deleted, so their entries go too. Returns the files that changed.
+ * `.codex/config.toml` (Codex) and `.gemini/settings.json` (Gemini CLI). `ledger` is a file in
+ * Studio's data folder that records the entries Studio wrote, so entries of the user's are left
+ * alone. `removed` lists ids of connectors that were deleted, so their entries go too. Returns the
+ * files that changed.
  */
-export function syncConnectors(projectDir: string, connectors: Connector[], removed: string[] = []): string[] {
+export function syncConnectors(projectDir: string, connectors: Connector[], ledger: string, removed: string[] = []): string[] {
+  const state = readJson<Record<string, Written>>(ledger, {})
+  const before = JSON.stringify(state)
+  const written = (file: string): Written => (state[file] ??= {})
   const changed: string[] = []
   const claude = (c: Connector): Record<string, unknown> =>
     c.url ? { type: 'http', url: c.url } : { command: c.command, args: c.args ?? [], ...(c.env && Object.keys(c.env).length ? { env: c.env } : {}) }
   const gemini = (c: Connector): Record<string, unknown> =>
     c.url ? { httpUrl: c.url } : { command: c.command, args: c.args ?? [], ...(c.env && Object.keys(c.env).length ? { env: c.env } : {}) }
-  if (syncJson(join(projectDir, '.mcp.json'), connectors, removed, claude)) changed.push('.mcp.json')
-  if (syncJson(join(projectDir, '.gemini/settings.json'), connectors, removed, gemini)) changed.push('.gemini/settings.json')
+  if (syncJson(join(projectDir, '.mcp.json'), connectors, removed, claude, written('.mcp.json'))) changed.push('.mcp.json')
+  if (syncJson(join(projectDir, '.gemini/settings.json'), connectors, removed, gemini, written('.gemini/settings.json'))) {
+    changed.push('.gemini/settings.json')
+  }
 
   const toml = join(projectDir, '.codex/config.toml')
-  const before = existsSync(toml) ? readFileSync(toml, 'utf8') : ''
-  const after = syncCodexToml(before, connectors, removed)
-  if (after !== before && (after || existsSync(toml)) && writeIfChanged(toml, after)) changed.push('.codex/config.toml')
+  const prev = existsSync(toml) ? readFileSync(toml, 'utf8') : ''
+  const next = syncCodexToml(prev, connectors, removed, written('.codex/config.toml'))
+  if (next !== prev && (next || existsSync(toml)) && writeIfChanged(toml, next)) changed.push('.codex/config.toml')
+
+  for (const file of Object.keys(state)) if (!Object.keys(state[file]).length) delete state[file]
+  if (JSON.stringify(state) !== before) {
+    mkdirSync(dirname(ledger), { recursive: true })
+    writeAtomic(ledger, JSON.stringify(state, null, 2))
+  }
   return changed
 }
 

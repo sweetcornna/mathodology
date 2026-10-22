@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, extname, join, relative, sep } from 'node:path'
 import type { Artifact, ArtifactKind, ArtifactVersion, Project, VersionOrigin } from '@shared/types'
 import { safeJoin } from './files'
+import { isPlainId, readJson, writeAtomic } from './store'
 
 /** Files larger than this are tracked by checksum only. */
 const STORE_LIMIT = 25_000_000
@@ -64,17 +65,14 @@ export class ArtifactStore {
   }
 
   private projectDir(projectId: string): string {
+    if (!isPlainId(projectId)) throw new Error('Invalid project id')
     return join(this.dir, projectId)
   }
 
   private index(projectId: string): ProjectIndex {
     let idx = this.cache.get(projectId)
     if (!idx) {
-      try {
-        idx = JSON.parse(readFileSync(join(this.projectDir(projectId), 'index.json'), 'utf8')) as ProjectIndex
-      } catch {
-        idx = { version: 1, artifacts: [], seen: {} }
-      }
+      idx = readJson<ProjectIndex>(join(this.projectDir(projectId), 'index.json'), { version: 1, artifacts: [], seen: {} })
       this.cache.set(projectId, idx)
     }
     return idx
@@ -83,9 +81,7 @@ export class ArtifactStore {
   private save(projectId: string): void {
     const dir = this.projectDir(projectId)
     mkdirSync(dir, { recursive: true })
-    const tmp = join(dir, `index.json.${process.pid}.tmp`)
-    writeFileSync(tmp, JSON.stringify(this.index(projectId)), 'utf8')
-    renameSync(tmp, join(dir, 'index.json'))
+    writeAtomic(join(dir, 'index.json'), JSON.stringify(this.index(projectId)))
   }
 
   list(projectId: string): Artifact[] {
@@ -97,6 +93,7 @@ export class ArtifactStore {
   }
 
   private blobPath(projectId: string, sha: string): string {
+    if (!/^[0-9a-f]{64}$/.test(sha)) throw new Error('Invalid checksum')
     return join(this.projectDir(projectId), 'blobs', sha.slice(0, 2), sha)
   }
 
@@ -219,6 +216,8 @@ export class ArtifactStore {
     const bytes = this.read(project.id, artifactId, v)
     if (!artifact || !bytes) return null
     const abs = safeJoin(project.path, artifact.rel)
+    // The bytes replace the file itself, never whatever a link there points to.
+    if (lstatSync(abs, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`${artifact.rel} is a symbolic link; restore it by hand.`)
     mkdirSync(dirname(abs), { recursive: true })
     writeFileSync(abs, bytes)
     return this.capture(project, [artifact.rel], { origin: 'user', restoredFrom: v })[0] ?? null

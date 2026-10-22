@@ -66,6 +66,10 @@ This folder is a mathematical-modeling contest workspace set up by Mathodology S
   paper under \`paper/\`.
 - Keep calculations reproducible from the actual inputs, state assumptions and
   report real limitations. Ask about image2 once, when figure work begins.
+- Before handing over prose that readers will see (the paper, its summary, a
+  memo or letter), run the \`humanizer\` skill over it (Claude Code: the
+  humanizer plugin; others: \`.agents/skills/humanizer/SKILL.md\`). Keep every
+  number, formula, citation, figure reference and claim exactly as it was.
 `
 
 export interface KitInstallResult {

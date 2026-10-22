@@ -1,9 +1,23 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { LitResult } from '../src/shared/types'
-import { addToBibliography, cite, citeKey, fallbackBibtex, formatBibtex, parseResults, rekey } from '../src/main/literature'
+import { addToBibliography, cite, citeKey, fallbackBibtex, formatBibtex, mergeResults, parseGraph, parseResults, recordBibtex, rekey } from '../src/main/literature'
+import { clearDoiCache, type Fetcher } from '../src/main/refcheck'
+
+/** A registry stand-in: the first route whose pattern matches answers; anything else is a 404. */
+function routes(table: [RegExp, number, unknown][], seen: string[] = []): Fetcher {
+  return async (url) => {
+    seen.push(url)
+    const hit = table.find(([re]) => re.test(url))
+    const status = hit?.[1] ?? 404
+    const body = hit ? (typeof hit[2] === 'string' ? hit[2] : JSON.stringify(hit[2])) : ''
+    return { status, ok: status >= 200 && status < 300, text: async () => body }
+  }
+}
+
+beforeEach(() => clearDoiCache())
 
 const dirs: string[] = []
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })))
@@ -65,25 +79,104 @@ describe('BibTeX', () => {
   it('appends once per paper and suffixes clashing keys', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'studio-lit-'))
     dirs.push(dir)
-    const noNet = async (): Promise<{ ok: boolean; text(): Promise<string> }> => ({ ok: false, text: async () => '' })
+    const noNet: Fetcher = async () => ({ status: 503, ok: false, text: async () => '' })
     const first = await cite(dir, paper, noNet)
-    expect(first).toMatchObject({ key: 'melikechi2021limits', file: 'paper/references.bib', added: true })
+    expect(first).toMatchObject({ key: 'melikechi2021limits', file: 'paper/references.bib', added: true, source: 'search' })
     expect((await cite(dir, paper, noNet)).added).toBe(false)
     const other = addToBibliography(dir, 'paper/references.bib', 'melikechi2021limits', '@misc{melikechi2021limits,\n  title = {Other},\n}', { ...paper, url: 'https://example.org/q' })
     expect(other).toEqual({ key: 'melikechi2021limitsa', added: true })
     expect(readFileSync(join(dir, 'paper/references.bib'), 'utf8').match(/^@/gm)).toHaveLength(2)
   })
 
-  it('uses the DOI registry when it answers', async () => {
+  const CROSSREF = {
+    message: {
+      DOI: '10.3390/e23010059',
+      title: ['Analytical Parameter Estimation of the SIR Epidemic Model. Applications to the COVID-19 Pandemic'],
+      author: [{ family: 'Prodanov', given: 'Dimiter' }],
+      issued: { 'date-parts': [[2020, 12, 31]] },
+      type: 'journal-article',
+      'container-title': ['Entropy'],
+      'updated-by': [{ DOI: '10.3390/e99999999', type: 'retraction', source: 'retraction-watch' }]
+    }
+  }
+
+  it('asks the DOI system first and uses the registry BibTeX', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'studio-lit-'))
     dirs.push(dir)
     const seen: string[] = []
-    const net = async (url: string): Promise<{ ok: boolean; text(): Promise<string> }> => {
-      seen.push(url)
-      return { ok: true, text: async () => ' @article{X, author={Prodanov, Dimiter}, title={Analytical}, year={2020}, doi={10.3390/e23010059}}' }
-    }
-    const r = await cite(dir, { ...paper, doi: '10.3390/e23010059' }, net, Promise.resolve(true))
-    expect(seen).toEqual(['https://doi.org/10.3390/e23010059'])
-    expect(r).toMatchObject({ key: 'prodanov2020analytical', retracted: true })
+    const net = routes(
+      [
+        [/api\.crossref\.org\/works\//, 200, CROSSREF],
+        [/^https:\/\/doi\.org\/10\.3390/, 200, ' @article{X, author={Prodanov, Dimiter}, title={Analytical}, year={2020}, doi={10.3390/e23010059}}']
+      ],
+      seen
+    )
+    const r = await cite(dir, { ...paper, title: 'Analytical parameter estimation of the SIR epidemic model', doi: '10.3390/e23010059' }, net)
+    expect(seen).toEqual(['https://api.crossref.org/works/10.3390/e23010059', 'https://doi.org/10.3390/e23010059'])
+    expect(r).toMatchObject({ key: 'prodanov2020analytical', retracted: true, source: 'registry', check: { state: 'resolves', registry: 'crossref' } })
+  })
+
+  it('builds the entry from the registry record when no BibTeX is served', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'studio-lit-'))
+    dirs.push(dir)
+    const net = routes([[/api\.crossref\.org\/works\//, 200, CROSSREF]])
+    const r = await cite(dir, { ...paper, title: 'Analytical parameter estimation of the SIR epidemic model', doi: '10.3390/e23010059' }, net)
+    expect(r.source).toBe('record')
+    expect(r.bibtex).toContain('author = {Prodanov, Dimiter}')
+    expect(r.bibtex).toContain('journal = {Entropy}')
+  })
+
+  it('refuses a DOI that does not exist or names another paper', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'studio-lit-'))
+    dirs.push(dir)
+    const missing = routes([[/doi\.org\/ra\//, 200, [{ DOI: '10.9999/x', status: 'DOI does not exist' }]]])
+    expect(await cite(dir, { ...paper, doi: '10.9999/x' }, missing)).toMatchObject({ refused: true, added: false, check: { state: 'not_found' } })
+    const other = await cite(dir, { ...paper, doi: '10.3390/e23010059' }, routes([[/api\.crossref\.org/, 200, CROSSREF]]))
+    expect(other.refused).toBe(true)
+    expect(other.mismatch).toMatch(/^Analytical Parameter/)
+    expect(() => readFileSync(join(dir, 'paper/references.bib'))).toThrow()
+  })
+
+  it('accepts a registry title written with MathML or HTML markup', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'studio-lit-'))
+    dirs.push(dir)
+    const title = 'Precision measurement of the &lt;mml:math&gt;&lt;mml:msub&gt;&lt;mml:mi&gt;B&lt;/mml:mi&gt;&lt;mml:mi&gt;s&lt;/mml:mi&gt;&lt;/mml:msub&gt;&lt;/mml:math&gt; lifetime'
+    const net = routes([[/api\.crossref\.org\/works\//, 200, { message: { ...CROSSREF.message, title: [title], 'updated-by': [] } }]])
+    const r = await cite(dir, { ...paper, title: 'Precision measurement of the Bs lifetime', doi: '10.3390/e23010059' }, net)
+    expect(r.refused).toBeUndefined()
+    expect(r).toMatchObject({ added: true, source: 'record' })
+  })
+
+  it('formats registry records as BibTeX', () => {
+    const bib = recordBibtex({ title: 'A & B', authors: [{ family: 'World Health Organization' }], year: 2020, type: 'report', venue: 'WHO' }, '10.1/x')
+    expect(bib).toBe('@techreport{KEY,\n  title = {A \\& B},\n  author = {{World Health Organization}},\n  institution = {WHO},\n  year = {2020},\n  doi = {10.1/x},\n}')
+  })
+})
+
+describe('mergeResults', () => {
+  it('folds a preprint into its journal version and labels sources', () => {
+    const merged = mergeResults(parseResults(SEARCH))
+    expect(merged).toHaveLength(1)
+    expect(merged[0]).toMatchObject({ url: 'https://doi.org/10.3390/e23010059', kind: 'published', arxiv: '2010.07000', citedBy: 1041 })
+    expect(merged[0].alts).toEqual([{ url: 'https://arxiv.org/abs/2010.07000v1', kind: 'preprint', doi: undefined, arxiv: '2010.07000' }])
+    expect(mergeResults([{ title: 'Counts', url: 'https://zenodo.org/records/1', snippet: '' }])[0].kind).toBe('dataset')
+    expect(mergeResults([{ title: 'Blog', url: 'https://example.org/post', snippet: '' }])[0].kind).toBe('web')
+  })
+})
+
+describe('parseGraph', () => {
+  it('turns citation-graph neighbours into citable results', () => {
+    const g = parseGraph(
+      JSON.stringify({
+        references: [{ title: 'Learning to rank', url: 'https://doi.org/10.1145/1273496.1273513', doi: '10.1145/1273496.1273513', year: 2007, cited_by_count: 1958, retracted: false }],
+        citations: [{ title: 'Pulled', doi: '10.1000/r', year: 2020, retracted: true }, { year: 2021 }],
+        notes: ['Showing 1 of 6 references, most-cited first.']
+      })
+    )
+    expect(g.references[0]).toMatchObject({ title: 'Learning to rank', date: '2007', citedBy: 1958, kind: 'published' })
+    expect(g.references[0].retracted).toBeUndefined()
+    expect(g.citations).toEqual([{ title: 'Pulled', url: 'https://doi.org/10.1000/r', snippet: '', date: '2020', doi: '10.1000/r', citedBy: undefined, kind: 'published', retracted: true }])
+    expect(g.notes).toHaveLength(1)
+    expect(parseGraph('not json')).toEqual({ references: [], citations: [], notes: [] })
   })
 })

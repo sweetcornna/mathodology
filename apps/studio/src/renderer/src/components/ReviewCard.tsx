@@ -46,6 +46,11 @@ function Finding({ review, finding }: { review: Review; finding: ReviewFinding }
       <button className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-surface-2" onClick={() => setOpen((o) => !o)}>
         <Icon size={15} className={`mt-[3px] shrink-0 ${handled ? 'text-fg-4' : tone}`} />
         <span className={`min-w-0 flex-1 text-[0.929rem] leading-snug ${handled ? 'text-fg-3 line-through decoration-fg-4' : ''}`}>{finding.title}</span>
+        {finding.kind === 'citation' && (
+          <Tip label={t('review.citationTip')}>
+            <span className="mt-[2px] shrink-0 rounded-[4px] bg-accent-soft px-1.5 text-[0.75rem] text-accent-text">{t('review.citation')}</span>
+          </Tip>
+        )}
         {handled && <span className="kbd shrink-0">{t(finding.status === 'resolved' ? 'review.resolved' : 'review.dismissed')}</span>}
         <ChevronRight size={14} className={`mt-[3px] shrink-0 text-fg-3 transition-transform ${open ? 'rotate-90' : ''}`} />
       </button>
@@ -160,22 +165,25 @@ export function ReviewCard({ sessionId, lastSeq }: { sessionId: string; lastSeq:
           {review.error && <pre className="selectable m-0 mt-1 max-h-32 overflow-auto font-mono text-[0.786rem] whitespace-pre-wrap text-fg-3">{review.error}</pre>}
         </div>
       )}
-      {review.status === 'done' && (
+      {review.status === 'done' && review.summary && <div className="border-t border-line px-3 py-2.5 text-[0.929rem] leading-relaxed text-fg-2">{review.summary}</div>}
+      {review.trace && review.trace.found > 0 && (
+        <div className="border-t border-line px-3 py-2 text-[0.82rem] leading-snug text-fg-3">
+          {t('review.trace', { found: review.trace.found, traced: review.trace.traced, bib: review.trace.bibOnly, untraced: review.trace.untraced })}
+          {review.trace.resolved + review.trace.unverifiable > 0 &&
+            ` ${t('review.traceDoi', { n: review.trace.resolved + review.trace.unverifiable, missing: review.trace.notFound, unanswered: review.trace.unverifiable })}`}
+        </div>
+      )}
+      {open.map((f) => (
+        <Finding key={f.id} review={review} finding={f} />
+      ))}
+      {review.status === 'done' && !open.length && <div className="border-t border-line px-3 py-2.5 text-[0.893rem] text-fg-3">{t('review.none')}</div>}
+      {rest.length > 0 && (
         <>
-          {review.summary && <div className="border-t border-line px-3 py-2.5 text-[0.929rem] leading-relaxed text-fg-2">{review.summary}</div>}
-          {open.map((f) => (
-            <Finding key={f.id} review={review} finding={f} />
-          ))}
-          {!open.length && <div className="border-t border-line px-3 py-2.5 text-[0.893rem] text-fg-3">{t('review.none')}</div>}
-          {rest.length > 0 && (
-            <>
-              <button className="flex h-8 w-full items-center gap-1.5 border-t border-line px-3 text-left text-[0.857rem] text-fg-3 hover:bg-surface-2" onClick={() => setShowRest((v) => !v)}>
-                <ChevronRight size={13} className={`transition-transform ${showRest ? 'rotate-90' : ''}`} />
-                {t('review.more', { n: rest.length })}
-              </button>
-              {showRest && rest.map((f) => <Finding key={f.id} review={review} finding={f} />)}
-            </>
-          )}
+          <button className="flex h-8 w-full items-center gap-1.5 border-t border-line px-3 text-left text-[0.857rem] text-fg-3 hover:bg-surface-2" onClick={() => setShowRest((v) => !v)}>
+            <ChevronRight size={13} className={`transition-transform ${showRest ? 'rotate-90' : ''}`} />
+            {t('review.more', { n: rest.length })}
+          </button>
+          {showRest && rest.map((f) => <Finding key={f.id} review={review} finding={f} />)}
         </>
       )}
     </div>

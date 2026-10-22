@@ -1,85 +1,108 @@
-# Mathodology Modeling Skills
+<p align="center">
+  <img src="apps/studio/build/icon.png" width="88" alt="">
+</p>
 
-[简体中文](README.md) · **English**
+<h1 align="center">Mathodology</h1>
 
-Prompts and references for mathematical modeling contests: understand the problem,
-formulate a model, challenge the result, and communicate the answer. Agents adapt
-the work to the evidence and use specialists when their contribution helps.
+<p align="center">
+  Agent skills and a desktop workbench for mathematical modeling contests<br>
+  <a href="README.md">简体中文</a> · <b>English</b>
+</p>
 
-## Desktop app: Mathodology Studio
+<p align="center">
+  <a href="https://github.com/sweetcornna/mathodology/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/sweetcornna/mathodology"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+</p>
 
-[Mathodology Studio](apps/studio/README.md) is the companion open-source desktop
-workbench. It drives the Claude Code, Codex or Gemini CLI already signed in on
-your machine inside a contest project that carries these skills, with the
-conversation, tool calls, approvals, task list, files, figures and paper preview
-in one window. Figures, tables and code the agent writes are versioned with
-their provenance, so any two versions can be compared or restored; a read-only
-review checks each claim in the replies against the recorded tool calls,
-outputs and files; a Literature panel finds papers through the search connector
-and writes their BibTeX into the project; and connectors (MCP servers) are set
-up once in Settings for all three agents. It calls no model API itself and
-collects no data. Builds target macOS on Apple silicon and include onboarding
-and settings.
+![Mathodology Studio](apps/studio/docs/studio-en.png)
 
-## Scientific figures and image2
+Mathodology teaches Claude Code, Codex and Gemini CLI to work like a modeling
+team: understand the problem, build an interpretable model, test the conclusion
+with experiments, draw figures that answer a question, cite only sources that
+can be found, and write the paper clearly.
 
-The [figure skill](.claude/skills/mathodology-figure-presets/SKILL.md) includes
-[20 presets](.claude/skills/mathodology-figure-presets/references/presets.md): evidence
-mosaics, forecast intervals, rainclouds, ridgelines, paired differences, forest plots,
-joint distributions, clustered heatmaps, feasible regions, Pareto frontiers,
-parallel coordinates, Sankey flows, networks, spatial insets, spatiotemporal plots,
-sensitivity, calibration/residuals, survival, ablation and scenario robustness.
+## What's inside
 
-Each card explains inputs, layout, statistical meaning, pitfalls, simpler
-alternatives, and plotting/caption prompts. The library also contains
-[six paper figures and eight official code references](.claude/skills/mathodology-figure-presets/references/README.md)
-with attribution and licenses, plus [six reproducible synthetic previews](.claude/skills/mathodology-figure-presets/examples/README.md).
-The detailed recipe cards are in Chinese with English names; agents should adapt
-their output to the paper's language.
+| | |
+| --- | --- |
+| **8 skills** | Modeling prompts, evidence search, scientific figures, review questions and more; see the [skill index](docs/SKILLS.md) |
+| **8 specialist roles** | Lead, problem analyst, modeler, coder, evidence researcher, critic, paper editor, packager; used when they help |
+| **46 figure templates** | Callable Matplotlib code: bind real data, get PNG/PDF |
+| **18 experiment kits** | Sensitivity, Monte Carlo, backtests, ablations, rank stability and other standard experiments |
+| **Citation checks** | `verify_refs.py` checks each DOI, title, author, year and retraction notice |
+| **Studio desktop app** | One window for your local agents, with versioned outputs and traceable reviews |
 
-![Synthetic evidence mosaic](.claude/skills/mathodology-figure-presets/examples/f01-mosaic.png)
+## Figures and experiments
 
-At the first figure design, the agent asks whether image2 is available and how it
-is accessed. An existing answer is reused and analysis continues while waiting.
-image2 can assist illustrations, mechanisms and layouts; quantitative marks are
-drawn from data and formulas. Figure work can finish without image2.
+<table>
+  <tr>
+    <td width="33%"><img src=".claude/skills/mathodology-figure-presets/examples/f02-forecast.png" alt="Forecast intervals"><br><sub>Forecast intervals</sub></td>
+    <td width="33%"><img src=".claude/skills/mathodology-figure-presets/examples/f21-tornado.png" alt="Tornado sensitivity"><br><sub>Tornado sensitivity</sub></td>
+    <td width="33%"><img src=".claude/skills/mathodology-figure-presets/examples/f23-convergence.png" alt="Convergence across runs"><br><sub>Convergence across runs</sub></td>
+  </tr>
+  <tr>
+    <td><img src=".claude/skills/mathodology-figure-presets/examples/f31-phase.png" alt="Phase portrait"><br><sub>Phase portrait</sub></td>
+    <td><img src=".claude/skills/mathodology-figure-presets/examples/f39-evaluation.png" alt="Evaluation matrix"><br><sub>Evaluation matrix</sub></td>
+    <td><img src=".claude/skills/mathodology-figure-presets/examples/f44-performance-profile.png" alt="Performance profile"><br><sub>Performance profile</sub></td>
+  </tr>
+</table>
 
-Without image2, default to the [20 callable chart code templates](.claude/skills/mathodology-figure-presets/templates/README.md): bind real data, execute the code and deliver PNG/PDF rather than waiting or returning only plotting instructions.
+The [20 base presets](.claude/skills/mathodology-figure-presets/references/presets.md) and
+[26 advanced presets](.claude/skills/mathodology-figure-presets/references/presets-advanced.md)
+each list data requirements, layout, misleading counterexamples, and plotting and
+caption prompts. [Experiment kits](.claude/skills/mathodology-figure-presets/references/experiments.md)
+call your model and return arrays that feed the matching figure and a three-line
+table. All previews use synthetic data; see the
+[gallery](.claude/skills/mathodology-figure-presets/examples/README.md). The recipe
+cards are in Chinese with English names.
+
+At the first figure, the agent asks once whether image2 is available. Work
+finishes without it: quantitative figures are always drawn from data and code.
+
+## Mathodology Studio
+
+[Studio](apps/studio/README.md) is an open-source desktop workbench (macOS on
+Apple silicon). It calls no model API, stores no keys and collects no data.
+
+- Drives the Claude Code, Codex or Gemini CLI signed in on your machine; switch between turns
+- Every change to a figure, table or code file becomes a version you can compare, restore and trace to its turn
+- Read-only review checks each claim against the tool record; citations are traced, and DOIs the DOI system does not know are flagged as likely made up
+- The Literature pane finds papers, checks the DOI before writing `references.bib`, and checks a whole bibliography entry by entry
+- Installs [humanizer](https://github.com/blader/humanizer) to take the AI tone out of the prose, and updates it at each launch
+- MCP connectors are set up once in Settings for all three agents; the built-in free-search-mcp updates to its newest release at each launch
+
+Run from source (Node.js 22.12+, pnpm 10):
+
+```bash
+cd apps/studio && pnpm install && pnpm dev
+```
 
 ## Get started
 
-Install skills for the chosen host in an existing project:
+Install the skills in an existing project (for Claude Code, change the last
+argument to `claude-code`):
 
 ```bash
 npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agent codex
 ```
 
-For Claude Code, change the final argument to `claude-code`. The full checkout
-also contains optional roles, workflow prompts and search MCP configuration;
-a standard skills install does not install those project files automatically.
-See [installation and updates](docs/INSTALL.md).
-
-A starting prompt:
+Then tell the agent:
 
 > Use mathodology-whole-project for this modeling problem. Read the question,
 > data and constraints, establish an interpretable baseline, and test assumptions
 > that could change the conclusion. Use mathodology-figure-presets for purposeful
-> figures and ask once whether I have image2 when figure design begins. Keep
-> evidence and calculations traceable, adapt the workflow to the task, and deliver
-> the results, figures and actual limitations.
+> figures. Keep calculations and sources traceable, and deliver the results,
+> figures and actual limitations.
 
-## A lightweight workflow
+The full checkout also carries roles, workflow prompts and the search MCP
+configuration; see [installation and updates](docs/INSTALL.md).
 
-Retain mathematical correctness, traceable data, reproducible results and visual
-inspection. There are no mandatory nine phases, formatted handoffs, figure quotas
-or simulated prize scores. Specialists are optional; backup, repository checks,
-PDF overviews and example rendering are small utilities used when needed.
+## Docs
+
+[Skills](docs/SKILLS.md) · [Modeling prompts](docs/WORKFLOWS.md) · [Install](docs/INSTALL.md) ·
+[Backup](docs/BACKUP.md) · [Studio](apps/studio/README.md) ·
+[Figure guidance for agents](.claude/skills/mathodology-figure-presets/references/figure-guidance.md)
 
 The maintained source is `.claude/skills/`; `.agents/skills/` is an ignored local
-mirror. This repository contains skills, docs, teaching references and the
-Studio desktop app in `apps/studio/`, not contest datasets. Original content uses [MIT](LICENSE);
-third-party material retains its own licenses.
-
-[Skills](docs/SKILLS.md) · [Modeling prompts](docs/WORKFLOWS.md) · [Backup](docs/BACKUP.md)
-
-[Default figure guidance for agents](.claude/skills/mathodology-figure-presets/references/figure-guidance.md)
+mirror. The repository holds no contest datasets. Original content is
+[MIT](LICENSE)-licensed; third-party material keeps its own license.

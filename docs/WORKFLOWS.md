@@ -43,7 +43,8 @@ important conclusions against their evidence, and dense figures at paper size.
 Inspect actual compiled pages; an optional PDF overview can help find layout
 problems. Correct material errors and disclose uncertainty.
 
-Deliver the requested paper, figures, code or calculation notes, verified
-references and reproduction instructions. Follow the actual contest's anonymity,
+Before submitting, run the [reference checker](../.claude/skills/mathodology-evidence-search/scripts/verify_refs.py)
+on the bibliography and paper source. Deliver the requested paper, figures, code
+or calculation notes, verified references and reproduction instructions. Follow the actual contest's anonymity,
 page and AI-use requirements. Do not add artifacts solely to satisfy a generic
 workflow. Existing useful work can be resumed without rebuilding a phase history.

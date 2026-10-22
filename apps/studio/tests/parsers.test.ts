@@ -3,7 +3,7 @@ import type { SessionEventBody } from '@shared/types'
 import { LineSplitter, classifyTool, splitArgs, toolTitle } from '../src/main/agents/base'
 import { ClaudeStreamParser, claudeArgs } from '../src/main/agents/claude'
 import { CodexAppServerParser, codexArgs } from '../src/main/agents/codex'
-import { GeminiStreamParser } from '../src/main/agents/gemini'
+import { GeminiStreamParser, geminiArgs } from '../src/main/agents/gemini'
 import type { TurnRequest } from '../src/main/agents/base'
 
 function sink() {
@@ -214,5 +214,14 @@ describe('Gemini stream-json', () => {
     ])
     expect(s.events[3]).toMatchObject({ text: 'Hello' })
     expect(s.events[4]).toMatchObject({ title: 'a.csv', toolKind: 'read' })
+  })
+
+  it('passes a prompt that starts with "-" as the value of --prompt', () => {
+    // Gemini's parser takes `-p` with one value and refuses "- fix ..." as a separate argument.
+    const args = geminiArgs({ ...req, prompt: '- fix the axis labels\n- rerun', resumeId: 'g-1' })
+    expect(args.slice(-1)).toEqual(['--prompt=- fix the axis labels\n- rerun'])
+    expect(args).not.toContain('-p')
+    expect(args.join(' ')).toContain('--resume g-1 --foo a b --prompt=')
+    expect(geminiArgs({ ...req, systemAppend: 'S' }).at(-1)).toBe('--prompt=S\n\n---\n\nhi')
   })
 })
