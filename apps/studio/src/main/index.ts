@@ -27,6 +27,8 @@ if (process.env.STUDIO_USER_DATA) app.setPath('userData', resolve(process.env.ST
 
 // One window per data directory: two instances would race on the same state files.
 if (!app.requestSingleInstanceLock()) app.exit(0)
+// Taskbar grouping and pinned shortcuts on Windows follow the installer's id.
+if (process.platform === 'win32') app.setAppUserModelId('io.github.sweetcornna.mathodology-studio')
 app.on('second-instance', () => {
   if (!win) return
   if (win.isMinimized()) win.restore()
@@ -332,30 +334,37 @@ function menuCommand(command: MenuCommand): () => void {
 }
 
 function buildMenu(): void {
+  const isMac = process.platform === 'darwin'
+  const settingsItem: MenuItemConstructorOptions = { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: menuCommand('open-settings') }
   const template: MenuItemConstructorOptions[] = [
-    {
-      label: app.name,
-      submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: menuCommand('open-settings') },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' }
-      ]
-    },
+    // macOS keeps About, Settings and Quit in the application menu; elsewhere they go to File and Help.
+    ...(isMac
+      ? ([
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' },
+              { type: 'separator' },
+              settingsItem,
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' }
+            ]
+          }
+        ] as MenuItemConstructorOptions[])
+      : []),
     {
       label: 'File',
       submenu: [
         { label: 'New Session', accelerator: 'CmdOrCtrl+N', click: menuCommand('new-session') },
         { label: 'New Project…', accelerator: 'CmdOrCtrl+Shift+N', click: menuCommand('new-project') },
         { type: 'separator' },
-        { role: 'close' }
+        ...(isMac ? ([{ role: 'close' }] as MenuItemConstructorOptions[]) : [settingsItem, { type: 'separator' as const }, { role: 'quit' as const }])
       ]
     },
     { role: 'editMenu' },
@@ -381,11 +390,19 @@ function buildMenu(): void {
         {
           label: 'Mathodology on GitHub',
           click: () => void shell.openExternal('https://github.com/sweetcornna/mathodology')
-        }
+        },
+        ...(isMac ? [] : [{ type: 'separator' as const }, { role: 'about' as const }])
       ]
     }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+/** Linux window managers take the window icon from the window itself; Windows reads the .exe. */
+function windowIcon(): string | undefined {
+  if (process.platform !== 'linux') return undefined
+  const icon = app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(app.getAppPath(), 'build/icon.png')
+  return existsSync(icon) ? icon : undefined
 }
 
 function createWindow(): void {
@@ -396,8 +413,11 @@ function createWindow(): void {
     minHeight: 620,
     show: false,
     title: 'Mathodology Studio',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
+    // macOS draws the traffic lights over the page; Windows and Linux keep their own title bar,
+    // with the menu bar shown on Alt.
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 16 } }
+      : { autoHideMenuBar: true, icon: windowIcon() }),
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1f1e1b' : '#faf9f6',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

@@ -40,7 +40,7 @@ export function NewProjectForm({
     setBusy(true)
     try {
       const project = await api.call('projects:create', {
-        name: name.trim() || existing.split('/').pop() || 'Project',
+        name: name.trim() || existing.split(/[\\/]/).pop() || 'Project',
         contest,
         installKit,
         existingPath: mode === 'existing' ? existing : undefined
@@ -94,7 +94,7 @@ export function NewProjectForm({
                 const dir = await api.call('dialog:pickFolder', t('project.locationExisting'))
                 if (dir) {
                   setExisting(dir)
-                  if (!name.trim()) setName(dir.split('/').pop() ?? '')
+                  if (!name.trim()) setName(dir.split(/[\\/]/).pop() ?? '')
                 }
               }}
             >

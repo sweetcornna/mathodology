@@ -200,7 +200,7 @@ export function buildTranscript(events: SessionEvent[]): Transcript {
       case 'turn.completed': {
         const files = mergeStats(turnEdits)
         if (turnArtifacts.size) {
-          const stats = new Map(files.map((f) => [f.path.split('/').slice(-2).join('/'), f]))
+          const stats = new Map(files.map((f) => [f.path.split(/[\\/]/).slice(-2).join('/'), f]))
           const generated = [...turnArtifacts.values()].map((g) => {
             const s = stats.get(g.rel.split('/').slice(-2).join('/'))
             return s ? { ...g, added: s.added, removed: s.removed } : g

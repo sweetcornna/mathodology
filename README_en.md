@@ -61,8 +61,8 @@ finishes without it: quantitative figures are always drawn from data and code.
 
 ## Mathodology Studio
 
-[Studio](apps/studio/README.md) is an open-source desktop workbench (macOS on
-Apple silicon). It calls no model API, stores no keys and collects no data.
+[Studio](apps/studio/README.md) is an open-source desktop workbench for macOS,
+Windows and Linux. It calls no model API, stores no keys and collects no data.
 
 - Drives the Claude Code, Codex or Gemini CLI signed in on your machine; switch between turns
 - Every change to a figure, table or code file becomes a version you can compare, restore and trace to its turn
@@ -71,9 +71,13 @@ Apple silicon). It calls no model API, stores no keys and collects no data.
 - Installs [humanizer](https://github.com/blader/humanizer) to take the AI tone out of the prose, and updates it at each launch
 - MCP connectors are set up once in Settings for all three agents; the built-in free-search-mcp updates to its newest release at each launch
 
-**[Download the v0.16.1 DMG](https://github.com/sweetcornna/mathodology/releases/download/v0.16.1/Mathodology-Studio-0.16.1-arm64.dmg)** (macOS, Apple silicon).
-The app is unsigned: on first launch, Control-click it in Finder and choose Open.
-At least one agent CLI must be installed and signed in.
+**Download v0.17.0:** [macOS DMG](https://github.com/sweetcornna/mathodology/releases/download/v0.17.0/Mathodology-Studio-0.17.0-arm64.dmg) (Apple silicon) ·
+[Windows installer](https://github.com/sweetcornna/mathodology/releases/download/v0.17.0/Mathodology-Studio-0.17.0-x64-setup.exe) (x64) ·
+[Linux .deb / AppImage](https://github.com/sweetcornna/mathodology/releases/tag/v0.17.0) (x64, arm64).
+The app is unsigned. On macOS, Control-click it in Finder and choose Open the
+first time; on Windows, choose More info → Run anyway if SmartScreen appears.
+On Ubuntu 23.10 and later use the .deb: AppImages cannot use Chromium's sandbox
+there. At least one agent CLI must be installed and signed in.
 
 Or run from source (Node.js 22.12+, pnpm 10):
 

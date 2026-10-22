@@ -10,6 +10,7 @@ import type {
   SessionEventBody,
   ToolKind
 } from '@shared/types'
+import { killTree, launch } from './launch'
 
 export interface TurnRequest {
   binary: string
@@ -102,7 +103,7 @@ function short(s: unknown, max = 80): string {
 
 function baseName(p: unknown): string {
   const s = String(p ?? '')
-  return s.split('/').pop() || s
+  return s.split(/[\\/]/).pop() || s
 }
 
 /** A one-line human title for a tool call, built from its most telling argument. */
@@ -146,14 +147,7 @@ const running = new Set<ChildProcessWithoutNullStreams>()
  * same group). The last step of quitting, once turns and reviews had their grace period.
  */
 export function killAllAgents(): void {
-  for (const child of running) {
-    try {
-      if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL')
-      else child.kill('SIGKILL')
-    } catch {
-      // ESRCH: the group is already gone.
-    }
-  }
+  for (const child of running) killTree(child, 'SIGKILL')
 }
 
 /** Spawn a CLI and feed each stdout line to `onLine`. stderr is kept for error reporting. */
@@ -164,7 +158,15 @@ export function spawnLines(
   env: NodeJS.ProcessEnv,
   onLine: (line: string) => void
 ): SpawnedTurn {
-  const child = spawn(binary, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
+  const l = launch(binary, args)
+  const child = spawn(l.file, l.args, {
+    cwd,
+    env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32',
+    windowsHide: true,
+    windowsVerbatimArguments: l.verbatim
+  })
   running.add(child)
   // A CLI that exits before reading its prompt fails the write with EPIPE; the turn just ends.
   child.stdin.on('error', () => undefined)
@@ -189,12 +191,7 @@ export function spawnLines(
   })
   const kill = (signal: NodeJS.Signals): void => {
     if (child.exitCode !== null || child.signalCode !== null) return
-    try {
-      if (child.pid && process.platform !== 'win32') process.kill(-child.pid, signal)
-      else child.kill(signal)
-    } catch {
-      child.kill(signal)
-    }
+    killTree(child, signal)
   }
   return { child, exited, kill }
 }

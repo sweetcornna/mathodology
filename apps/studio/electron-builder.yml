@@ -45,10 +45,55 @@ dmg:
   title: ${productName} ${version}
 win:
   icon: build/icon.png
-  target: nsis
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: Mathodology-Studio-${version}-${arch}-setup.${ext}
+  signAndEditExecutable: true
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: ${productName}
 linux:
   icon: build/icon.png
-  target: AppImage
+  target:
+    - target: AppImage
+      arch: [x64, arm64]
+    - target: deb
+      arch: [x64, arm64]
+  artifactName: Mathodology-Studio-${version}-${arch}.${ext}
   category: Education
+  # Window association: the .desktop file, StartupWMClass and Electron's app_id share one name.
+  syncDesktopName: true
+  maintainer: Mathodology contributors <https://github.com/sweetcornna/mathodology/issues>
+  synopsis: Desktop workbench for mathematical-modeling contests
+  # `pnpm dist:linux` sets productName to mathodology-studio so the deb installs to a folder without
+  # a space: Chromium splits the setuid sandbox helper's path on whitespace. The menu keeps the name.
+  desktop:
+    entry:
+      Name: Mathodology Studio
+  # Linux window managers read the window icon from the running app (see windowIcon in main).
+  extraResources:
+    - from: build/icon.png
+      to: icon.png
+deb:
+  # electron-builder's defaults plus ALSA, which Electron links against; Ubuntu 24.04 and Debian 13
+  # renamed the package to libasound2t64.
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - libasound2t64 | libasound2
 npmRebuild: false
+# The default makensis and mksquashfs are x86_64 binaries; these bundles also run natively on
+# Apple silicon, and the newer AppImage runtime no longer needs libfuse2.
+toolsets:
+  nsis: 1.2.1
+  appimage: 1.0.3
 publish: null
