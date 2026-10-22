@@ -1,0 +1,59 @@
+{
+  "name": "mathodology-studio",
+  "productName": "Mathodology Studio",
+  "version": "0.1.0",
+  "description": "Desktop workbench for mathematical-modeling contests, driving local agent CLIs (Claude Code, Codex, Gemini CLI) with the Mathodology skills pack.",
+  "license": "MIT",
+  "author": "Mathodology contributors",
+  "homepage": "https://github.com/sweetcornna/mathodology",
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "package": "electron-vite build && electron-builder --mac --dir",
+    "dist": "electron-vite build && electron-builder --mac"
+  },
+  "devDependencies": {
+    "@fontsource-variable/inter": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@fontsource-variable/source-serif-4": "5.3.1",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "26.6.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "5.2.0",
+    "cmdk": "1.1.1",
+    "diff": "9.0.0",
+    "electron": "44.6.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "katex": "0.19.0",
+    "lucide-react": "1.52.0",
+    "radix-ui": "1.7.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-markdown": "10.1.0",
+    "rehype-katex": "7.0.1",
+    "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0",
+    "shiki": "4.5.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vitest": "5.0.3",
+    "zustand": "5.0.15"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

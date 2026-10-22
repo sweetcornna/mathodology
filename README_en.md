@@ -6,6 +6,15 @@ Prompts and references for mathematical modeling contests: understand the proble
 formulate a model, challenge the result, and communicate the answer. Agents adapt
 the work to the evidence and use specialists when their contribution helps.
 
+## Desktop app: Mathodology Studio
+
+[Mathodology Studio](apps/studio/README.md) is the companion open-source desktop
+workbench. It drives the Claude Code, Codex or Gemini CLI already signed in on
+your machine inside a contest project that carries these skills, with the
+conversation, tool calls, approvals, task list, files, figures and paper preview
+in one window. It calls no model API itself and collects no data. Builds target
+macOS on Apple silicon and include onboarding and settings.
+
 ## Scientific figures and image2
 
 The [figure skill](.claude/skills/mathodology-figure-presets/SKILL.md) includes
@@ -61,8 +70,8 @@ or simulated prize scores. Specialists are optional; backup, repository checks,
 PDF overviews and example rendering are small utilities used when needed.
 
 The maintained source is `.claude/skills/`; `.agents/skills/` is an ignored local
-mirror. This repository contains skills, docs and teaching references, not an
-application or contest datasets. Original content uses [MIT](LICENSE);
+mirror. This repository contains skills, docs, teaching references and the
+Studio desktop app in `apps/studio/`, not contest datasets. Original content uses [MIT](LICENSE);
 third-party material retains its own licenses.
 
 [Skills](docs/SKILLS.md) · [Modeling prompts](docs/WORKFLOWS.md) · [Backup](docs/BACKUP.md)

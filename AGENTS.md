@@ -38,8 +38,15 @@ skills or global settings.
 
 Keep skill references, licensed exemplars and small optional utilities within
 the owning skill. Contest outputs belong in a separate working project or the
-ignored `work/` directory. Do not add application source, datasets, deployment,
-package manifests or build outputs. `.mcp.json` configures evidence search;
-keep credentials and machine-specific paths out of it.
+ignored `work/` directory. `.mcp.json` configures evidence search; keep
+credentials and machine-specific paths out of it.
+
+The one application is Mathodology Studio in `apps/studio/`: an Electron
+desktop workbench that drives locally installed agent CLIs (Claude Code, Codex,
+Gemini CLI) and installs the contest skills into each project. Its manifest,
+lockfile and sources stay inside that folder; see its
+[README](apps/studio/README.md). Do not add other application source, datasets,
+deployment or build outputs, and never commit `node_modules/`, `out/` or
+`release/`.
 
 See [the workflow](docs/WORKFLOWS.md) and [installation](docs/INSTALL.md).

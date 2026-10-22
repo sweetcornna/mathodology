@@ -48,9 +48,8 @@ __pycache__/
 **/*.pyc
 **/*.pyo
 
-# Retired non-skills project trees should not be reintroduced on this branch.
+# Retired project trees should not be reintroduced; the desktop app lives in apps/studio.
 /.github/
-/apps/
 /crates/
 /packages/
 /scripts/

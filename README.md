@@ -5,6 +5,13 @@
 面向数学建模竞赛的提示词与参考资料：理解问题、建立模型、检验结果，再把
 结论写清楚。agent 根据题目和证据选择工作方式，按需使用专业角色。
 
+## 桌面应用 Mathodology Studio
+
+[Mathodology Studio](apps/studio/README.md) 是配套的开源桌面工作台：在装好技能
+的竞赛项目里驱动你本机已登录的 Claude Code、Codex 或 Gemini CLI，对话、工具调用、
+审批、任务清单、文件、图表和论文预览都在一个窗口里。它不调用模型 API，也不收集
+数据。目前提供 macOS（Apple 芯片）构建，带首次引导和设置。
+
 ## 复杂图表与 image2
 
 新增 [科学图表技能](.claude/skills/mathodology-figure-presets/SKILL.md)，提供
@@ -51,7 +58,7 @@ Claude Code 将最后一个参数改为 `claude-code`。完整仓库还包含可
 备份、仓库检查、PDF 页面总览和样张生成都是可选小工具。
 
 维护源在 `.claude/skills/`；`.agents/skills/` 是忽略跟踪的本地镜像。
-仓库只存技能、文档及其教学参考，不包含建模应用或比赛数据集。
+仓库存放技能、文档、教学参考和 `apps/studio/` 中的 Studio 桌面应用，不包含比赛数据集。
 项目原创内容按 [MIT](LICENSE) 许可；第三方素材保留各自许可。
 
 [技能索引](docs/SKILLS_zh.md) · [工作提示词](docs/WORKFLOWS_zh.md) · [备份](docs/BACKUP_zh.md)
