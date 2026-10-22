@@ -16,7 +16,7 @@ import {
   X
 } from 'lucide-react'
 import type { FileEntry, FilePreview, SessionEvent } from '@shared/types'
-import { api, fileUrl } from '../lib/api'
+import { api, fileUrl, tildify } from '../lib/api'
 import { useT } from '../lib/i18n'
 import { buildTranscript, formatTokens } from '../lib/transcript'
 import { useStudio, type PaneTab } from '../store'
@@ -96,7 +96,7 @@ function FilesTab() {
       <div className="flex items-center gap-1 px-3 py-2">
         {/* Right-to-left truncation keeps the project folder name visible. */}
         <span dir="rtl" className="min-w-0 flex-1 truncate text-left text-[0.8rem] text-fg-3" title={project.path}>
-          <bdi dir="ltr">{project.path.replace(/^\/Users\/[^/]+/, '~')}</bdi>
+          <bdi dir="ltr">{tildify(project.path)}</bdi>
         </span>
         <Tip label={t('pane.refresh')}>
           <button className="icon-btn-sm" onClick={() => useStudio.setState((s) => ({ filesVersion: s.filesVersion + 1 }))}>

@@ -12,10 +12,11 @@ export const CONTEST_SKILLS = [
 ]
 
 function frontmatter(text: string): Record<string, string> {
-  const m = /^---\n([\s\S]*?)\n---/.exec(text)
+  // A checkout made on Windows may have CRLF line endings.
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)
   const out: Record<string, string> = {}
   if (!m) return out
-  for (const line of m[1].split('\n')) {
+  for (const line of m[1].split(/\r?\n/)) {
     const kv = /^([a-zA-Z_]+):\s*(.*)$/.exec(line)
     if (kv) out[kv[1]] = kv[2].replace(/^["']|["']$/g, '')
   }

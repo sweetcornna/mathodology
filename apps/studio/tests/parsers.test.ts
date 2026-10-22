@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEventBody } from '@shared/types'
 import { LineSplitter, classifyTool, splitArgs, toolTitle } from '../src/main/agents/base'
+import { joinArgs } from '../src/shared/args'
 import { ClaudeStreamParser, claudeArgs } from '../src/main/agents/claude'
 import { CodexAppServerParser, codexArgs } from '../src/main/agents/codex'
-import { GeminiStreamParser, geminiArgs } from '../src/main/agents/gemini'
+import { GeminiStreamParser, geminiArgs, geminiInput } from '../src/main/agents/gemini'
 import type { TurnRequest } from '../src/main/agents/base'
 
 function sink() {
@@ -33,11 +34,16 @@ describe('base helpers', () => {
   it('splits quoted extra args', () => {
     expect(splitArgs(`--foo "a b" 'c d' e`)).toEqual(['--foo', 'a b', 'c d', 'e'])
   })
+  it('keeps backslashes when quoting args for display and reading them back', () => {
+    const parts = ['--config', 'C:\\Program Files\\tool\\cfg.json', 'say "hi" now', 'x']
+    expect(splitArgs(joinArgs(parts))).toEqual(parts)
+  })
   it('classifies and titles tools', () => {
     expect(classifyTool('Bash')).toBe('shell')
     expect(classifyTool('mcp__search__fetch')).toBe('mcp')
     expect(classifyTool('TodoWrite')).toBe('todo')
     expect(toolTitle('Read', { file_path: '/a/b/model.py' })).toBe('model.py')
+    expect(toolTitle('Read', { file_path: 'C:\\proj\\code\\model.py' })).toBe('model.py')
     expect(toolTitle('Bash', { command: 'ls', description: 'List files' })).toBe('List files')
   })
 })
@@ -216,12 +222,14 @@ describe('Gemini stream-json', () => {
     expect(s.events[4]).toMatchObject({ title: 'a.csv', toolKind: 'read' })
   })
 
-  it('passes a prompt that starts with "-" as the value of --prompt', () => {
-    // Gemini's parser takes `-p` with one value and refuses "- fix ..." as a separate argument.
-    const args = geminiArgs({ ...req, prompt: '- fix the axis labels\n- rerun', resumeId: 'g-1' })
-    expect(args.slice(-1)).toEqual(['--prompt=- fix the axis labels\n- rerun'])
-    expect(args).not.toContain('-p')
-    expect(args.join(' ')).toContain('--resume g-1 --foo a b --prompt=')
-    expect(geminiArgs({ ...req, systemAppend: 'S' }).at(-1)).toBe('--prompt=S\n\n---\n\nhi')
+  it('sends the prompt on stdin, never as an argument', () => {
+    // A prompt as an argument hits command-line limits, and Gemini's parser refuses "- fix ..." there.
+    const turn = { ...req, prompt: '- fix the axis labels\n- rerun', resumeId: 'g-1' }
+    const args = geminiArgs(turn)
+    expect(args.join(' ')).toContain('--resume g-1 --foo a b')
+    expect(args.some((a) => a.includes('fix the axis'))).toBe(false)
+    expect(args.some((a) => a === '-p' || a.startsWith('--prompt'))).toBe(false)
+    expect(geminiInput(turn)).toBe('- fix the axis labels\n- rerun')
+    expect(geminiInput({ ...req, systemAppend: 'S' })).toBe('S\n\n---\n\nhi')
   })
 })

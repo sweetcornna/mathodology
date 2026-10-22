@@ -32,6 +32,20 @@ describe('migrateConnectors', () => {
 })
 
 describe('syncConnectors', () => {
+  it('starts npx through cmd.exe on Windows, where it is a .cmd file, and leaves uvx alone', () => {
+    const dir = temp()
+    const npx: Connector = { id: 'fs', name: 'Files', enabled: true, command: 'npx', args: ['-y', '@scope/server'] }
+    syncConnectors(dir, [SEARCH_CONNECTOR, npx], ledger(), [], 'win32')
+    for (const file of ['.mcp.json', '.gemini/settings.json']) {
+      expect(servers(dir, file).fs).toMatchObject({ command: 'cmd', args: ['/c', 'npx', '-y', '@scope/server'] })
+      expect(servers(dir, file)[SEARCH_CONNECTOR.id]).toMatchObject({ command: 'uvx' })
+    }
+    expect(readFileSync(join(dir, '.codex/config.toml'), 'utf8')).toContain('command = "cmd"\nargs = ["/c", "npx", "-y", "@scope/server"]')
+    const mac = temp()
+    syncConnectors(mac, [npx], ledger(), [], 'darwin')
+    expect(servers(mac, '.mcp.json').fs).toMatchObject({ command: 'npx', args: ['-y', '@scope/server'] })
+  })
+
   it('writes each CLI its own format and keeps servers it does not manage', () => {
     const dir = temp()
     writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { mine: { command: 'x' } } }))

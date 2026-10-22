@@ -27,6 +27,19 @@ export function envKey(env: NodeJS.ProcessEnv, name: string): string {
 
 let cachedEnv: NodeJS.ProcessEnv | null = null
 
+/** The AppImage launcher points these at its own folder; agents and their tools must not load from it. */
+export function withoutAppImage(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const appDir = env.APPDIR
+  if (!env.APPIMAGE || !appDir) return env
+  const out = { ...env }
+  for (const key of ['PATH', 'LD_LIBRARY_PATH', 'XDG_DATA_DIRS', 'GSETTINGS_SCHEMA_DIR']) {
+    const kept = (out[key] ?? '').split(':').filter((p) => p && !p.startsWith(appDir))
+    if (kept.length) out[key] = kept.join(':')
+    else delete out[key]
+  }
+  return out
+}
+
 /**
  * GUI apps on macOS and some Linux desktops start with a minimal PATH. Ask the user's login shell
  * for its environment once, then add common install locations so agent CLIs, node, python and uvx
@@ -34,11 +47,12 @@ let cachedEnv: NodeJS.ProcessEnv | null = null
  */
 export async function agentEnv(): Promise<NodeJS.ProcessEnv> {
   if (cachedEnv) return cachedEnv
-  const env: NodeJS.ProcessEnv = { ...process.env }
+  const base = withoutAppImage(process.env)
+  const env: NodeJS.ProcessEnv = { ...base }
   if (process.platform !== 'win32') {
     const shell = process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/sh')
     const marker = '__MATHODOLOGY_ENV__'
-    const out = await run(shell, ['-ilc', `printf '${marker}'; env; printf '${marker}'`], process.env, 6000)
+    const out = await run(shell, ['-ilc', `printf '${marker}'; env; printf '${marker}'`], base, 6000)
     const body = out.split(marker)[1]
     if (body) {
       for (const line of body.split('\n')) {

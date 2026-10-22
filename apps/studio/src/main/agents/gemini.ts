@@ -17,6 +17,7 @@ import {
   type TurnRequest,
   type TurnSink
 } from './base'
+import { launch } from './launch'
 
 type Json = Record<string, unknown>
 
@@ -133,10 +134,15 @@ export function geminiArgs(req: TurnRequest): string[] {
   if (req.resumeId) args.push('--resume', req.resumeId)
   else if (req.newSessionId) args.push('--session-id', req.newSessionId)
   args.push(...splitArgs(req.settings.extraArgs))
-  const prompt = req.systemAppend ? `${req.systemAppend}\n\n---\n\n${req.prompt}` : req.prompt
-  // Attached with `=`: Gemini's parser rejects a separate value that starts with "-" ("- fix ...").
-  args.push(`--prompt=${prompt}`)
   return args
+}
+
+/**
+ * The prompt goes on stdin, which Gemini CLI reads as the prompt when it is not a terminal. As an
+ * argument it would hit command-line limits (32,767 characters on Windows, 128 KiB on Linux).
+ */
+export function geminiInput(req: TurnRequest): string {
+  return req.systemAppend ? `${req.systemAppend}\n\n---\n\n${req.prompt}` : req.prompt
 }
 
 /** "gemini-3.1-pro-preview" → "Gemini 3.1 Pro Preview", "auto-gemini-3" → "Auto (Gemini 3)". */
@@ -175,7 +181,10 @@ export function geminiModelsFromSource(source: string): ModelInfo[] {
 }
 
 function geminiPackageDir(binary: string): string | null {
-  let dir = dirname(realpathSync(binary))
+  // Behind an npm shim on Windows, the package is where the script the shim runs lives.
+  const l = launch(binary, [])
+  const entry = l.file === binary || l.verbatim ? binary : (l.args[0] ?? l.file)
+  let dir = dirname(realpathSync(entry))
   for (let i = 0; i < 4; i++) {
     if (existsSync(join(dir, 'package.json')) && existsSync(join(dir, 'bundle'))) return dir
     dir = dirname(dir)
@@ -250,7 +259,7 @@ export const geminiAdapter: AgentAdapter = {
       })
       kill('SIGTERM')
     })
-    child.stdin.end()
+    child.stdin.end(geminiInput(req))
     let interrupted = false
     const done = exited.then(({ code, signal, stderr }) => {
       if (parser.sawResult) return

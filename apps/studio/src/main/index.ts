@@ -50,7 +50,8 @@ function defaultSettings(): Settings {
     locale: [app.getLocale(), ...app.getPreferredSystemLanguages()].some((l) => l.toLowerCase().startsWith('zh')) ? 'zh-CN' : 'en',
     theme: 'system',
     fontScale: 1,
-    workspaceRoot: join(homedir(), 'Documents', 'Mathodology'),
+    // Follows a moved, localized or OneDrive-redirected Documents folder.
+    workspaceRoot: join(app.getPath('documents'), 'Mathodology'),
     defaultAgent: 'claude',
     defaultPermissionMode: 'ask',
     sendWithEnter: true,
@@ -428,6 +429,11 @@ function createWindow(): void {
     }
   })
   win.once('ready-to-show', () => win?.show())
+  // Windows logoff and shutdown skip before-quit: stop the agents and save state here instead.
+  win.on('session-end', () => {
+    killAllAgents()
+    store.flush()
+  })
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
@@ -529,7 +535,9 @@ app.on('before-quit', (event) => {
   ]).finally(() => {
     killAllAgents()
     store.flush()
-    app.quit()
+    // Everything is saved and stopped, so exit outright. A second app.quit() would close the windows
+    // but, when the quit came from SIGTERM, never reach will-quit and leave the process running.
+    app.exit(0)
   })
 })
 

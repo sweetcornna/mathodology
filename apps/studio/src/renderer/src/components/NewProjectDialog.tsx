@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { FolderOpen } from 'lucide-react'
 import type { ContestKind } from '@shared/types'
-import { api } from '../lib/api'
+import { api, sep, tildify } from '../lib/api'
 import { useT, type MessageKey } from '../lib/i18n'
 import { useStudio } from '../store'
 import { Modal, Segmented, Switch } from './ui'
@@ -83,7 +83,7 @@ export function NewProjectForm({
         />
         {mode === 'new' ? (
           <div className="truncate pt-1 font-mono text-[0.8rem] text-fg-3">
-            {(settings?.workspaceRoot ?? '').replace(/^\/Users\/[^/]+/, '~')}/{name.trim() ? name.trim().replace(/\s+/g, '-') : '…'}
+            {tildify(settings?.workspaceRoot ?? '')}{sep}{name.trim() ? name.trim().replace(/\s+/g, '-') : '…'}
           </div>
         ) : (
           <div className="flex items-center gap-2 pt-1">

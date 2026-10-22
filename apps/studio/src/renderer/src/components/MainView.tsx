@@ -21,7 +21,7 @@ import {
   Trash2,
   Wrench
 } from 'lucide-react'
-import { api, isMac, mod } from '../lib/api'
+import { api, isMac, mod, tildify } from '../lib/api'
 import { useT, type MessageKey } from '../lib/i18n'
 import { useStudio, type PaneTab } from '../store'
 import { Composer, ModePicker, type ComposerHandle } from './Composer'
@@ -175,7 +175,7 @@ function ProjectPill() {
       {projects.map((p) => (
         <MenuItem key={p.id} onSelect={() => select(p.id)}>
           <div className="truncate">{p.name}</div>
-          <div className="truncate text-[0.786rem] text-fg-3">{p.path.replace(/^\/Users\/[^/]+/, '~')}</div>
+          <div className="truncate text-[0.786rem] text-fg-3">{tildify(p.path)}</div>
         </MenuItem>
       ))}
       <MenuSep />

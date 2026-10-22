@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { whichSync } from '../src/main/agents/detect'
+import { whichSync, withoutAppImage } from '../src/main/agents/detect'
 import { launch } from '../src/main/agents/launch'
 
 // What `npm install -g @anthropic-ai/claude-code` writes to %APPDATA%\npm\claude.cmd.
@@ -58,7 +58,7 @@ describe('starting CLIs on Windows', () => {
     })
   })
 
-  it.skipIf(process.platform === 'win32')('runs the script behind an npm shim with node, arguments untouched', () => {
+  it('runs the script behind an npm shim with node, arguments untouched', () => {
     const dir = shimDir(NPM_SHIM, 'node_modules\\@anthropic-ai\\claude-code\\cli.js')
     const l = launch(join(dir, 'tool.cmd'), ['--append-system-prompt', prompt], 'win32')
     expect(l.file).toBe('node')
@@ -66,7 +66,7 @@ describe('starting CLIs on Windows', () => {
     expect(l.verbatim).toBe(false)
   })
 
-  it.skipIf(process.platform === 'win32')('prefers the node.exe a shim ships with, and reads pnpm shims', () => {
+  it('prefers the node.exe a shim ships with, and reads pnpm shims', () => {
     const dir = shimDir(NPM_SHIM, 'node_modules\\@anthropic-ai\\claude-code\\cli.js', ['node.exe'])
     expect(launch(join(dir, 'tool.cmd'), [], 'win32').file).toBe(join(dir, 'node.exe'))
     const pnpm = shimDir(PNPM_SHIM, '..\\.pnpm\\gemini\\bundle\\gemini.js')
@@ -102,5 +102,24 @@ describe('finding CLIs on PATH', () => {
     writeFileSync(join(dir, 'gemini'), '', { mode: 0o644 })
     expect(whichSync('codex', { PATH: dir }, 'darwin')).toBe(join(dir, 'codex'))
     expect(whichSync('gemini', { PATH: dir }, 'darwin')).toBeUndefined()
+  })
+})
+
+describe('running from an AppImage', () => {
+  it("keeps the AppImage's own folders out of the agents' environment", () => {
+    const env = {
+      APPIMAGE: '/home/me/Studio.AppImage',
+      APPDIR: '/tmp/.mount_Studio1',
+      PATH: '/tmp/.mount_Studio1:/tmp/.mount_Studio1/usr/sbin:/usr/local/bin:/usr/bin',
+      LD_LIBRARY_PATH: '/tmp/.mount_Studio1/usr/lib',
+      XDG_DATA_DIRS: '/tmp/.mount_Studio1/usr/share/:/usr/share/gnome:/usr/share/',
+      HOME: '/home/me'
+    }
+    const out = withoutAppImage(env)
+    expect(out.PATH).toBe('/usr/local/bin:/usr/bin')
+    expect(out.LD_LIBRARY_PATH).toBeUndefined()
+    expect(out.XDG_DATA_DIRS).toBe('/usr/share/gnome:/usr/share/')
+    expect(out.HOME).toBe('/home/me')
+    expect(withoutAppImage({ PATH: '/usr/bin' })).toEqual({ PATH: '/usr/bin' })
   })
 })

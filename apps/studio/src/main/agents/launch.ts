@@ -1,4 +1,4 @@
-import { execFile, spawn, type ChildProcess, type ExecFileException, type ExecFileOptions } from 'node:child_process'
+import { execFile, spawnSync, type ChildProcess, type ExecFileException, type ExecFileOptions } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, extname, join } from 'node:path'
 
@@ -69,12 +69,13 @@ export function execCli(
 /**
  * Stop a CLI and whatever it started. On POSIX the CLI leads its own process group; Windows has no
  * groups, so taskkill walks the process tree (a shim or wrapper alone would leave the agent running).
+ * It runs synchronously: on quit, Studio exits right after, and grandchildren outlive their job.
  */
 export function killTree(child: ChildProcess, signal: NodeJS.Signals): void {
   if (!child.pid) return
   if (process.platform === 'win32') {
-    const killer = spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true })
-    killer.on('error', () => child.kill(signal))
+    const r = spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true, timeout: 5000 })
+    if (r.error) child.kill(signal)
     return
   }
   try {
