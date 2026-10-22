@@ -71,7 +71,11 @@ Apple silicon). It calls no model API, stores no keys and collects no data.
 - Installs [humanizer](https://github.com/blader/humanizer) to take the AI tone out of the prose, and updates it at each launch
 - MCP connectors are set up once in Settings for all three agents; the built-in free-search-mcp updates to its newest release at each launch
 
-Run from source (Node.js 22.12+, pnpm 10):
+**[Download the v0.16.0 DMG](https://github.com/sweetcornna/mathodology/releases/download/v0.16.0/Mathodology-Studio-0.16.0-arm64.dmg)** (macOS, Apple silicon).
+The app is unsigned: on first launch, Control-click it in Finder and choose Open.
+At least one agent CLI must be installed and signed in.
+
+Or run from source (Node.js 22.12+, pnpm 10):
 
 ```bash
 cd apps/studio && pnpm install && pnpm dev
