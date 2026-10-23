@@ -14,3 +14,16 @@ export function splitArgs(s: string): string[] {
 export function joinArgs(parts: string[]): string {
   return parts.map((p) => (/\s/.test(p) || !p ? (p.includes('"') ? `'${p}'` : `"${p}"`) : p)).join(' ')
 }
+
+/** `KEY=VALUE` lines (blank lines and `#` comments skipped) as an environment patch. */
+export function parseEnv(s: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const raw of (s ?? '').split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const i = line.indexOf('=')
+    const key = (i > 0 ? line.slice(0, i) : '').replace(/^export\s+/, '').trim()
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) out[key] = line.slice(i + 1).trim().replace(/^(["'])(.*)\1$/, '$2')
+  }
+  return out
+}

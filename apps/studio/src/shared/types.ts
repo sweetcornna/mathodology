@@ -1,6 +1,7 @@
 // Contract shared by the main process (agent runtime, storage) and the renderer.
 
-export type AgentId = 'claude' | 'codex' | 'gemini'
+/** An entry of the agent catalog in `agents.ts`, such as 'claude', 'agy' or 'opencode'. */
+export type AgentId = string
 
 /** How much the agent may do without asking. Each adapter maps this to its own flags. */
 export type PermissionMode = 'ask' | 'acceptEdits' | 'plan' | 'bypass'
@@ -23,6 +24,10 @@ export interface AgentInfo {
   /** Whether the adapter can pause a tool call for the user's approval. */
   supportsApproval: boolean
   supportsResume: boolean
+  /** The interface Studio drives it through, e.g. "ACP" or "stream-json". */
+  route: string
+  /** The vendor moved its users to this other agent. */
+  supersededBy?: AgentId
 }
 
 export interface ModelInfo {
@@ -92,7 +97,7 @@ export interface Usage {
   costUsd: number
 }
 
-export type NoticeCode = 'agentMissing' | 'agentExited' | 'signIn' | 'resumeReset'
+export type NoticeCode = 'agentMissing' | 'agentExited' | 'signIn' | 'resumeReset' | 'deniedActions'
 
 export type ToolKind =
   | 'shell'
@@ -329,6 +334,8 @@ export interface AgentSettings {
   binaryPath: string
   defaultModel: string
   extraArgs: string
+  /** Extra environment for the CLI, one KEY=VALUE per line (e.g. an API key or a base URL). */
+  env: string
 }
 
 export interface Settings {

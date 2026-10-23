@@ -44,7 +44,6 @@ protocol.registerSchemesAsPrivileged([
 const kitRoot = app.isPackaged ? join(process.resourcesPath, 'kit') : resolve(app.getAppPath(), '../..')
 
 function defaultSettings(): Settings {
-  const blank = { binaryPath: '', defaultModel: '', extraArgs: '' }
   return {
     onboarded: false,
     locale: [app.getLocale(), ...app.getPreferredSystemLanguages()].some((l) => l.toLowerCase().startsWith('zh')) ? 'zh-CN' : 'en',
@@ -58,7 +57,8 @@ function defaultSettings(): Settings {
     installHumanizer: true,
     // Filled in from the saved settings, or with the search server for new installs.
     connectors: [],
-    agents: { claude: { ...blank }, codex: { ...blank }, gemini: { ...blank } }
+    // Filled in per agent as you change its settings; see agentSettings().
+    agents: {}
   }
 }
 

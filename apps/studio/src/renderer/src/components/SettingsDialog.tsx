@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Bot, CircleCheck, CircleX, ExternalLink, FolderOpen, Info, Keyboard, Package, Palette, Plug, Plus, RefreshCw, SlidersHorizontal, Trash2 } from 'lucide-react'
 import type { AgentId, AgentSettings, Connector, ConnectorCheck, PermissionMode } from '@shared/types'
+import { agentSpec } from '@shared/agents'
 import { joinArgs, splitArgs } from '@shared/args'
 import { PERMISSION_MODES } from '@shared/ipc'
 import { api, mod } from '../lib/api'
@@ -9,11 +10,7 @@ import { useStudio } from '../store'
 import { AgentGlyph } from './BrandIcon'
 import { Modal, Row, Segmented, Spinner, Switch } from './ui'
 
-const INSTALL: Record<AgentId, { cmd: string; url: string }> = {
-  claude: { cmd: 'npm install -g @anthropic-ai/claude-code', url: 'https://docs.claude.com/en/docs/claude-code/overview' },
-  codex: { cmd: 'npm install -g @openai/codex', url: 'https://github.com/openai/codex' },
-  gemini: { cmd: 'npm install -g @google/gemini-cli', url: 'https://github.com/google-gemini/gemini-cli' }
-}
+const BLANK: AgentSettings = { binaryPath: '', defaultModel: '', extraArgs: '', env: '' }
 
 function Select<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
   return (
@@ -66,7 +63,7 @@ function General() {
         </button>
       </Row>
       <Row label={t('settings.defaultAgent')}>
-        <Select value={s.defaultAgent} onChange={(defaultAgent) => void save({ defaultAgent })} options={agents.map((a) => ({ value: a.id, label: a.name }))} />
+        <Select value={s.defaultAgent} onChange={(defaultAgent) => void save({ defaultAgent })} options={agents.filter((a) => a.available || a.id === s.defaultAgent).map((a) => ({ value: a.id, label: a.name }))} />
       </Row>
       <Row label={t('settings.defaultMode')}>
         <Select<PermissionMode>
@@ -266,10 +263,12 @@ function Appearance() {
 function AgentCard({ id }: { id: AgentId }) {
   const t = useT()
   const info = useStudio((x) => x.agents.find((a) => a.id === id))
+  const successor = useStudio((x) => x.agents.find((a) => a.id === info?.supersededBy))
   const s = useStudio((x) => x.settings)!
   const save = useStudio((x) => x.saveSettings)
-  const [local, setLocal] = useState<AgentSettings>(s.agents[id])
-  useEffect(() => setLocal(s.agents[id]), [s.agents, id])
+  const install = agentSpec(id)?.install
+  const [local, setLocal] = useState<AgentSettings>({ ...BLANK, ...s.agents[id] })
+  useEffect(() => setLocal({ ...BLANK, ...s.agents[id] }), [s.agents, id])
   const commit = (patch: Partial<AgentSettings>): void => {
     const next = { ...local, ...patch }
     setLocal(next)
@@ -290,16 +289,21 @@ function AgentCard({ id }: { id: AgentId }) {
             >
               {info.available ? t('settings.detected', { version: info.version ?? '' }) : t('settings.notFound')}
             </span>
+            {info.supersededBy && <span className="rounded-full bg-surface-3 px-2 py-0.5 text-[0.72rem] font-medium text-fg-3">{t('settings.legacy')}</span>}
           </div>
-          <div className="truncate font-mono text-[0.76rem] text-fg-3">{info.path ?? INSTALL[id].cmd}</div>
+          <div className="truncate font-mono text-[0.76rem] text-fg-3">{info.path ?? install?.cmd ?? install?.url}</div>
           {info.available && (
             <div className="mt-0.5 truncate text-[0.76rem] text-fg-3">
               {[info.account?.plan, info.account?.email, t('settings.modelCount', { n: Math.max(0, info.models.length - 1) })].filter(Boolean).join(' · ')}
             </div>
           )}
         </div>
-        <span className="text-[0.76rem] text-fg-3">{info.supportsApproval ? t('settings.approval') : t('settings.noApproval')}</span>
+        <div className="flex shrink-0 flex-col items-end gap-0.5 text-[0.76rem] text-fg-3">
+          <span>{info.supportsApproval ? t('settings.approval') : t('settings.noApproval')}</span>
+          <span className="font-mono text-[0.72rem]">{t('settings.route', { route: info.route })}</span>
+        </div>
       </div>
+      {successor && <p className="mt-3 text-[0.82rem] text-fg-3">{t('settings.superseded', { agent: successor.name })}</p>}
       <div className="mt-4 grid grid-cols-[120px_1fr] items-center gap-x-3 gap-y-2.5 text-[0.86rem]">
         <span className="text-fg-2">{t('settings.binaryPath')}</span>
         <input
@@ -336,11 +340,49 @@ function AgentCard({ id }: { id: AgentId }) {
           onBlur={() => commit({})}
           placeholder="--flag value"
         />
+        <span className="self-start pt-1.5 text-fg-2">{t('settings.env')}</span>
+        <textarea
+          className="field min-h-[56px] resize-y py-1.5 font-mono text-[0.8rem]"
+          rows={2}
+          spellCheck={false}
+          value={local.env}
+          onChange={(e) => setLocal({ ...local, env: e.target.value })}
+          onBlur={() => commit({})}
+          placeholder={t('settings.envPlaceholder')}
+        />
       </div>
-      {!info.available && (
-        <button className="mt-3 flex items-center gap-1.5 text-[0.84rem] text-accent hover:underline" onClick={() => void api.call('shell:openExternal', INSTALL[id].url)}>
+      {!info.available && install && (
+        <button className="mt-3 flex items-center gap-1.5 text-[0.84rem] text-accent hover:underline" onClick={() => void api.call('shell:openExternal', install.url)}>
           <ExternalLink size={13} />
           {t('settings.install')}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** A catalog agent that is not installed: one line, opening its full card to set a path. */
+function MissingAgent({ id }: { id: AgentId }) {
+  const t = useT()
+  const info = useStudio((x) => x.agents.find((a) => a.id === id))
+  const [open, setOpen] = useState(false)
+  const install = agentSpec(id)?.install
+  if (!info) return null
+  if (open) return <AgentCard id={id} />
+  return (
+    <div className="flex items-center gap-3 px-1 py-2">
+      <AgentGlyph agent={id} size={20} muted />
+      <div className="min-w-0 flex-1">
+        <div className="text-[0.9rem]">{info.name}</div>
+        <div className="truncate font-mono text-[0.74rem] text-fg-3">{install?.cmd ?? install?.url}</div>
+      </div>
+      <span className="font-mono text-[0.72rem] text-fg-3">{info.route}</span>
+      <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}>
+        {t('settings.configure')}
+      </button>
+      {install && (
+        <button className="btn btn-ghost btn-sm" aria-label={t('settings.install')} onClick={() => void api.call('shell:openExternal', install.url)}>
+          <ExternalLink size={13} />
         </button>
       )}
     </div>
@@ -350,7 +392,10 @@ function AgentCard({ id }: { id: AgentId }) {
 function Agents() {
   const t = useT()
   const refresh = useStudio((x) => x.refreshAgents)
+  const agents = useStudio((x) => x.agents)
   const [busy, setBusy] = useState(false)
+  const installed = agents.filter((a) => a.available)
+  const missing = agents.filter((a) => !a.available)
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
@@ -369,10 +414,20 @@ function Agents() {
         </button>
       </div>
       <div className="flex flex-col gap-3">
-        {(['claude', 'codex', 'gemini'] as AgentId[]).map((id) => (
-          <AgentCard key={id} id={id} />
+        {installed.map((a) => (
+          <AgentCard key={a.id} id={a.id} />
         ))}
       </div>
+      {missing.length > 0 && (
+        <>
+          <h4 className="mt-6 mb-1 text-[0.86rem] font-medium text-fg-2">{t('settings.moreAgents')}</h4>
+          <div className="flex flex-col divide-y divide-[var(--border)]">
+            {missing.map((a) => (
+              <MissingAgent key={a.id} id={a.id} />
+            ))}
+          </div>
+        </>
+      )}
     </section>
   )
 }

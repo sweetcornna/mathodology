@@ -16,7 +16,7 @@
 
 ![Mathodology Studio](apps/studio/docs/studio-en.png)
 
-Mathodology teaches Claude Code, Codex and Gemini CLI to work like a modeling
+Mathodology teaches Claude Code, Codex, Antigravity CLI and other coding agents to work like a modeling
 team: understand the problem, build an interpretable model, test the conclusion
 with experiments, draw figures that answer a question, cite only sources that
 can be found, and write the paper clearly.
@@ -64,16 +64,16 @@ finishes without it: quantitative figures are always drawn from data and code.
 [Studio](apps/studio/README.md) is an open-source desktop workbench for macOS,
 Windows and Linux. It calls no model API, stores no keys and collects no data.
 
-- Drives the Claude Code, Codex or Gemini CLI signed in on your machine; switch between turns
+- Drives the agent CLIs signed in on your machine (Claude Code, Codex, Antigravity CLI, Qoder CLI, pi and some twenty more), each through its own programmatic interface; switch between turns
 - Every change to a figure, table or code file becomes a version you can compare, restore and trace to its turn
 - Read-only review checks each claim against the tool record; citations are traced, and DOIs the DOI system does not know are flagged as likely made up
 - The Literature pane finds papers, checks the DOI before writing `references.bib`, and checks a whole bibliography entry by entry
 - Installs [humanizer](https://github.com/blader/humanizer) to take the AI tone out of the prose, and updates it at each launch
 - MCP connectors are set up once in Settings for all three agents; the built-in free-search-mcp updates to its newest release at each launch
 
-**Download v0.17.1:** [macOS DMG](https://github.com/sweetcornna/mathodology/releases/download/v0.17.1/Mathodology-Studio-0.17.1-arm64.dmg) (Apple silicon) ·
-[Windows installer](https://github.com/sweetcornna/mathodology/releases/download/v0.17.1/Mathodology-Studio-0.17.1-x64-setup.exe) (x64) ·
-[Linux .deb / AppImage](https://github.com/sweetcornna/mathodology/releases/tag/v0.17.1) (x64, arm64).
+**Download v0.18.0:** [macOS DMG](https://github.com/sweetcornna/mathodology/releases/download/v0.18.0/Mathodology-Studio-0.18.0-arm64.dmg) (Apple silicon) ·
+[Windows installer](https://github.com/sweetcornna/mathodology/releases/download/v0.18.0/Mathodology-Studio-0.18.0-x64-setup.exe) (x64) ·
+[Linux .deb / AppImage](https://github.com/sweetcornna/mathodology/releases/tag/v0.18.0) (x64, arm64).
 The app is unsigned. On macOS, Control-click it in Finder and choose Open the
 first time; on Windows, choose More info → Run anyway if SmartScreen appears.
 On Ubuntu 23.10 and later use the .deb: AppImages cannot use Chromium's sandbox

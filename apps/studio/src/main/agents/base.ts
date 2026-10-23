@@ -5,6 +5,7 @@ import type {
   AgentAccount,
   AgentId,
   AgentSettings,
+  Connector,
   ModelInfo,
   PermissionMode,
   SessionEventBody,
@@ -29,6 +30,8 @@ export interface TurnRequest {
   ephemeral?: boolean
   settings: AgentSettings
   env: NodeJS.ProcessEnv
+  /** Enabled MCP connectors, for CLIs that take their servers per session (ACP) rather than from project files. */
+  mcpServers?: Connector[]
 }
 
 export interface TurnSink {
@@ -52,11 +55,19 @@ export interface AgentInspection {
 export interface AgentAdapter {
   id: AgentId
   name: string
-  binaryName: string
+  /** Executables to look for on PATH, in order. */
+  binaryNames: string[]
+  /** The interface Studio drives it through, shown in Settings. */
+  route: string
   supportsApproval: boolean
   supportsResume: boolean
+  /** The CLI accepts a session id chosen by Studio for a new conversation, which makes resuming reliable. */
+  takesSessionId?: boolean
+  /** The CLI forgets an appended system prompt between runs, so Studio sends it every turn. */
+  systemPromptEachTurn?: boolean
   /** Used when the installed CLI cannot report its own models. */
   models: ModelInfo[]
+  /** Arguments that print the version; empty for a CLI that has none, which then counts as found. */
   versionArgs: string[]
   /** Ask the installed CLI for its models and account, without starting a conversation. */
   inspect?(binary: string, env: NodeJS.ProcessEnv): Promise<AgentInspection>
@@ -84,16 +95,27 @@ export { splitArgs }
 export function classifyTool(name: string): ToolKind {
   const n = name.toLowerCase()
   if (n.startsWith('mcp__')) return 'mcp'
-  if (/^(bash|shell|run_shell_command|command|exec|bashoutput|killshell)/.test(n)) return 'shell'
+  if (/^(bash|shell|run_shell_command|run_command|command|exec|execute|bashoutput|killshell)/.test(n)) return 'shell'
+  if (/^(webfetch|websearch|web_fetch|google_web_search|web_search|search_web|read_url|fetch)/.test(n)) return 'web'
   if (/^(read|read_file|read_many_files|notebookread|view)/.test(n)) return 'read'
-  if (/^(edit|multiedit|replace|notebookedit|apply_patch|file_change)/.test(n)) return 'edit'
-  if (/^(write|write_file)/.test(n)) return 'write'
-  if (/^(grep|glob|ls|list_directory|search_file_content|find|search)/.test(n)) return 'search'
-  if (/^(webfetch|websearch|web_fetch|google_web_search|web_search)/.test(n)) return 'web'
-  if (/^(task|agent)$/.test(n)) return 'task'
-  if (/^(todowrite|todo_list|update_plan|write_todos)/.test(n)) return 'todo'
+  if (/^(edit|multiedit|replace|multi_replace|sed_file|notebookedit|notebook_edit|apply_patch|file_change)/.test(n)) return 'edit'
+  if (/^(write|write_file|write_to_file)/.test(n)) return 'write'
+  if (/^(grep|glob|ls|list_dir|list_directory|search_file_content|find|search)/.test(n)) return 'search'
+  if (/^(task|agent|invoke_subagent)$/.test(n)) return 'task'
+  if (/^(todowrite|todo_list|todo|update_plan|write_todos)/.test(n)) return 'todo'
   if (n === 'skill') return 'skill'
   return 'other'
+}
+
+/** The first of `names` present in `input`, matching keys without regard to case or underscores. */
+export function pick(input: unknown, ...names: string[]): unknown {
+  const i = (input ?? {}) as Record<string, unknown>
+  const norm = (k: string): string => k.toLowerCase().replace(/[_-]/g, '')
+  for (const name of names) {
+    const key = Object.keys(i).find((k) => norm(k) === norm(name))
+    if (key !== undefined && i[key] != null && i[key] !== '') return i[key]
+  }
+  return undefined
 }
 
 function short(s: unknown, max = 80): string {
@@ -108,27 +130,27 @@ function baseName(p: unknown): string {
 
 /** A one-line human title for a tool call, built from its most telling argument. */
 export function toolTitle(name: string, input: unknown): string {
-  const i = (input ?? {}) as Record<string, unknown>
+  const path = (): unknown => pick(input, 'file_path', 'path', 'absolute_path', 'notebook_path', 'target_file', 'filename')
   switch (classifyTool(name)) {
     case 'shell':
-      return short(i.description ?? i.command ?? name)
+      return short(pick(input, 'description', 'command', 'command_line', 'cmd') ?? name)
     case 'read':
-      return baseName(i.file_path ?? i.path ?? i.absolute_path ?? i.notebook_path)
+      return baseName(path())
     case 'edit':
     case 'write':
-      return baseName(i.file_path ?? i.path ?? i.notebook_path)
+      return baseName(path())
     case 'search':
-      return short(i.pattern ?? i.query ?? i.path ?? '')
+      return short(pick(input, 'pattern', 'query', 'path', 'search_path', 'directory_path') ?? '')
     case 'web':
-      return short(i.url ?? i.query ?? i.prompt)
+      return short(pick(input, 'url', 'query', 'prompt'))
     case 'task':
-      return short(i.description ?? i.prompt)
+      return short(pick(input, 'description', 'prompt', 'task'))
     case 'skill':
-      return short(i.skill ?? i.command ?? i.name)
+      return short(pick(input, 'skill', 'command', 'name'))
     case 'mcp':
       return name.replace(/^mcp__/, '').replace(/__/g, ' · ')
     default:
-      return short(i.description ?? i.command ?? '')
+      return short(pick(input, 'description', 'command', 'intent') ?? '')
   }
 }
 

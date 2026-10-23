@@ -1,3 +1,4 @@
+import { agentSpec } from './agents'
 import type { AgentId, ModelInfo } from './types'
 
 export type Brand =
@@ -39,9 +40,10 @@ export function brandOf(name: string | undefined): Brand | null {
   return FAMILIES.find(([, re]) => re.test(s))?.[0] ?? null
 }
 
-const AGENT_BRAND: Record<AgentId, Brand> = { claude: 'claude', codex: 'openai', gemini: 'gemini' }
-
-/** A model's provider, falling back to the agent's own when the name says nothing (e.g. "Default"). */
-export function modelBrand(model: Pick<ModelInfo, 'id' | 'model' | 'label'> | undefined, agent: AgentId): Brand {
-  return brandOf(model?.model) ?? brandOf(model?.id) ?? brandOf(model?.label) ?? AGENT_BRAND[agent]
+/**
+ * A model's provider, falling back to the agent's own when the name says nothing (e.g. "Default").
+ * `null` for an agent that serves many providers' models and a name that names none.
+ */
+export function modelBrand(model: Pick<ModelInfo, 'id' | 'model' | 'label'> | undefined, agent: AgentId): Brand | null {
+  return brandOf(model?.model) ?? brandOf(model?.id) ?? brandOf(model?.label) ?? agentSpec(agent)?.brand ?? null
 }

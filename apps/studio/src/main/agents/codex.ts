@@ -392,7 +392,8 @@ async function inspectCodex(binary: string, env: NodeJS.ProcessEnv): Promise<Age
 export const codexAdapter: AgentAdapter = {
   id: 'codex',
   name: 'Codex',
-  binaryName: 'codex',
+  binaryNames: ['codex'],
+  route: 'app-server',
   supportsApproval: true,
   supportsResume: true,
   versionArgs: ['--version'],

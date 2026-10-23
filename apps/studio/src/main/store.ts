@@ -163,11 +163,7 @@ export class Store {
     return {
       ...defaults,
       ...saved,
-      agents: {
-        claude: { ...defaults.agents.claude, ...saved.agents?.claude },
-        codex: { ...defaults.agents.codex, ...saved.agents?.codex },
-        gemini: { ...defaults.agents.gemini, ...saved.agents?.gemini }
-      }
+      agents: { ...defaults.agents, ...saved.agents }
     }
   }
 

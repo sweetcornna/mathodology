@@ -1,5 +1,6 @@
 import { useId, useMemo } from 'react'
 import type { AgentId, ModelInfo } from '@shared/types'
+import { agentSpec } from '@shared/agents'
 import { modelBrand, type Brand } from '@shared/brands'
 // Provider marks from @lobehub/icons-static-svg (MIT). The logos are trademarks of their owners,
 // shown only to identify which service a model or CLI belongs to.
@@ -19,6 +20,19 @@ import ollamaSvg from '@lobehub/icons-static-svg/icons/ollama.svg?raw'
 import claudeCodeSvg from '@lobehub/icons-static-svg/icons/claudecode-color.svg?raw'
 import codexSvg from '@lobehub/icons-static-svg/icons/codex-color.svg?raw'
 import geminiCliSvg from '@lobehub/icons-static-svg/icons/geminicli-color.svg?raw'
+import antigravitySvg from '@lobehub/icons-static-svg/icons/antigravity-color.svg?raw'
+import qoderSvg from '@lobehub/icons-static-svg/icons/qoder-color.svg?raw'
+import piSvg from '@lobehub/icons-static-svg/icons/pi.svg?raw'
+import opencodeSvg from '@lobehub/icons-static-svg/icons/opencode.svg?raw'
+import cursorSvg from '@lobehub/icons-static-svg/icons/cursor.svg?raw'
+import copilotSvg from '@lobehub/icons-static-svg/icons/githubcopilot.svg?raw'
+import codebuddySvg from '@lobehub/icons-static-svg/icons/codebuddy-color.svg?raw'
+import gooseSvg from '@lobehub/icons-static-svg/icons/goose.svg?raw'
+import clineSvg from '@lobehub/icons-static-svg/icons/cline.svg?raw'
+import devinSvg from '@lobehub/icons-static-svg/icons/devin.svg?raw'
+import xaiSvg from '@lobehub/icons-static-svg/icons/xai.svg?raw'
+import commandCodeSvg from '@lobehub/icons-static-svg/icons/commandcode.svg?raw'
+import hermesSvg from '@lobehub/icons-static-svg/icons/hermesagent.svg?raw'
 
 // Single-colour marks use currentColor and follow the text colour in both themes.
 const BRAND_SVG: Record<Brand, string> = {
@@ -37,7 +51,30 @@ const BRAND_SVG: Record<Brand, string> = {
   ollama: ollamaSvg
 }
 
-const AGENT_SVG: Record<AgentId, string> = { claude: claudeCodeSvg, codex: codexSvg, gemini: geminiCliSvg }
+// Agent CLI marks by their name in the catalog (`AgentSpec.icon`); provider marks double for some.
+const AGENT_SVG: Record<string, string> = {
+  'claudecode-color': claudeCodeSvg,
+  'codex-color': codexSvg,
+  'geminicli-color': geminiCliSvg,
+  'antigravity-color': antigravitySvg,
+  'qoder-color': qoderSvg,
+  pi: piSvg,
+  opencode: opencodeSvg,
+  cursor: cursorSvg,
+  githubcopilot: copilotSvg,
+  kimi: kimiSvg,
+  'qwen-color': qwenSvg,
+  'codebuddy-color': codebuddySvg,
+  goose: gooseSvg,
+  cline: clineSvg,
+  devin: devinSvg,
+  xai: xaiSvg,
+  commandcode: commandCodeSvg,
+  hermesagent: hermesSvg,
+  'deepseek-color': deepseekSvg,
+  'minimax-color': minimaxSvg,
+  'mistral-color': mistralSvg
+}
 
 /** Inline an SVG at the given size, giving its gradient ids a per-instance suffix so copies don't clash. */
 function Svg({ raw, size, className, title }: { raw: string; size: number; className?: string; title?: string }) {
@@ -65,7 +102,7 @@ function Svg({ raw, size, className, title }: { raw: string; size: number; class
   )
 }
 
-/** The provider mark for a model: Claude for claude-*, OpenAI for gpt-*, Gemini for gemini-*, and so on. */
+/** The provider mark for a model: Claude for claude-*, OpenAI for gpt-*, Gemini for gemini-*, and so on. Falls back to the agent's mark. */
 export function ModelIcon({
   model,
   agent,
@@ -77,10 +114,24 @@ export function ModelIcon({
   size?: number
   className?: string
 }) {
-  return <Svg raw={BRAND_SVG[modelBrand(model, agent)]} size={size} className={className} />
+  const brand = modelBrand(model, agent)
+  if (!brand) return <AgentGlyph agent={agent} size={size} />
+  return <Svg raw={BRAND_SVG[brand]} size={size} className={className} />
 }
 
-/** The agent CLI's own mark (Claude Code, Codex, Gemini CLI). `muted` greys it for dense lists. */
+/** The agent CLI's own mark, or a neutral monogram for one without. `muted` greys it for dense lists. */
 export function AgentGlyph({ agent, size = 14, muted }: { agent: AgentId; size?: number; muted?: boolean }) {
-  return <Svg raw={AGENT_SVG[agent]} size={size} className={muted ? 'opacity-55 grayscale' : undefined} />
+  const spec = agentSpec(agent)
+  const raw = spec?.icon ? AGENT_SVG[spec.icon] : undefined
+  if (raw) return <Svg raw={raw} size={size} className={muted ? 'opacity-55 grayscale' : undefined} />
+  const name = spec?.name ?? agent
+  return (
+    <span
+      aria-hidden
+      className={`inline-grid shrink-0 place-items-center rounded-[28%] bg-surface-3 font-semibold text-fg-2 ${muted ? 'opacity-55' : ''}`}
+      style={{ width: size, height: size, fontSize: Math.max(8, Math.round(size * 0.5)) }}
+    >
+      {name.replace(/[^\p{L}\p{N}]/gu, '').slice(0, size >= 22 ? 2 : 1).replace(/^./, (c) => c.toUpperCase())}
+    </span>
+  )
 }

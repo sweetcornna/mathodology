@@ -1,7 +1,9 @@
 import { accessSync, constants, existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
-import type { AgentId, AgentInfo, Settings } from '@shared/types'
+import { parseEnv } from '@shared/args'
+import { agentSpec } from '@shared/agents'
+import type { AgentId, AgentInfo, AgentSettings, Settings } from '@shared/types'
 import type { AgentAdapter } from './base'
 import { execCli } from './launch'
 
@@ -99,30 +101,59 @@ export function whichSync(name: string, env: NodeJS.ProcessEnv, platform: NodeJS
   return undefined
 }
 
+const BLANK: AgentSettings = { binaryPath: '', defaultModel: '', extraArgs: '', env: '' }
+
+/** An agent's settings, with defaults for one the user never changed. */
+export function agentSettings(settings: Settings, id: AgentId): AgentSettings {
+  return { ...BLANK, ...settings.agents[id] }
+}
+
+/**
+ * The environment a CLI runs with: the login shell's, plus what the user set for this agent.
+ * `KEY=` with nothing after it removes KEY, e.g. a gateway token meant for another agent.
+ */
+export function envFor(env: NodeJS.ProcessEnv, settings: AgentSettings): NodeJS.ProcessEnv {
+  const extra = Object.entries(parseEnv(settings.env))
+  if (!extra.length) return env
+  const out = { ...env }
+  for (const [key, value] of extra) {
+    if (value) out[key] = value
+    else delete out[key]
+  }
+  return out
+}
+
 export function resolveBinary(adapter: AgentAdapter, settings: Settings, env: NodeJS.ProcessEnv): string | undefined {
-  const override = settings.agents[adapter.id].binaryPath.trim()
+  const override = agentSettings(settings, adapter.id).binaryPath.trim()
   if (override) return existsSync(override) ? override : undefined
-  return whichSync(adapter.binaryName, env)
+  for (const name of adapter.binaryNames) {
+    const found = whichSync(name, env)
+    if (found) return found
+  }
+  return undefined
 }
 
 export async function detectAgents(
   adapters: Record<AgentId, AgentAdapter>,
   settings: Settings
 ): Promise<AgentInfo[]> {
-  const env = await agentEnv()
+  const shellEnv = await agentEnv()
   return Promise.all(
     Object.values(adapters).map(async (a): Promise<AgentInfo> => {
+      const env = envFor(shellEnv, agentSettings(settings, a.id))
       const path = resolveBinary(a, settings, env)
       const base = {
         id: a.id,
         name: a.name,
         models: a.models,
         supportsApproval: a.supportsApproval,
-        supportsResume: a.supportsResume
+        supportsResume: a.supportsResume,
+        route: a.route,
+        supersededBy: agentSpec(a.id)?.supersededBy
       }
       if (!path) return { ...base, available: false, note: 'not-found' }
       const [out, found] = await Promise.all([
-        run(path, a.versionArgs, env),
+        a.versionArgs.length ? run(path, a.versionArgs, env) : Promise.resolve(''),
         a.inspect ? a.inspect(path, env).catch(() => ({ models: [] })) : Promise.resolve({ models: [] })
       ])
       const version = /\d+\.\d+\.\d+[\w.-]*/.exec(out)?.[0]
@@ -132,8 +163,8 @@ export async function detectAgents(
         account: 'account' in found ? found.account : undefined,
         path,
         version,
-        available: Boolean(version),
-        note: version ? undefined : 'no-version'
+        available: Boolean(version) || !a.versionArgs.length,
+        note: version || !a.versionArgs.length ? undefined : 'no-version'
       }
     })
   )

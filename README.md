@@ -16,7 +16,7 @@
 
 ![Mathodology Studio](apps/studio/docs/studio-zh.png)
 
-Mathodology 让 Claude Code、Codex 和 Gemini CLI 按数模的方式工作：读懂题目，
+Mathodology 让 Claude Code、Codex、Antigravity CLI 等编程 agent 按数模的方式工作：读懂题目，
 建立可解释的模型，用实验检验结论，画出说明问题的图，只引用查得到的文献，
 再把论文写清楚。
 
@@ -60,16 +60,16 @@ Mathodology 让 Claude Code、Codex 和 Gemini CLI 按数模的方式工作：�
 [Studio](apps/studio/README.md) 是开源桌面工作台（macOS、Windows、Linux），不调用模型 API，
 不保存密钥，不收集数据。
 
-- 驱动本机已登录的 Claude Code、Codex 或 Gemini CLI，回合之间可切换
+- 驱动本机已登录的 agent CLI（Claude Code、Codex、Antigravity CLI、Qoder CLI、pi 等二十多种），每个走它自己的程序接口，回合之间可切换
 - 图表、表格和代码每次修改都存一个版本，可对比、恢复，并追溯到产生它的回合
 - 只读审阅把每条结论对照工具记录；引用逐条溯源，DOI 系统查无此号的标为疑似编造
 - 文献面板检索论文，核验 DOI 后写入 `references.bib`，并可逐条核对整份参考文献
 - 自动安装 [humanizer](https://github.com/blader/humanizer)，改掉论文里的 AI 腔；每次启动检查并更新
 - MCP 连接器在设置里配一次，三个 agent 同步使用；内置检索 free-search-mcp 每次启动更新到最新版
 
-**下载 v0.17.1**：[macOS DMG](https://github.com/sweetcornna/mathodology/releases/download/v0.17.1/Mathodology-Studio-0.17.1-arm64.dmg)（Apple 芯片）·
-[Windows 安装包](https://github.com/sweetcornna/mathodology/releases/download/v0.17.1/Mathodology-Studio-0.17.1-x64-setup.exe)（x64）·
-[Linux .deb / AppImage](https://github.com/sweetcornna/mathodology/releases/tag/v0.17.1)（x64、arm64）。
+**下载 v0.18.0**：[macOS DMG](https://github.com/sweetcornna/mathodology/releases/download/v0.18.0/Mathodology-Studio-0.18.0-arm64.dmg)（Apple 芯片）·
+[Windows 安装包](https://github.com/sweetcornna/mathodology/releases/download/v0.18.0/Mathodology-Studio-0.18.0-x64-setup.exe)（x64）·
+[Linux .deb / AppImage](https://github.com/sweetcornna/mathodology/releases/tag/v0.18.0)（x64、arm64）。
 应用未签名：macOS 首次打开请在访达里按住 Control 点按应用，选择“打开”；Windows 弹出 SmartScreen
 时点“更多信息”→“仍要运行”；Ubuntu 23.10 及以后请用 .deb，那里的 AppImage 用不了 Chromium 沙箱。
 Windows 安装包的签名方式见[代码签名策略（Code signing policy）](apps/studio/README.md#code-signing-policy)。

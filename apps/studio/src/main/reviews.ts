@@ -3,7 +3,7 @@ import { mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { FindingSeverity, FindingStatus, Project, Review, ReviewFinding, Session, SessionEvent, Settings } from '@shared/types'
 import type { Turn } from './agents/base'
-import { agentEnv, resolveBinary } from './agents/detect'
+import { agentEnv, agentSettings, envFor, resolveBinary } from './agents/detect'
 import { traceCitations, traceSummary } from './citetrace'
 import type { Fetcher } from './refcheck'
 import { ADAPTERS } from './sessions'
@@ -259,7 +259,7 @@ export class ReviewManager {
       id: randomUUID(),
       sessionId,
       agent: session.agent,
-      model: session.model || settings.agents[session.agent].defaultModel || undefined,
+      model: session.model || agentSettings(settings, session.agent).defaultModel || undefined,
       status: 'running',
       createdAt: Date.now(),
       throughSeq: events[events.length - 1]?.seq ?? 0,
@@ -287,6 +287,10 @@ export class ReviewManager {
 
   private async run(review: Review, session: Session, project: Project, events: SessionEvent[], settings: Settings, abort: AbortController): Promise<void> {
     const adapter = ADAPTERS[session.agent]
+    if (!adapter) {
+      this.save({ ...review, status: 'error', error: `Unknown agent ${session.agent}.`, finishedAt: Date.now() })
+      return
+    }
     // Studio traces citations itself first, so the reviewer can spend its effort on substance. At the time
     // limit (or on cancel) lookups still out count as unverifiable; every finding already made is kept.
     const timer = setTimeout(() => abort.abort(), TRACE_TIMEOUT)
@@ -300,7 +304,7 @@ export class ReviewManager {
     }
     if (citationFindings.length) this.save({ ...review, findings: citationFindings })
 
-    const env = await agentEnv()
+    const env = envFor(await agentEnv(), agentSettings(settings, session.agent))
     // A cancel can arrive while the environment is read.
     if (this.cancelled.has(review.id)) {
       this.save({ ...review, status: 'cancelled', findings: citationFindings, finishedAt: Date.now() })
@@ -324,8 +328,9 @@ export class ReviewManager {
         effort: session.effort || undefined,
         permissionMode: 'plan',
         ephemeral: true,
-        settings: settings.agents[session.agent],
-        env
+        settings: agentSettings(settings, session.agent),
+        env,
+        mcpServers: settings.connectors.filter((c) => c.enabled)
       },
       {
         emit: (body) => {

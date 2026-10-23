@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ArrowRight, Check, ExternalLink, FolderOpen, RefreshCw } from 'lucide-react'
-import type { AgentId } from '@shared/types'
+import { agentSpec } from '@shared/agents'
 import { api } from '../lib/api'
 import { useT } from '../lib/i18n'
 import { useStudio } from '../store'
@@ -9,11 +9,8 @@ import { Logo } from './Logo'
 import { NewProjectForm } from './NewProjectDialog'
 import { Modal, Segmented, Spinner } from './ui'
 
-const INSTALL: Record<AgentId, { cmd: string; url: string }> = {
-  claude: { cmd: 'npm install -g @anthropic-ai/claude-code', url: 'https://docs.claude.com/en/docs/claude-code/overview' },
-  codex: { cmd: 'npm install -g @openai/codex', url: 'https://github.com/openai/codex' },
-  gemini: { cmd: 'npm install -g @google/gemini-cli', url: 'https://github.com/google-gemini/gemini-cli' }
-}
+// Agents offered when none is installed; the rest of the catalog is named below the list.
+const SUGGESTED = ['claude', 'codex', 'agy']
 
 function Steps({ step }: { step: number }) {
   return (
@@ -43,6 +40,8 @@ export function Onboarding() {
 
   if (!settings) return null
   const available = agents.filter((a) => a.available)
+  const listed = agents.filter((a) => a.available || (!available.length && SUGGESTED.includes(a.id)))
+  const others = agents.filter((a) => !listed.includes(a))
 
   return (
     <Modal open={open} onClose={() => void finish()} width={600} hideClose label={t('onboard.welcome')}>
@@ -91,7 +90,8 @@ export function Onboarding() {
                   <Spinner /> …
                 </div>
               )}
-              {agents.map((a) => {
+              {listed.map((a) => {
+                const install = agentSpec(a.id)?.install
                 const isDefault = settings.defaultAgent === a.id
                 return (
                   <div
@@ -108,7 +108,7 @@ export function Onboarding() {
                           <span className="rounded-full bg-surface-2 px-1.5 text-[0.714rem] text-fg-3">{t('settings.notFound')}</span>
                         )}
                       </div>
-                      <div className="truncate font-mono text-[0.786rem] text-fg-3">{a.available ? a.path : INSTALL[a.id].cmd}</div>
+                      <div className="truncate font-mono text-[0.786rem] text-fg-3">{a.available ? a.path : install?.cmd ?? install?.url}</div>
                     </div>
                     {a.available ? (
                       isDefault ? (
@@ -122,7 +122,7 @@ export function Onboarding() {
                         </button>
                       )
                     ) : (
-                      <button className="btn btn-ghost btn-sm" onClick={() => void api.call('shell:openExternal', INSTALL[a.id].url)}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => install && void api.call('shell:openExternal', install.url)}>
                         <ExternalLink size={13} />
                         {t('settings.install')}
                       </button>
@@ -131,6 +131,7 @@ export function Onboarding() {
                 )
               })}
               {agents.length > 0 && !available.length && <p className="text-[0.929rem] text-warning-text">{t('onboard.none')}</p>}
+              {others.length > 0 && <p className="text-[0.857rem] leading-relaxed text-fg-3">{t('onboard.more', { names: others.map((a) => a.name).join(' · ') })}</p>}
             </div>
           </div>
         )}

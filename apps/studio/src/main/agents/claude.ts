@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { ModelInfo, PermissionMode } from '@shared/types'
+import type { AgentId, ModelInfo, PermissionMode } from '@shared/types'
 import {
   askCli,
   classifyTool,
@@ -47,7 +47,8 @@ function toolResultText(content: unknown): string {
 
 /**
  * Turns Claude Code `--output-format stream-json --verbose --include-partial-messages` lines into
- * normalized events. Kept free of process handling so it can be tested against recorded streams.
+ * normalized events. Qoder CLI writes the same stream (without partial messages). Kept free of
+ * process handling so it can be tested against recorded streams.
  */
 export class ClaudeStreamParser {
   /** Streaming block ids by content-block index of the message being streamed. */
@@ -62,7 +63,10 @@ export class ClaudeStreamParser {
   private tokens = 0
   private callInput = 0
 
-  constructor(private readonly sink: TurnSink) {}
+  constructor(
+    private readonly sink: TurnSink,
+    private readonly agent: AgentId = 'claude'
+  ) {}
 
   line(raw: string): void {
     const msg = parseJson(raw)
@@ -91,7 +95,7 @@ export class ClaudeStreamParser {
       if (id) this.sink.nativeSession(id)
       this.sink.emit({
         kind: 'session.started',
-        agent: 'claude',
+        agent: this.agent,
         model: typeof msg.model === 'string' ? msg.model : undefined,
         nativeSessionId: id || undefined,
         cwd: String(msg.cwd ?? '')
@@ -276,14 +280,23 @@ export function claudeArgs(req: TurnRequest): string[] {
   return args
 }
 
-/** Turn the model list from Claude Code's `initialize` control response into Studio's shape. */
+const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+
+/** Effort levels in increasing order; Qoder lists them unordered. */
+function sortEfforts(levels: string[]): string[] {
+  const rank = (e: string): number => (EFFORT_ORDER.includes(e) ? EFFORT_ORDER.indexOf(e) : EFFORT_ORDER.length)
+  return [...levels].sort((a, b) => rank(a) - rank(b))
+}
+
+/** Turn the model list from Claude Code's (or Qoder CLI's) `initialize` control response into Studio's shape. */
 export function claudeModels(list: unknown): ModelInfo[] {
   if (!Array.isArray(list)) return []
   return list.flatMap((raw): ModelInfo[] => {
     const m = raw as Json
     const value = String(m.value ?? '')
     if (!value) return []
-    const efforts = Array.isArray(m.supportedEffortLevels) ? m.supportedEffortLevels.map(String) : undefined
+    const levels = m.supportedEffortLevels ?? m.efforts
+    const efforts = Array.isArray(levels) ? sortEfforts(levels.map(String)) : undefined
     return [
       {
         // The "default" entry follows the account's recommended model, so Studio passes no --model.
@@ -291,25 +304,28 @@ export function claudeModels(list: unknown): ModelInfo[] {
         label: String(m.displayName ?? value),
         description: typeof m.description === 'string' ? m.description : undefined,
         model: typeof m.resolvedModel === 'string' ? m.resolvedModel : undefined,
-        efforts: efforts?.length ? efforts : undefined
+        efforts: efforts?.length ? efforts : undefined,
+        defaultEffort: typeof m.defaultEffort === 'string' ? m.defaultEffort : undefined
       }
     ]
   })
 }
 
-/** Ask Claude Code for its models and account through the SDK `initialize` request; no prompt is sent. */
-function inspectClaude(binary: string, env: NodeJS.ProcessEnv): Promise<AgentInspection> {
+/** Ask the CLI for its models and account through the SDK `initialize` request; no prompt is sent. */
+function inspectStream(binary: string, args: string[], env: NodeJS.ProcessEnv): Promise<AgentInspection> {
   return askCli<AgentInspection>(
     binary,
-    ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'],
+    args,
     env,
     (msg) => {
       if (msg.type !== 'control_response') return undefined
       const outer = (msg.response ?? {}) as Json
       const body = (outer.response ?? outer) as Json
       const account = (body.account ?? {}) as Json
+      const models = claudeModels(body.models)
       return {
-        models: claudeModels(body.models),
+        // Qoder lists only named models; Studio's lists start with the CLI's own default.
+        models: models.length && !models.some((m) => m.id === '') ? [{ id: '', label: 'Default' }, ...models] : models,
         account:
           account.subscriptionType || account.email
             ? {
@@ -323,83 +339,110 @@ function inspectClaude(binary: string, env: NodeJS.ProcessEnv): Promise<AgentIns
   ).then((r) => r ?? { models: [] })
 }
 
-export const claudeAdapter: AgentAdapter = {
+/** What differs between CLIs that speak Claude Code's stream-json and control protocol. */
+export interface ClaudeStreamFlavour {
+  id: AgentId
+  name: string
+  binaryNames: string[]
+  args(req: TurnRequest): string[]
+  /** Arguments for a stream-json session that only answers `initialize`. */
+  inspectArgs: string[]
+  models: ModelInfo[]
+}
+
+/** An adapter for a CLI that speaks Claude Code's stream-json, with approvals over the control protocol. */
+export function claudeStreamAdapter(flavour: ClaudeStreamFlavour): AgentAdapter {
+  const { id, name } = flavour
+  return {
+    id,
+    name,
+    binaryNames: flavour.binaryNames,
+    route: 'stream-json',
+    supportsApproval: true,
+    supportsResume: true,
+    takesSessionId: true,
+    systemPromptEachTurn: true,
+    versionArgs: ['--version'],
+    models: flavour.models,
+    inspect: (binary, env) => inspectStream(binary, flavour.inspectArgs, env),
+    start(req: TurnRequest, sink: TurnSink): Turn {
+      const parser = new ClaudeStreamParser(sink, id)
+      const { child, exited, kill } = spawnLines(req.binary, flavour.args(req), req.cwd, req.env, (l) => parser.line(l))
+      const write = (obj: unknown): void => {
+        if (!child.stdin.destroyed) child.stdin.write(JSON.stringify(obj) + '\n')
+      }
+      write({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: req.prompt }] } })
+
+      let interrupted = false
+      const original = parser.line.bind(parser)
+      // Close stdin once the turn's result arrives so the CLI exits.
+      parser.line = (raw: string) => {
+        original(raw)
+        if (parser.sawResult && !child.stdin.destroyed) child.stdin.end()
+      }
+
+      const done = exited.then(({ code, signal, stderr }) => {
+        for (const p of parser.pending.values()) {
+          sink.emit({ kind: 'permission.resolved', requestId: p.requestId, allow: false })
+        }
+        parser.pending.clear()
+        if (!parser.sawResult) {
+          if (!interrupted) {
+            const tail = stderrTail(stderr)
+            sink.emit({
+              kind: 'notice',
+              level: 'error',
+              text: `${name} exited (${signal ?? code ?? 'unknown'})${tail ? `:\n${tail}` : ''}`,
+              code: 'agentExited',
+              vars: { agent: name, status: String(signal ?? code ?? '?'), tail }
+            })
+          }
+          sink.emit({ kind: 'turn.completed', ok: false, summary: interrupted ? 'interrupted' : undefined })
+        }
+      })
+
+      return {
+        interrupt() {
+          interrupted = true
+          write({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } })
+          setTimeout(() => {
+            if (child.exitCode === null) {
+              child.stdin.end()
+              kill('SIGINT')
+            }
+          }, 1500)
+          setTimeout(() => child.exitCode === null && kill('SIGKILL'), 6000)
+        },
+        respondPermission(requestId, allow, always) {
+          const p = parser.pending.get(requestId)
+          if (!p) return
+          parser.pending.delete(requestId)
+          const response = allow
+            ? {
+                behavior: 'allow',
+                updatedInput: p.input,
+                ...(always && Array.isArray(p.suggestions) ? { updatedPermissions: p.suggestions } : {})
+              }
+            : { behavior: 'deny', message: 'The user declined this action in Mathodology Studio.' }
+          write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } })
+          sink.emit({ kind: 'permission.resolved', requestId, allow, always })
+        },
+        done
+      }
+    }
+  }
+}
+
+export const claudeAdapter: AgentAdapter = claudeStreamAdapter({
   id: 'claude',
   name: 'Claude Code',
-  binaryName: 'claude',
-  supportsApproval: true,
-  supportsResume: true,
-  versionArgs: ['--version'],
+  binaryNames: ['claude'],
+  args: claudeArgs,
+  inspectArgs: ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose'],
   models: [
     { id: '', label: 'Default', model: 'claude' },
     { id: 'opus', label: 'Opus', model: 'claude-opus' },
     { id: 'sonnet', label: 'Sonnet', model: 'claude-sonnet' },
     { id: 'haiku', label: 'Haiku', model: 'claude-haiku' }
-  ],
-  inspect: inspectClaude,
-  start(req: TurnRequest, sink: TurnSink): Turn {
-    const parser = new ClaudeStreamParser(sink)
-    const { child, exited, kill } = spawnLines(req.binary, claudeArgs(req), req.cwd, req.env, (l) => parser.line(l))
-    const write = (obj: unknown): void => {
-      if (!child.stdin.destroyed) child.stdin.write(JSON.stringify(obj) + '\n')
-    }
-    write({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: req.prompt }] } })
-
-    let interrupted = false
-    const original = parser.line.bind(parser)
-    // Close stdin once the turn's result arrives so the CLI exits.
-    parser.line = (raw: string) => {
-      original(raw)
-      if (parser.sawResult && !child.stdin.destroyed) child.stdin.end()
-    }
-
-    const done = exited.then(({ code, signal, stderr }) => {
-      for (const p of parser.pending.values()) {
-        sink.emit({ kind: 'permission.resolved', requestId: p.requestId, allow: false })
-      }
-      parser.pending.clear()
-      if (!parser.sawResult) {
-        if (!interrupted) {
-          const tail = stderrTail(stderr)
-          sink.emit({
-            kind: 'notice',
-            level: 'error',
-            text: `Claude Code exited (${signal ?? code ?? 'unknown'})${tail ? `:\n${tail}` : ''}`,
-          code: 'agentExited',
-          vars: { agent: 'Claude Code', status: String(signal ?? code ?? '?'), tail }
-          })
-        }
-        sink.emit({ kind: 'turn.completed', ok: false, summary: interrupted ? 'interrupted' : undefined })
-      }
-    })
-
-    return {
-      interrupt() {
-        interrupted = true
-        write({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } })
-        setTimeout(() => {
-          if (child.exitCode === null) {
-            child.stdin.end()
-            kill('SIGINT')
-          }
-        }, 1500)
-        setTimeout(() => child.exitCode === null && kill('SIGKILL'), 6000)
-      },
-      respondPermission(requestId, allow, always) {
-        const p = parser.pending.get(requestId)
-        if (!p) return
-        parser.pending.delete(requestId)
-        const response = allow
-          ? {
-              behavior: 'allow',
-              updatedInput: p.input,
-              ...(always && Array.isArray(p.suggestions) ? { updatedPermissions: p.suggestions } : {})
-            }
-          : { behavior: 'deny', message: 'The user declined this action in Mathodology Studio.' }
-        write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } })
-        sink.emit({ kind: 'permission.resolved', requestId, allow, always })
-      },
-      done
-    }
-  }
-}
+  ]
+})
