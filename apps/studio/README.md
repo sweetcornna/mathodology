@@ -134,26 +134,32 @@ pnpm dev
 
 All three build on a Mac, including Apple silicon, without Wine.
 
-macOS and Linux builds are unsigned, and so are Windows builds you make
-yourself; released Windows installers are signed (see the code signing policy
-below). On first launch macOS asks for confirmation; open the app from Finder
-with Control-click → Open, or clear the quarantine flag on the copy you built
-yourself. Windows SmartScreen may still warn about a new release until it has
-been downloaded often enough: choose More info → Run anyway. On Ubuntu 23.10
-and later, AppArmor keeps AppImages from using Chromium's sandbox; the .deb
-installs a profile that allows it.
+Builds are unsigned for now; signing for Windows is being set up (see the code
+signing policy below). On first launch macOS asks for confirmation; open the app
+from Finder with Control-click → Open, or clear the quarantine flag on the copy
+you built yourself. Windows SmartScreen may warn about an unknown publisher:
+choose More info → Run anyway. On Ubuntu 23.10 and later, AppArmor keeps
+AppImages from using Chromium's sandbox; the .deb installs a profile that
+allows it.
+
+Release packages: the
+[Studio Windows workflow](../../.github/workflows/studio-windows.yml) builds the
+Windows installer on a GitHub-hosted runner when a `v*` tag is pushed, and its
+artifact is attached to the release; the macOS and Linux packages are built
+with `pnpm dist` and `pnpm dist:linux`. Pull requests that touch Studio or the
+kit run the same workflow, unsigned.
 
 ## Code signing policy
 
-Free code signing provided by [SignPath.io](https://about.signpath.io),
-certificate by [SignPath Foundation](https://signpath.org).
-
-The Windows installer and `Mathodology Studio.exe` inside it are built from
-this repository by the
-[Studio Windows workflow](../../.github/workflows/studio-windows.yml) on
-GitHub-hosted runners and signed only after an approver accepts the release's
-signing request in SignPath. Windows shows the publisher as SignPath
-Foundation. Electron's own libraries ship as upstream builds them.
+Windows installers on the releases page are built from this repository by the
+Studio Windows workflow on GitHub-hosted runners. Signing them through
+[SignPath.io](https://about.signpath.io), free for open source with a
+certificate from [SignPath Foundation](https://signpath.org), is being set up;
+until the first signed release they are unsigned. Once it is on, the installer
+and the `Mathodology Studio.exe` inside it are signed only after an approver
+accepts the release's signing request in SignPath, and Windows shows the
+publisher as SignPath Foundation. Electron's own libraries ship as upstream
+builds them.
 
 - Committers and reviewers: [@sweetcornna](https://github.com/sweetcornna).
   Pull requests from anyone else are reviewed before they are merged.

@@ -16,7 +16,7 @@ python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 
 The standard-library checker covers skill/role metadata, local Markdown links,
 known skill references and allowed repository paths (skills, roles, workflows,
-docs and `apps/studio/`). Individual commands are
+docs, `apps/studio/` and Studio's Windows workflow). Individual commands are
 `metadata`, `links`, `boundary` and `selftest`. It supports a source export without
 Git; in a checkout it also inspects tracked paths. It does not enforce document
 heading counts, search wording, updater contracts or contest run schemas.
@@ -41,4 +41,9 @@ authorized changes are merged, tag that exact commit and publish the requested
 release with concise changes, migration notes and truthful validation results.
 Never move an existing release tag to a different commit. Verify the published
 tag and release point to the intended source. GitHub's source archives are enough
-unless the user requests additional artifacts.
+unless the user requests additional artifacts. For a Studio release, bump
+`apps/studio/package.json` and the download links in both READMEs, build the
+macOS and Linux packages with `pnpm dist` and `pnpm dist:linux`, and attach the
+Windows installer from the `.github/workflows/studio-windows.yml` run on the
+release tag (signed once SignPath is configured; each request waits for an
+approver). Publish SHA-256 sums of every file.
