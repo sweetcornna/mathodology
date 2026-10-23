@@ -66,6 +66,8 @@ pnpm dev
 `pnpm dist` 构建未签名的 macOS DMG，`pnpm dist:win` 和 `pnpm dist:linux` 构建 Windows
 安装包和 Linux 的 .deb、AppImage。Studio 新建项目时安装技能、角色、工作提示词
 和 humanizer，不覆盖已有文件；每次启动更新 humanizer，并把 free-search-mcp 刷新到最新版。
+不想自己构建的话，从 [Releases](https://github.com/sweetcornna/mathodology/releases/latest)
+下载即可：Windows 安装包由 GitHub Actions 从本仓库构建，SignPath 签名正在接入，目前仍未签名。
 详见 [Studio 说明](../apps/studio/README.md)。
 
 ## 更新和迁移

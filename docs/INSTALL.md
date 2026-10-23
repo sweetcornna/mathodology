@@ -77,7 +77,11 @@ pnpm dev
 build the Windows installer and the Linux .deb and AppImage. Studio installs the
 skills, roles, workflow prompts and humanizer into each project it creates, and
 leaves existing files alone. At each launch it updates humanizer and refreshes
-free-search-mcp to the newest release. See the [Studio README](../apps/studio/README.md).
+free-search-mcp to the newest release. Ready-made packages are on the
+[releases page](https://github.com/sweetcornna/mathodology/releases/latest); the
+Windows installer there is built from this repository by GitHub Actions and is
+unsigned until SignPath signing is set up. See the
+[Studio README](../apps/studio/README.md).
 
 ## Update and migrate
 

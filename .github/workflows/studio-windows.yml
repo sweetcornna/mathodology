@@ -1,0 +1,134 @@
+# Builds the Windows installer of Mathodology Studio on a GitHub-hosted runner and, once the
+# SignPath variables are set, signs the app executable and then the installer through SignPath
+# (free code signing for open source, certificate by SignPath Foundation). Each signing request
+# waits for an approver to accept it in SignPath. Without the variables the installer is built
+# unsigned, as it always is for pull requests. The result is a workflow artifact; attach it to the
+# release by hand.
+#
+# Repository settings → Secrets and variables → Actions:
+#   secret   SIGNPATH_API_TOKEN            token of a SignPath user with submitter rights
+#   variable SIGNPATH_ORGANIZATION_ID      the SignPath organization id
+#   variable SIGNPATH_PROJECT_SLUG         defaults to mathodology
+#   variable SIGNPATH_SIGNING_POLICY_SLUG  defaults to release-signing
+# The artifact configurations studio-app and studio-installer are in apps/studio/build/signpath/.
+name: Studio Windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+  # Pull requests build the installer unsigned, to check the Windows build.
+  pull_request:
+    paths: ['apps/studio/**', '.claude/skills/**', '.claude/agents/**', '.github/workflows/studio-windows.yml']
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 300
+    env:
+      SIGN: ${{ github.event_name != 'pull_request' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG || 'mathodology' }}
+      POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/studio
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/studio/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      - id: meta
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "installer=Mathodology-Studio-$version-x64-setup.exe" >> "$GITHUB_OUTPUT"
+      - name: Check the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: test "${GITHUB_REF_NAME#v}" = "${{ steps.meta.outputs.version }}"
+
+      # The app folder is packed first so its executable is signed before the installer wraps it.
+      - name: Build the app folder
+        run: pnpm exec electron-vite build && pnpm exec electron-builder --win --x64 --dir --publish never
+      - id: unsigned-app
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: studio-app-unsigned
+          path: apps/studio/release/${{ steps.meta.outputs.version }}/win-unpacked/
+          if-no-files-found: error
+      - name: Sign the app executable
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.POLICY_SLUG }}
+          artifact-configuration-slug: studio-app
+          github-artifact-id: ${{ steps.unsigned-app.outputs.artifact-id }}
+          parameters: |
+            version: ${{ toJSON(steps.meta.outputs.version) }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: apps/studio/release/signed-app
+
+      - name: Build the installer
+        run: |
+          app=release/${{ steps.meta.outputs.version }}/win-unpacked
+          [ "$SIGN" = true ] && app=release/signed-app
+          pnpm exec electron-builder --win nsis --x64 --prepackaged "$app" --publish never
+      - id: unsigned-installer
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: studio-installer-unsigned
+          path: apps/studio/release/${{ steps.meta.outputs.version }}/${{ steps.meta.outputs.installer }}
+          if-no-files-found: error
+      - name: Sign the installer
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.PROJECT_SLUG }}
+          signing-policy-slug: ${{ env.POLICY_SLUG }}
+          artifact-configuration-slug: studio-installer
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          parameters: |
+            version: ${{ toJSON(steps.meta.outputs.version) }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: apps/studio/release/signed
+
+      - id: final
+        run: |
+          dir=release/${{ steps.meta.outputs.version }}
+          [ "$SIGN" = true ] && dir=release/signed
+          echo "path=apps/studio/$dir/${{ steps.meta.outputs.installer }}" >> "$GITHUB_OUTPUT"
+      - name: Verify the signatures
+        if: env.SIGN == 'true'
+        shell: pwsh
+        working-directory: apps/studio/release
+        run: |
+          foreach ($f in @('signed-app/Mathodology Studio.exe', 'signed/${{ steps.meta.outputs.installer }}')) {
+            $s = Get-AuthenticodeSignature -LiteralPath $f
+            "$f : $($s.Status) $($s.SignerCertificate.Subject)"
+            if ($s.Status -ne 'Valid') { exit 1 }
+          }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.meta.outputs.installer }}
+          path: ${{ steps.final.outputs.path }}
+          if-no-files-found: error

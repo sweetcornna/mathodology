@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "studio-app": the packed app folder (win-unpacked) as a ZIP.
+     Only Studio's own executable is signed; Electron's DLLs and helpers stay as upstream ships them.
+     electron-builder writes a four-part ProductVersion (0.17.0.0) into the app executable. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="Mathodology Studio.exe" product-name="Mathodology Studio" product-version="${version}.0">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>
