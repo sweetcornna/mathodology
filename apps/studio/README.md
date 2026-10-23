@@ -182,8 +182,9 @@ builds them.
 Privacy: Studio sends nothing to the Mathodology project. It contacts other
 systems only for what you use:
 
-- The agent CLIs you run (Claude Code, Codex, Gemini CLI) send your prompts and
-  project files to their own providers under your accounts.
+- The agent CLIs you run (Claude Code, Codex, Antigravity CLI and the others)
+  send your prompts and project files to their own providers under your
+  accounts.
 - Reference checks look up the DOIs and titles you check at Crossref, DataCite,
   OpenAlex, arXiv and doi.org. The Mathodology Search connector
   (free-search-mcp) sends the queries you or an agent search for to public

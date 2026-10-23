@@ -45,9 +45,8 @@ The one application is Mathodology Studio in `apps/studio/`: an Electron
 desktop workbench that drives locally installed agent CLIs (Claude Code, Codex,
 Antigravity CLI, Qoder CLI, pi, oh-my-pi and the ACP agents in its catalog,
 each through its own programmatic interface) and installs the contest skills
-into each project. Its manifest,
-lockfile and sources stay inside that folder; see its
-[README](apps/studio/README.md). The one workflow,
+into each project. Its manifest, lockfile and sources stay inside that folder;
+see its [README](apps/studio/README.md). The one workflow,
 `.github/workflows/studio-windows.yml`, builds and signs its Windows installer
 (SignPath signs only builds from GitHub-hosted runners). Do not add other
 application source, datasets, deployment or build outputs, and never commit
