@@ -134,12 +134,44 @@ pnpm dev
 
 All three build on a Mac, including Apple silicon, without Wine.
 
-Builds are unsigned. On first launch macOS asks for confirmation; open the app
-from Finder with Control-click → Open, or clear the quarantine flag on the copy
-you built yourself. Windows SmartScreen may warn about an unknown publisher:
-choose More info → Run anyway. On Ubuntu 23.10 and later, AppArmor keeps
-AppImages from using Chromium's sandbox; the .deb installs a profile that
-allows it.
+macOS and Linux builds are unsigned, and so are Windows builds you make
+yourself; released Windows installers are signed (see the code signing policy
+below). On first launch macOS asks for confirmation; open the app from Finder
+with Control-click → Open, or clear the quarantine flag on the copy you built
+yourself. Windows SmartScreen may still warn about a new release until it has
+been downloaded often enough: choose More info → Run anyway. On Ubuntu 23.10
+and later, AppArmor keeps AppImages from using Chromium's sandbox; the .deb
+installs a profile that allows it.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io),
+certificate by [SignPath Foundation](https://signpath.org).
+
+The Windows installer and `Mathodology Studio.exe` inside it are built from
+this repository by the
+[Studio Windows workflow](../../.github/workflows/studio-windows.yml) on
+GitHub-hosted runners and signed only after an approver accepts the release's
+signing request in SignPath. Windows shows the publisher as SignPath
+Foundation. Electron's own libraries ship as upstream builds them.
+
+- Committers and reviewers: [@sweetcornna](https://github.com/sweetcornna).
+  Pull requests from anyone else are reviewed before they are merged.
+- Approvers: [@sweetcornna](https://github.com/sweetcornna).
+
+Privacy: Studio sends nothing to the Mathodology project. It contacts other
+systems only for what you use:
+
+- The agent CLIs you run (Claude Code, Codex, Gemini CLI) send your prompts and
+  project files to their own providers under your accounts.
+- Reference checks look up the DOIs and titles you check at Crossref, DataCite,
+  OpenAlex, arXiv and doi.org. The Mathodology Search connector
+  (free-search-mcp) sends the queries you or an agent search for to public
+  search engines; it also serves the Literature panel.
+- At each launch Studio asks GitHub whether the humanizer has a newer version,
+  and uvx fetches the newest free-search-mcp from PyPI. These requests carry no
+  project data. Turn them off in Settings with **Install and update Humanizer**
+  and the Mathodology Search connector.
 
 Set `STUDIO_USER_DATA=/some/dir` to run with a separate data directory, for
 example to see onboarding again or to test without touching your projects.

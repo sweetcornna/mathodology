@@ -77,7 +77,8 @@ Windows and Linux. It calls no model API, stores no keys and collects no data.
 The app is unsigned. On macOS, Control-click it in Finder and choose Open the
 first time; on Windows, choose More info → Run anyway if SmartScreen appears.
 On Ubuntu 23.10 and later use the .deb: AppImages cannot use Chromium's sandbox
-there. At least one agent CLI must be installed and signed in.
+there. At least one agent CLI must be installed and signed in. Windows
+installers follow the [code signing policy](apps/studio/README.md#code-signing-policy).
 
 Or run from source (Node.js 22.12+, pnpm 10):
 

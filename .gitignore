@@ -48,8 +48,12 @@ __pycache__/
 **/*.pyc
 **/*.pyo
 
-# Retired project trees should not be reintroduced; the desktop app lives in apps/studio.
-/.github/
+# Retired project trees should not be reintroduced; the desktop app lives in apps/studio. The one
+# workflow kept builds and signs Studio's Windows installer.
+/.github/*
+!/.github/workflows/
+/.github/workflows/*
+!/.github/workflows/studio-windows.yml
 /crates/
 /packages/
 /scripts/

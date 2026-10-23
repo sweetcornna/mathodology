@@ -72,6 +72,7 @@ Mathodology 让 Claude Code、Codex 和 Gemini CLI 按数模的方式工作：�
 [Linux .deb / AppImage](https://github.com/sweetcornna/mathodology/releases/tag/v0.17.0)（x64、arm64）。
 应用未签名：macOS 首次打开请在访达里按住 Control 点按应用，选择“打开”；Windows 弹出 SmartScreen
 时点“更多信息”→“仍要运行”；Ubuntu 23.10 及以后请用 .deb，那里的 AppImage 用不了 Chromium 沙箱。
+Windows 安装包的签名方式见[代码签名策略（Code signing policy）](apps/studio/README.md#code-signing-policy)。
 需要先装好并登录至少一个 agent CLI。
 
 或从源码运行（Node.js 22.12+、pnpm 10）：
