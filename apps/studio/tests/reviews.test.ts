@@ -15,7 +15,11 @@ const fake = vi.hoisted(() => ({
     throw new Error('no agent in this test')
   }
 }))
-vi.mock('../src/main/agents/detect', () => ({ agentEnv: () => fake.env(), resolveBinary: () => '/usr/bin/agent' }))
+vi.mock('../src/main/agents/detect', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/agents/detect')>()),
+  agentEnv: () => fake.env(),
+  resolveBinary: () => '/usr/bin/agent'
+}))
 vi.mock('../src/main/sessions', () => ({ ADAPTERS: { claude: { name: 'Claude Code', start: (req: unknown, sink: TurnSink) => fake.start(req, sink) } } }))
 
 const project: Project = { id: 'p', name: 'Demo', path: '/tmp/demo', contest: 'MCM', createdAt: 0, kitInstalled: true }
@@ -107,7 +111,7 @@ describe('ReviewManager', () => {
     deleted = false
     fake.env = () => Promise.resolve({})
   })
-  const settings = { locale: 'en', agents: { claude: { defaultModel: '' } } } as unknown as Settings
+  const settings = { locale: 'en', agents: { claude: { defaultModel: '' } }, connectors: [] } as unknown as Settings
   const store = { session: () => (deleted ? undefined : session), project: () => project, events: () => sessionEvents } as unknown as Store
   const offline: Fetcher = async () => ({ status: 404, ok: false, text: async () => '' })
 

@@ -26,9 +26,11 @@ function effortLabel(t: ReturnType<typeof useT>, effort: string): string {
 
 function AgentTabs({ agents, value, onPick }: { agents: AgentInfo[]; value: AgentId; onPick: (id: AgentId) => void }) {
   const t = useT()
+  // Installed agents only (and the current one): the catalog lists many more than anyone has.
+  const shown = agents.filter((a) => a.available || a.id === value)
   return (
-    <div className="grid grid-cols-3 gap-1 border-b border-line p-1.5">
-      {agents.map((a) => (
+    <div className="grid max-h-[132px] grid-cols-3 gap-1 overflow-y-auto border-b border-line p-1.5">
+      {shown.map((a) => (
         <button
           key={a.id}
           disabled={!a.available}

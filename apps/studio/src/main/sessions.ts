@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { basename, extname, isAbsolute, join, relative, sep } from 'node:path'
 import type {
-  AgentId,
   CreateSessionInput,
   SendMessageInput,
   Session,
@@ -11,19 +10,13 @@ import type {
   Settings,
   Project
 } from '@shared/types'
-import type { AgentAdapter, Turn } from './agents/base'
+import type { Turn } from './agents/base'
 import type { ArtifactStore, Attribution } from './artifacts'
-import { claudeAdapter } from './agents/claude'
-import { codexAdapter } from './agents/codex'
-import { agentEnv, resolveBinary } from './agents/detect'
-import { geminiAdapter } from './agents/gemini'
+import { agentEnv, agentSettings, envFor, resolveBinary } from './agents/detect'
+import { ADAPTERS } from './agents/registry'
 import type { Store } from './store'
 
-export const ADAPTERS: Record<AgentId, AgentAdapter> = {
-  claude: claudeAdapter,
-  codex: codexAdapter,
-  gemini: geminiAdapter
-}
+export { ADAPTERS }
 
 const STUDIO_PREAMBLE = `You are working inside Mathodology Studio, a desktop workbench for mathematical-modeling contests.
 The user reads your replies in a Markdown renderer with LaTeX ($...$ inline, $$...$$ display) and sees your tool calls as cards.
@@ -196,10 +189,11 @@ export class SessionManager {
 
     const settings = this.settings()
     const adapter = ADAPTERS[session.agent]
-    const env = await agentEnv()
+    const own = agentSettings(settings, session.agent)
+    const env = envFor(await agentEnv(), own)
     // Deleted (with its project, perhaps) while the environment was resolved.
     if (!this.store.session(session.id)) return
-    const binary = resolveBinary(adapter, settings, env)
+    const binary = adapter && resolveBinary(adapter, settings, env)
 
     let current: Session = session
     // Start from the stored session each time: the queue, title or model may change mid-turn.
@@ -214,12 +208,13 @@ export class SessionManager {
     save({ title: session.title || input.text.replace(/\s+/g, ' ').trim().slice(0, 48) || 'Untitled', status: 'running' })
 
     if (!binary) {
+      const agent = adapter?.name ?? session.agent
       this.emit(session.id, {
         kind: 'notice',
         level: 'error',
-        text: `${adapter.name} was not found. Install it or set its path in Settings → Agents.`,
+        text: `${agent} was not found. Install it or set its path in Settings → Agents.`,
         code: 'agentMissing',
-        vars: { agent: adapter.name }
+        vars: { agent }
       })
       this.emit(session.id, { kind: 'turn.completed', ok: false })
       save({ status: 'error' })
@@ -227,9 +222,9 @@ export class SessionManager {
     }
 
     const resumeId = current.nativeSessionId
-    // Claude and Gemini accept a session id up front, which makes the next turn's resume reliable.
-    // It is stored only once the agent confirms the session, so an aborted first turn starts fresh.
-    const newSessionId = !resumeId && session.agent !== 'codex' ? randomUUID() : undefined
+    // Some CLIs accept a session id up front, which makes the next turn's resume reliable. It is
+    // stored only once the agent confirms the session, so an aborted first turn starts fresh.
+    const newSessionId = !resumeId && adapter.takesSessionId ? randomUUID() : undefined
     let resumeFailed = false
     let turn: Turn
     try {
@@ -238,15 +233,16 @@ export class SessionManager {
           binary,
           cwd: project.path,
           prompt,
-          model: current.model || settings.agents[session.agent].defaultModel || undefined,
+          model: current.model || own.defaultModel || undefined,
           effort: current.effort || undefined,
           permissionMode: current.permissionMode,
           resumeId,
           newSessionId,
-          // Claude takes this as a system prompt each run; the others only need it once per thread.
-          systemAppend: session.agent === 'claude' || !resumeId ? STUDIO_PREAMBLE : undefined,
-          settings: settings.agents[session.agent],
-          env
+          // Some CLIs take this as a system prompt each run; the others only need it once per thread.
+          systemAppend: adapter.systemPromptEachTurn || !resumeId ? STUDIO_PREAMBLE : undefined,
+          settings: own,
+          env,
+          mcpServers: settings.connectors.filter((c) => c.enabled)
         },
         {
           emit: (body) => {
@@ -293,6 +289,8 @@ export class SessionManager {
             }
           },
           nativeSession: (id) => {
+            // A turn still winding down after you switched agents must not hand its id to the new one.
+            if (this.store.session(session.id)?.agent !== session.agent) return
             if (id && id !== current.nativeSessionId) save({ nativeSessionId: id })
           }
         }

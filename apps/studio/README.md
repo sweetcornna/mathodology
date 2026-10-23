@@ -1,7 +1,8 @@
 # Mathodology Studio
 
 A desktop workbench for mathematical modeling contests. Studio drives the agent
-CLIs you already use (Claude Code, Codex and Gemini CLI) inside a contest project
+CLIs you already use (Claude Code, Codex, Antigravity CLI, Qoder CLI, pi,
+oh-my-pi, OpenCode, Cursor CLI, Copilot CLI and others) inside a contest project
 that carries the Mathodology skills, and shows their work as a readable
 conversation with files, figures and a paper preview beside it.
 
@@ -25,12 +26,20 @@ CLI's own account and limits. It is MIT-licensed like the rest of the repository
   update` for the plugin, and the repository's newest commit for the copies it
   installed (copies you edited are left alone). It runs in the background, also
   for existing projects, and can be switched off in Settings.
+- **Agents.** Studio knows the command-line agents in
+  [magpie](https://github.com/yetone/magpie)'s catalog and drives each through
+  its own programmatic interface (see [Agent adapters](#agent-adapters)). Settings
+  shows the installed ones, with their route, account and models, and lists the
+  others with how to install them. Each agent can have its own binary path,
+  extra arguments and environment (`KEY=VALUE` lines; `KEY=` removes a variable).
 - **Sessions.** Any agent per session, switchable between turns. Conversations
   resume through each CLI's own session store.
 - **Models.** The model picker lists what each CLI reports for the signed-in
-  account (Claude Code's SDK handshake, Codex `model/list`, the models bundled
-  with Gemini CLI), with each provider's mark and a reasoning-effort setting
-  where the model supports one.
+  account (Claude Code's and Qoder CLI's SDK handshake, Codex `model/list`,
+  `agy models`, pi's and oh-my-pi's `get_available_models`, the models bundled
+  with Gemini CLI, and for ACP agents the models their last session offered),
+  with each provider's mark and a reasoning-effort setting where the model
+  supports one.
 - **Transcript.** Streamed replies and thinking, Markdown with KaTeX math, tool
   calls rolled up into short phrases with expandable details and diffs, a row
   of the files each turn produced (figure thumbnails, version, line changes),
@@ -101,10 +110,15 @@ CLI's own account and limits. It is MIT-licensed like the rest of the repository
 
 - macOS on Apple silicon, Windows 10 or 11 (x64), or Linux (x64 or arm64; the
   .deb for Debian and Ubuntu, the AppImage elsewhere).
-- At least one agent CLI on your `PATH`, signed in from a terminal once:
+- At least one agent CLI on your `PATH`, signed in from a terminal once, for
+  example:
   - Claude Code: `npm install -g @anthropic-ai/claude-code`
   - Codex: `npm install -g @openai/codex`
-  - Gemini CLI: `npm install -g @google/gemini-cli`
+  - Antigravity CLI: see [antigravity.google](https://antigravity.google/docs/cli)
+  - Qoder CLI: `npm install -g @qoder-ai/qodercli`
+  - pi: `npm install -g @earendil-works/pi-coding-agent`
+
+  Settings → Agents lists the rest with their install commands.
 - For development: Node.js 22.12 or newer and pnpm 10.
 
 On macOS and Linux, Studio resolves CLIs through your login shell, so tools
@@ -193,27 +207,42 @@ tests          Unit tests for the adapters, artifact store, reviews, connectors,
                reference checks and citation trace
 ```
 
+<a id="agent-adapters"></a>
 Each adapter starts the CLI for a turn and translates its output into one event
 model (`src/shared/types.ts`), so the interface does not depend on any one agent.
+The catalog is `src/shared/agents.ts`; every agent goes through the interface it
+ships for programs, never a screen scraper or another vendor's wrapper.
 
 | Agent | Protocol | Approvals | Resume |
 | --- | --- | --- | --- |
 | Claude Code | `-p` with `stream-json` input and output and partial messages; SDK control messages on stdin/stdout for permission prompts and interrupts | Per tool call | `--session-id`, then `--resume` |
 | Codex | `codex app-server` JSON-RPC: threads, turns, item notifications, plan updates and token usage | Per command and file change | `thread/resume` |
-| Gemini CLI | `--output-format stream-json`, one process per turn | Approval mode only | `--session-id`, then `--resume` |
+| Antigravity CLI | `-p=` with `--input-format stream-json` and `--output-format stream-json` (`{"event": …}` lines: init, step updates, result) | Mode only; what print mode declined is reported after the turn | `--conversation` |
+| Qoder CLI, Qoder CLI (China) | Claude Code's `stream-json` and SDK control protocol | Per tool call | `--session-id`, then `--resume` |
+| pi | `--mode rpc` (JSONL commands, session events) | None: pi has no approval step | `--session-id` |
+| oh-my-pi | `--mode rpc-ui`: pi's RPC plus dialogs, through which it asks before tool calls | Per tool call | `--resume` |
+| OpenCode, Cursor CLI, Copilot CLI, Kimi Code, Qwen Code, CodeBuddy Code, goose, Cline, Droid, Devin, Grok Build, MiniMax Code, Mistral Vibe, DeepSeek Harness, Command Code, Hermes Agent, MothX, Reasonix | The [Agent Client Protocol](https://agentclientprotocol.com) server each ships (`opencode acp`, `copilot --acp`, …): `session/new` or `session/resume`/`session/load`, `session/prompt`, `session/update` notifications; Studio's MCP connectors are passed per session | Per tool call (`session/request_permission`) | `session/resume`, or `session/load` with the replay hidden |
+| Gemini CLI (legacy) | `--output-format stream-json`, one process per turn | Approval mode only | `--session-id`, then `--resume` |
+
+Google moved Gemini CLI's personal (free, AI Pro and Ultra) accounts to
+Antigravity CLI; Studio keeps Gemini CLI for API keys and enterprise licences.
 
 Permission modes map onto each CLI:
 
-| Studio mode | Claude Code | Codex | Gemini CLI |
-| --- | --- | --- | --- |
-| Ask each time | `manual` | workspace-write, `untrusted` | `auto_edit` |
-| Accept edits | `acceptEdits` | workspace-write, `on-request` | `auto_edit` |
-| Plan only | `plan` | read-only, `never` | `plan` |
-| Full autonomy | `bypassPermissions` | danger-full-access, `never` | `yolo` |
+| Studio mode | Claude Code | Codex | Antigravity CLI | Qoder CLI | oh-my-pi | ACP agents |
+| --- | --- | --- | --- | --- | --- | --- |
+| Ask each time | `manual` | workspace-write, `untrusted` | `accept-edits` | `default` | `always-ask` | the agent's default mode; every request asks |
+| Accept edits | `acceptEdits` | workspace-write, `on-request` | `accept-edits` | `accept_edits` | `write` | its accept-edits mode; edit requests allowed |
+| Plan only | `plan` | read-only, `never` | `plan` | `default` without Bash, Edit, Write | `always-ask`, read-only tools | its plan mode; reads allowed, changes declined |
+| Full autonomy | `bypassPermissions` | danger-full-access, `never` | `--dangerously-skip-permissions` | `--dangerously-skip-permissions` | `yolo` | its bypass mode; every request allowed |
 
-Gemini CLI has no headless approval channel, so its "Ask each time" runs as
-auto-edit. Use Plan only for read-only work with Gemini. Codex's workspace-write
-sandbox is started with network access (`sandbox_workspace_write.network_access=true`),
+Gemini CLI maps as before (`auto_edit`, `auto_edit`, `plan`, `yolo`). Neither
+Gemini CLI nor Antigravity CLI can ask for approval in print mode, so "Ask each
+time" accepts edits and declines commands; pi runs every tool, and its Plan only
+keeps it (and oh-my-pi, whose plan mode is terminal-only) to the read-only tools. ACP has no system prompt, so Studio's short
+note about the workbench leads the first message of each ACP conversation (and
+of each Antigravity CLI conversation). Codex's workspace-write sandbox is
+started with network access (`sandbox_workspace_write.network_access=true`),
 because modeling installs packages with pip and downloads data.
 
 Data lives in the app's user-data folder under `studio/`: `settings.json`,

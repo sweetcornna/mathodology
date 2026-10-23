@@ -16,7 +16,7 @@
 
 ![Mathodology Studio](apps/studio/docs/studio-zh.png)
 
-Mathodology 让 Claude Code、Codex 和 Gemini CLI 按数模的方式工作：读懂题目，
+Mathodology 让 Claude Code、Codex、Antigravity CLI 等编程 agent 按数模的方式工作：读懂题目，
 建立可解释的模型，用实验检验结论，画出说明问题的图，只引用查得到的文献，
 再把论文写清楚。
 
@@ -60,7 +60,7 @@ Mathodology 让 Claude Code、Codex 和 Gemini CLI 按数模的方式工作：�
 [Studio](apps/studio/README.md) 是开源桌面工作台（macOS、Windows、Linux），不调用模型 API，
 不保存密钥，不收集数据。
 
-- 驱动本机已登录的 Claude Code、Codex 或 Gemini CLI，回合之间可切换
+- 驱动本机已登录的 agent CLI（Claude Code、Codex、Antigravity CLI、Qoder CLI、pi 等二十多种），每个走它自己的程序接口，回合之间可切换
 - 图表、表格和代码每次修改都存一个版本，可对比、恢复，并追溯到产生它的回合
 - 只读审阅把每条结论对照工具记录；引用逐条溯源，DOI 系统查无此号的标为疑似编造
 - 文献面板检索论文，核验 DOI 后写入 `references.bib`，并可逐条核对整份参考文献

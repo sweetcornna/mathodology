@@ -2,7 +2,7 @@
   "name": "mathodology-studio",
   "productName": "Mathodology Studio",
   "version": "0.17.1",
-  "description": "Desktop workbench for mathematical-modeling contests, driving local agent CLIs (Claude Code, Codex, Gemini CLI) with the Mathodology skills pack.",
+  "description": "Desktop workbench for mathematical-modeling contests, driving local agent CLIs (Claude Code, Codex, Antigravity CLI, Qoder CLI, pi and ACP agents) with the Mathodology skills pack.",
   "license": "MIT",
   "author": "Mathodology contributors",
   "homepage": "https://github.com/sweetcornna/mathodology",

@@ -20,7 +20,7 @@ const req: TurnRequest = {
   cwd: '/tmp/p',
   prompt: 'hi',
   permissionMode: 'ask',
-  settings: { binaryPath: '', defaultModel: '', extraArgs: '--foo "a b"' },
+  settings: { binaryPath: '', defaultModel: '', extraArgs: '--foo "a b"', env: '' },
   env: {}
 }
 

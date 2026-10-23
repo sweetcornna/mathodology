@@ -1,5 +1,4 @@
 import type {
-  AgentId,
   AgentInfo,
   AppInfo,
   Artifact,
@@ -119,4 +118,4 @@ export type StudioApi = {
 }
 
 export const PERMISSION_MODES: PermissionMode[] = ['ask', 'acceptEdits', 'plan', 'bypass']
-export const AGENT_IDS: AgentId[] = ['claude', 'codex', 'gemini']
+export { AGENT_IDS } from './agents'

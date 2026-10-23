@@ -16,7 +16,7 @@
 
 ![Mathodology Studio](apps/studio/docs/studio-en.png)
 
-Mathodology teaches Claude Code, Codex and Gemini CLI to work like a modeling
+Mathodology teaches Claude Code, Codex, Antigravity CLI and other coding agents to work like a modeling
 team: understand the problem, build an interpretable model, test the conclusion
 with experiments, draw figures that answer a question, cite only sources that
 can be found, and write the paper clearly.
@@ -64,7 +64,7 @@ finishes without it: quantitative figures are always drawn from data and code.
 [Studio](apps/studio/README.md) is an open-source desktop workbench for macOS,
 Windows and Linux. It calls no model API, stores no keys and collects no data.
 
-- Drives the Claude Code, Codex or Gemini CLI signed in on your machine; switch between turns
+- Drives the agent CLIs signed in on your machine (Claude Code, Codex, Antigravity CLI, Qoder CLI, pi and some twenty more), each through its own programmatic interface; switch between turns
 - Every change to a figure, table or code file becomes a version you can compare, restore and trace to its turn
 - Read-only review checks each claim against the tool record; citations are traced, and DOIs the DOI system does not know are flagged as likely made up
 - The Literature pane finds papers, checks the DOI before writing `references.bib`, and checks a whole bibliography entry by entry

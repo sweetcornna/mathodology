@@ -9,7 +9,11 @@ import { ADAPTERS, SessionManager } from '../src/main/sessions'
 import { Store } from '../src/main/store'
 
 // No login shell and no installed CLI: the agent is the fake below.
-vi.mock('../src/main/agents/detect', () => ({ agentEnv: async () => ({}), resolveBinary: () => '/usr/bin/true' }))
+vi.mock('../src/main/agents/detect', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/agents/detect')>()),
+  agentEnv: async () => ({}),
+  resolveBinary: () => '/usr/bin/true'
+}))
 
 const dirs: string[] = []
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })))
@@ -56,7 +60,7 @@ function setup() {
   const store = new Store(data)
   store.upsertProject(project)
   const changed: string[] = []
-  const manager = new SessionManager(store, new ArtifactStore(join(data, 'artifacts')), () => ({ agents: { claude: { binaryPath: '', defaultModel: '', extraArgs: '' } } }) as Settings, {
+  const manager = new SessionManager(store, new ArtifactStore(join(data, 'artifacts')), () => ({ agents: { claude: { binaryPath: '', defaultModel: '', extraArgs: '', env: '' } }, connectors: [] }) as unknown as Settings, {
     event: () => undefined,
     changed: (s) => changed.push(s.id),
     filesChanged: () => undefined,
@@ -136,5 +140,36 @@ describe('a CLI that cannot be started', () => {
     const events = store.events(session.id)
     expect(events.find((e) => e.kind === 'notice')).toMatchObject({ level: 'error', text: expect.stringContaining('spawn ENAMETOOLONG') })
     expect(events.at(-1)).toMatchObject({ kind: 'turn.completed', ok: false })
+  })
+})
+
+describe('switching agents mid-turn', () => {
+  it('does not give the new agent the old turn’s conversation id', async () => {
+    const sinks: TurnSink[] = []
+    let end = (): void => undefined
+    ADAPTERS.claude = {
+      ...ADAPTERS.claude,
+      start(_req, sink) {
+        sinks.push(sink)
+        return { interrupt() {}, respondPermission() {}, done: new Promise<void>((r) => (end = r)) }
+      }
+    }
+    const { store, manager, session } = setup()
+    await manager.send({ sessionId: session.id, text: 'hi', attachments: [] })
+    manager.update(session.id, { agent: 'codex' })
+    sinks[0].nativeSession('claude-conversation')
+    sinks[0].emit({ kind: 'turn.completed', ok: true })
+    end()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(store.session(session.id)).toMatchObject({ agent: 'codex', nativeSessionId: undefined })
+    store.flush()
+  })
+
+  it('offers a fresh session id only to CLIs that take one', () => {
+    expect(ADAPTERS.qoder.takesSessionId).toBe(true)
+    expect(ADAPTERS.pi.takesSessionId).toBe(true)
+    expect(ADAPTERS.codex.takesSessionId).toBeFalsy()
+    expect(ADAPTERS.omp.takesSessionId).toBe(false)
+    expect(ADAPTERS.opencode.takesSessionId).toBeFalsy()
   })
 })

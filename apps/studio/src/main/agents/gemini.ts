@@ -230,7 +230,9 @@ async function inspectGemini(binary: string): Promise<AgentInspection> {
 export const geminiAdapter: AgentAdapter = {
   id: 'gemini',
   name: 'Gemini CLI',
-  binaryName: 'gemini',
+  binaryNames: ['gemini'],
+  route: 'stream-json',
+  takesSessionId: true,
   supportsApproval: false,
   supportsResume: true,
   versionArgs: ['--version'],
