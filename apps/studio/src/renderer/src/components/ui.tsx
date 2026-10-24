@@ -83,7 +83,7 @@ export function Switch({ checked, onChange, label }: { checked: boolean; onChang
       aria-label={label}
       className="relative h-[22px] w-[38px] shrink-0 rounded-full bg-surface-3 transition-colors duration-150 data-[state=checked]:bg-accent"
     >
-      <RSwitch.Thumb className="block h-[18px] w-[18px] translate-x-[2px] rounded-full bg-white shadow-sm transition-transform duration-150 data-[state=checked]:translate-x-[18px]" />
+      <RSwitch.Thumb className="block h-[18px] w-[18px] translate-x-[2px] rounded-full bg-white shadow-sm transition-transform duration-150 data-[state=checked]:translate-x-[18px] data-[state=checked]:bg-accent-fg" />
     </RSwitch.Root>
   )
 }

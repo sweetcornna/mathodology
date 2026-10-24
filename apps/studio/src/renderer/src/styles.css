@@ -7,7 +7,9 @@
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 /* Design tokens. One warm-grey ramp; hairlines and hovers are ink at fixed alphas so dark mode
-   only swaps the ink. Accent is Mathodology's own indigo, used sparingly for brand, links and focus. */
+   only swaps the ink. The palette follows the mark: graphite is the accent for controls, focus and
+   links, and amber, the mark's one warm term, is kept for results and progress. Amber stays rare so
+   it never reads as the warning colour. */
 :root {
   --ink: 11, 11, 11;
   --bg: #fcfcfb;
@@ -25,11 +27,13 @@
   --fill-primary: #0b0b0b;
   --fill-primary-hover: #383835;
   --fill-primary-fg: #ffffff;
-  --accent: #5b5bd6;
-  --accent-hover: #4c4cc4;
-  --accent-text: #3e3eae;
-  --accent-soft: #e6e7fb;
+  --accent: #2b2c31;
+  --accent-hover: #45464c;
+  --accent-text: #2b2c31;
+  --accent-soft: #eae8e3;
   --accent-fg: #ffffff;
+  --result: #c77a0a;
+  --result-soft: #fae6c4;
   --success: #1e9e3c;
   --success-text: #006300;
   --success-soft: #d7f0d4;
@@ -88,11 +92,13 @@
   --fill-primary: #f0efec;
   --fill-primary-hover: #e1e0d9;
   --fill-primary-fg: #0b0b0b;
-  --accent: #7d7ff0;
-  --accent-hover: #9395f5;
-  --accent-text: #a8aaf7;
-  --accent-soft: #1d1e45;
-  --accent-fg: #0b0b0b;
+  --accent: #ece8e1;
+  --accent-hover: #ffffff;
+  --accent-text: #ece8e1;
+  --accent-soft: #302e2a;
+  --accent-fg: #141518;
+  --result: #eda23c;
+  --result-soft: #3d2c12;
   --success: #32d74b;
   --success-text: #0ca30c;
   --success-soft: #11260f;
@@ -127,6 +133,8 @@
   --color-accent-soft: var(--accent-soft);
   --color-accent-fg: var(--accent-fg);
   --color-accent-text: var(--accent-text);
+  --color-result: var(--result);
+  --color-result-soft: var(--result-soft);
   --color-ink: var(--fill-primary);
   --color-ink-fg: var(--fill-primary-fg);
   --color-fg-4: var(--text-4);
@@ -186,7 +194,7 @@ body {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent) 26%, transparent);
+  background: var(--result-soft);
 }
 
 input,
@@ -537,7 +545,7 @@ select.field {
 }
 @keyframes halo {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 45%, transparent);
   }
   70%,
   100% {
@@ -713,7 +721,7 @@ select.field {
 .prose a {
   color: var(--accent-text);
   text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--result) 70%, transparent);
   text-underline-offset: 2px;
   cursor: pointer;
 }
@@ -756,6 +764,9 @@ select.field {
 }
 .inline-code.is-link {
   color: var(--accent-text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--result) 70%, transparent);
+  text-underline-offset: 3px;
   cursor: pointer;
 }
 .inline-code.is-link:hover {
@@ -818,8 +829,8 @@ select.field {
 @keyframes focus-flash {
   0%,
   35% {
-    background: var(--accent-soft);
-    box-shadow: 0 0 0 8px var(--accent-soft);
+    background: var(--result-soft);
+    box-shadow: 0 0 0 8px var(--result-soft);
   }
   100% {
     background: transparent;
