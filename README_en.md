@@ -71,9 +71,9 @@ Windows and Linux. It calls no model API, stores no keys and collects no data.
 - Installs [humanizer](https://github.com/blader/humanizer) to take the AI tone out of the prose, and updates it at each launch
 - MCP connectors are set up once in Settings for all three agents; the built-in free-search-mcp updates to its newest release at each launch
 
-**Download v0.18.0:** [macOS DMG](https://github.com/sweetcornna/mathodology/releases/download/v0.18.0/Mathodology-Studio-0.18.0-arm64.dmg) (Apple silicon) ·
-[Windows installer](https://github.com/sweetcornna/mathodology/releases/download/v0.18.0/Mathodology-Studio-0.18.0-x64-setup.exe) (x64) ·
-[Linux .deb / AppImage](https://github.com/sweetcornna/mathodology/releases/tag/v0.18.0) (x64, arm64).
+**Download v0.18.1:** [macOS DMG](https://github.com/sweetcornna/mathodology/releases/download/v0.18.1/Mathodology-Studio-0.18.1-arm64.dmg) (Apple silicon) ·
+[Windows installer](https://github.com/sweetcornna/mathodology/releases/download/v0.18.1/Mathodology-Studio-0.18.1-x64-setup.exe) (x64) ·
+[Linux .deb / AppImage](https://github.com/sweetcornna/mathodology/releases/tag/v0.18.1) (x64, arm64).
 The app is unsigned. On macOS, Control-click it in Finder and choose Open the
 first time; on Windows, choose More info → Run anyway if SmartScreen appears.
 On Ubuntu 23.10 and later use the .deb: AppImages cannot use Chromium's sandbox
