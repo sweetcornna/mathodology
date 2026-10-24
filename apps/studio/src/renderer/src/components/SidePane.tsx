@@ -144,7 +144,7 @@ function TasksTab() {
       </div>
       {todos.length > 0 && (
         <div className="mb-3 h-1 overflow-hidden rounded-full bg-surface-3">
-          <div className="h-full rounded-full bg-accent transition-all duration-500" style={{ width: `${(done / todos.length) * 100}%` }} />
+          <div className="h-full rounded-full bg-result transition-all duration-500" style={{ width: `${(done / todos.length) * 100}%` }} />
         </div>
       )}
       {todos.length === 0 ? (
@@ -156,7 +156,7 @@ function TasksTab() {
               {item.status === 'completed' ? (
                 <CircleCheck size={16} className="mt-0.5 shrink-0 text-success" />
               ) : item.status === 'in_progress' ? (
-                <CircleDot size={16} className="mt-0.5 shrink-0 text-accent" />
+                <CircleDot size={16} className="mt-0.5 shrink-0 text-result" />
               ) : (
                 <Circle size={16} className="mt-0.5 shrink-0 text-fg-3" />
               )}
