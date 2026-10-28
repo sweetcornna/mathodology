@@ -68,10 +68,10 @@ files, so each stage reads what the previous one actually produced:
 | Stage | Produces | Executable support |
 | --- | --- | --- |
 | Problem brief | `problem/questions.json`: deliverables, metrics, inputs and assumptions per question | `mtd.py brief` finds the top-level questions |
-| Experiments | `code/` and a record of every run | `mtd.py run -- python code/q1.py` logs command, seed, input hashes, outputs and exit code |
+| Experiments | `code/` and a record of every run | `mtd.py run -- python code/q1.py` logs command, seed, input hashes, outputs and exit code; flags `pass`-only scripts and stub functions |
 | Results | `results/*.json`, written by code | contract, interval and provenance checks; flags results older than their code |
-| Figures | plotting scripts that read results | traces script → data → image; finds stale or missing figures |
-| Paper | LaTeX citing `\res{q1.rmse}` | `mtd.py sync` writes the macros; checks numbers, citations, references and the compile log |
+| Figures | plotting scripts that read results | traces script → data → image; finds stale, missing, corrupt or low-resolution figures |
+| Paper | LaTeX citing `\res{q1.rmse}` | `mtd.py sync` writes the macros and booktabs tables in `paper/tables/`; checks numbers, citations, references and the compile log, and math delimiters and reference lists in Markdown |
 
 In Claude Code four hooks run the checks: a stage summary at session start, a refusal to hand-edit
 results (they come from rerunning code), an immediate check of each edited paper file and a macro

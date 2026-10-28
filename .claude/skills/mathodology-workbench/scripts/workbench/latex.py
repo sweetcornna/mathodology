@@ -9,7 +9,9 @@ import re
 import shutil
 import subprocess
 
+from . import markdown
 from .report import Issue
+from .results import is_generated
 from .workspace import Workspace, read_text
 
 INPUT = re.compile(r'\\(?:input|include|subfile)\s*\{([^}]+)\}')
@@ -42,6 +44,8 @@ class Paper:
     lines: list[Line] = field(default_factory=list)
     bib_keys: set[str] = field(default_factory=set)
     bib_files: list[Path] = field(default_factory=list)
+    generated: list[Path] = field(default_factory=list)
+    missing_inputs: list[tuple[Line, str]] = field(default_factory=list)
     cjk: bool = False
 
 
@@ -100,8 +104,13 @@ def load(ws: Workspace) -> Paper:
                     if target.resolve() == macros:
                         break  # the generated macro file; `sync` keeps it current
                     if target.is_file():
-                        visit(target, depth + 1)
+                        if is_generated(target):
+                            paper.generated.append(target.resolve())  # a table written by `sync`
+                        else:
+                            visit(target, depth + 1)
                         break
+                else:
+                    paper.missing_inputs.append((paper.lines[-1], name))
     visit(main)
     text = '\n'.join(l.text for l in paper.lines)
     paper.cjk = bool(re.search(r'\\(?:usepackage|documentclass)\s*(?:\[[^\]]*\])?\s*\{[^}]*(?:ctex|xeCJK|fontspec)', text))
@@ -156,6 +165,11 @@ def static_checks(ws: Workspace, paper: Paper, result_keys: set[str], only: str 
                 if key in labels and in_scope(line):
                     issues.append(Issue('error', 'paper', 'latex.duplicate-label', f'label `{key}` is defined twice (also {labels[key].file}:{labels[key].line})', line.file, line.line))
                 labels.setdefault(key, line)
+        for line, name in paper.missing_inputs:
+            if in_scope(line):
+                generated = name.replace('\\', '/').lstrip('./').startswith('tables/')
+                issues.append(Issue('error', 'paper', 'latex.missing-input', f'\\input{{{name}}} names no file', line.file, line.line,
+                                    'run `mtd.py sync` to write the results tables' if generated else 'fix the path or add the file'))
         cited: set[str] = set()
         for line in paper.lines:
             for m in CITE.finditer(line.text):
@@ -211,6 +225,8 @@ def static_checks(ws: Workspace, paper: Paper, result_keys: set[str], only: str 
                 for m in re.finditer(r'\{\{\s*res:([^}\s]+)\s*\}\}', line.text):
                     if m.group(1) not in result_keys:
                         issues.append(Issue('error', 'paper', 'numbers.unknown-key', f'{{{{res:{m.group(1)}}}}} names no value in results/*.json', line.file, line.line))
+        bib = '\n'.join(read_text(p) for p in ws.files('paper', ('.bib',)))
+        issues += markdown.check(paper, bib, in_scope, only is None)
     return issues, used
 
 
@@ -276,16 +292,17 @@ def compile_paper(ws: Workspace, paper: Paper, timeout: int = 300) -> list[Issue
         return []
     command = engine_for(paper)
     if not command:
-        return [Issue('info', 'paper', 'latex.no-engine', 'no latexmk, pdflatex or xelatex found; compile check skipped',
+        return [Issue('info', 'paper', 'compile.unavailable', 'no latexmk, pdflatex or xelatex found; compile check skipped',
                       hint='install TeX Live or MiKTeX to compile here')]
     cwd = paper.main.parent
     env = dict(os.environ, max_print_line='10000')
     try:
         proc = subprocess.run(command + [paper.main.name], cwd=cwd, capture_output=True, timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
-        return [Issue('error', 'paper', 'latex.timeout', f'LaTeX did not finish in {timeout}s', ws.rel(paper.main))]
+        return [Issue('info', 'paper', 'compile.unavailable', f'LaTeX did not finish in {timeout}s; compile check skipped', ws.rel(paper.main),
+                      'compile by hand to see where it hangs (often a missing font or a prompt for input)')]
     except OSError as exc:
-        return [Issue('error', 'paper', 'latex.engine', f'could not start {command[0]}: {exc}')]
+        return [Issue('info', 'paper', 'compile.unavailable', f'could not start {command[0]}: {exc}; compile check skipped')]
     if command[0] != 'latexmk' and proc.returncode == 0:
         if any(l.text for l in paper.lines if CITE.search(l.text)) and shutil.which('bibtex'):
             subprocess.run(['bibtex', paper.main.stem], cwd=cwd, capture_output=True, timeout=timeout)

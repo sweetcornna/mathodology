@@ -105,8 +105,8 @@ def pre_edit(payload: dict) -> dict | None:
         return None
     rel = ws.rel(path)
     reason = None
-    if rel == ws.rel(results.macro_path(ws)):
-        reason = f'{rel} is generated from results/*.json. Run `{mtd_hint(ws)} sync` instead of editing it.'
+    if rel == ws.rel(results.macro_path(ws)) or (rel.startswith('paper/tables/') and path.is_file() and results.is_generated(path)):
+        reason = f'{rel} is generated from results/*.json. Change the code that writes the results and run `{mtd_hint(ws)} sync` instead of editing it.'
     elif rel.startswith('results/') and rel.lower().endswith('.json') and not ws.config.get('allow_result_edits') \
             and os.environ.get('MATHODOLOGY_ALLOW_RESULT_EDITS') != '1':
         reason = (f'{rel} holds experiment results, which must come from code. Change the experiment and rerun it '
@@ -133,7 +133,8 @@ def post_tool(payload: dict) -> dict | None:
             return None
         _remember(payload, ws)
         rel = ws.rel(path)
-        if rel.startswith('paper/') and rel.endswith(PAPER_SUFFIXES) and rel != ws.rel(results.macro_path(ws)):
+        if rel.startswith('paper/') and rel.endswith(PAPER_SUFFIXES) and rel != ws.rel(results.macro_path(ws)) \
+                and not results.is_generated(path):
             issues = engine.file_checks(ws, rel)
             if issues:
                 block = any(i.severity == 'error' for i in issues)
@@ -165,7 +166,7 @@ def _results_changed(ws: Workspace, force: bool = False) -> list[str]:
     if errors:
         out.append('Results contract problems:\n' + '\n'.join('- ' + i.render() for i in errors[:10]))
     target = results.macro_path(ws)
-    if rs.values and (target.exists() or ws.dir('paper').is_dir()):
+    if (rs.values or results.table_texts(rs)) and (target.exists() or ws.dir('paper').is_dir()):
         _, changed = results.sync(ws, rs)
         if changed:
             out.append(f'Results changed: refreshed {ws.rel(target)} ({len(rs.values)} values citable as \\res{{file.key}}).')
