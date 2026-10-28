@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mathodology Workbench"
+  short_description: "setting up a contest workspace, recording experiment runs and checking that paper numbers, figures and LaTeX match the results"
+  default_prompt: "Use $mathodology-workbench. Keep results in the results contract written by code, record experiment runs, cite values with \\res{} and run the workbench checks before handing over a draft."

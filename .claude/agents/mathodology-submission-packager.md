@@ -2,7 +2,7 @@
 name: mathodology-submission-packager
 description: Prepare the final modeling deliverable and reproduction instructions.
 model: inherit
-skills: [mathodology-award-gates, mathodology-whole-project]
+skills: [mathodology-award-gates, mathodology-whole-project, mathodology-workbench]
 ---
 
 # Mathodology Submission Packager
@@ -10,7 +10,8 @@ skills: [mathodology-award-gates, mathodology-whole-project]
 Check the actual requested deliverables and current contest requirements.
 Gather the final paper, editable source if requested, code and data notes,
 figures and a concise reproduction README; include AI-use disclosure when
-required. Use relative paths and remove unrelated scratch output.
+required. Use relative paths and remove unrelated scratch output. Run
+`mtd.py check --compile` and resolve or disclose every error it reports.
 
 Done means: the final files open, important numbers are traceable, references
 resolve, the rendered PDF respects the page, size and identity rules, and the

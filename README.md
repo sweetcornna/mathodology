@@ -24,7 +24,8 @@ Mathodology 让 Claude Code、Codex、Antigravity CLI 等编程 agent 按数模�
 
 | | |
 | --- | --- |
-| **8 个技能** | 建模提示、证据检索、科学绘图、审稿问题等，见[技能索引](docs/SKILLS_zh.md) |
+| **9 个技能** | 建模提示、证据检索、科学绘图、审稿问题等，见[技能索引](docs/SKILLS_zh.md) |
+| **工作台与钩子** | `mtd.py` 记录实验运行、校验结果文件，核对论文数字、图表和 LaTeX；Claude Code 钩子自动执行这些检查 |
 | **8 个专业角色** | 统筹、题目分析、建模、编程、文献、审稿、写作、打包，按需并行 |
 | **46 类图表模板** | 可调用的 Matplotlib 代码，填入真实数据直接出 PNG/PDF |
 | **18 个实验组件** | 敏感性、蒙特卡罗、回测、消融、排名稳定性等数模常见实验 |
@@ -55,11 +56,35 @@ Mathodology 让 Claude Code、Codex、Antigravity CLI 等编程 agent 按数模�
 
 首次绘图时 agent 会问一次是否有 image2。没有也能完成：数值图始终由数据和代码绘制。
 
+## 工作台：从题目到论文的执行链
+
+[mathodology-workbench](.claude/skills/mathodology-workbench/SKILL.md) 把五个环节用文件串起来，
+每一步读取上一步真实产出的东西，而不是靠提示词约定：
+
+| 环节 | 产出 | 可执行的部分 |
+| --- | --- | --- |
+| 题意拆解 | `problem/questions.json`：每问的交付物、评价指标、输入、假设 | `mtd.py brief` 识别题目里的顶层问题 |
+| 编程实验 | `code/` 与每次运行的记录 | `mtd.py run -- python code/q1.py` 记录命令、种子、输入哈希、产出和退出码 |
+| 结果验证 | 由代码写出的 `results/*.json` | 校验格式、区间和来源，代码改过而结果没重跑会提示 |
+| 科学制图 | 读取结果文件的绘图脚本 | 追踪脚本→数据→图片，发现过期或缺失的图 |
+| 论文写作 | 用 `\res{q1.rmse}` 引用结果的 LaTeX | `mtd.py sync` 生成宏；核对正文数字、引用、交叉引用和编译日志 |
+
+在 Claude Code 里，四个钩子自动运行这些检查：会话开始时汇报各环节状态；拒绝手改结果文件
+（结果只能由代码重跑产生）；改完论文立即检查该文件，实验跑完自动刷新宏；结束前若还有错误
+（未定义的引用、缺失的图、对不上的结果键）会请 agent 修好或说明原因，同一组问题只提一次。
+钩子只在工作区内生效，只用 Python 标准库。
+
+```bash
+python3 .claude/skills/mathodology-workbench/scripts/mtd.py init --paper-template
+python3 .claude/skills/mathodology-workbench/scripts/mtd.py check --compile
+```
+
 ## Mathodology Studio
 
 [Studio](apps/studio/README.md) 是开源桌面工作台（macOS、Windows、Linux），不调用模型 API，
 不保存密钥，不收集数据。
 
+- 新建项目时装好工作台钩子；“检查”面板一键查看五个环节的状态，点问题直接打开对应文件
 - 驱动本机已登录的 agent CLI（Claude Code、Codex、Antigravity CLI、Qoder CLI、pi 等二十多种），每个走它自己的程序接口，回合之间可切换
 - 图表、表格和代码每次修改都存一个版本，可对比、恢复，并追溯到产生它的回合
 - 只读审阅把每条结论对照工具记录；引用逐条溯源，DOI 系统查无此号的标为疑似编造

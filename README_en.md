@@ -25,7 +25,8 @@ can be found, and write the paper clearly.
 
 | | |
 | --- | --- |
-| **8 skills** | Modeling prompts, evidence search, scientific figures, review questions and more; see the [skill index](docs/SKILLS.md) |
+| **9 skills** | Modeling prompts, evidence search, scientific figures, review questions and more; see the [skill index](docs/SKILLS.md) |
+| **Workbench and hooks** | `mtd.py` records experiment runs, validates results files and checks paper numbers, figures and LaTeX; Claude Code hooks run those checks automatically |
 | **8 specialist roles** | Lead, problem analyst, modeler, coder, evidence researcher, critic, paper editor, packager; used when they help |
 | **46 figure templates** | Callable Matplotlib code: bind real data, get PNG/PDF |
 | **18 experiment kits** | Sensitivity, Monte Carlo, backtests, ablations, rank stability and other standard experiments |
@@ -58,6 +59,30 @@ cards are in Chinese with English names.
 
 At the first figure, the agent asks once whether image2 is available. Work
 finishes without it: quantitative figures are always drawn from data and code.
+
+## Workbench: an executable path from problem to paper
+
+[mathodology-workbench](.claude/skills/mathodology-workbench/SKILL.md) links five stages through
+files, so each stage reads what the previous one actually produced:
+
+| Stage | Produces | Executable support |
+| --- | --- | --- |
+| Problem brief | `problem/questions.json`: deliverables, metrics, inputs and assumptions per question | `mtd.py brief` finds the top-level questions |
+| Experiments | `code/` and a record of every run | `mtd.py run -- python code/q1.py` logs command, seed, input hashes, outputs and exit code |
+| Results | `results/*.json`, written by code | contract, interval and provenance checks; flags results older than their code |
+| Figures | plotting scripts that read results | traces script → data → image; finds stale or missing figures |
+| Paper | LaTeX citing `\res{q1.rmse}` | `mtd.py sync` writes the macros; checks numbers, citations, references and the compile log |
+
+In Claude Code four hooks run the checks: a stage summary at session start, a refusal to hand-edit
+results (they come from rerunning code), an immediate check of each edited paper file and a macro
+refresh after experiments, and a stop check that asks the agent once to fix or explain remaining
+errors (undefined citations, missing figures, unknown result keys). Hooks act only inside a
+workspace and need nothing beyond Python's standard library.
+
+```bash
+python3 .claude/skills/mathodology-workbench/scripts/mtd.py init --paper-template
+python3 .claude/skills/mathodology-workbench/scripts/mtd.py check --compile
+```
 
 ## Mathodology Studio
 

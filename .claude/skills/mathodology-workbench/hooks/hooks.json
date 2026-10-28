@@ -1,0 +1,17 @@
+{
+  "_comment": "Claude Code hooks for a Mathodology workspace. {mtd} is replaced by a launcher that finds Python 3.9+ and runs scripts/mtd.py (and exits 0 when there is none); `mtd.py install-hooks` and Mathodology Studio merge these into .claude/settings.json.",
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "{mtd} hook session-start", "timeout": 30, "onFailure": "continue"}]}
+    ],
+    "PreToolUse": [
+      {"matcher": "Write|Edit|MultiEdit|NotebookEdit", "hooks": [{"type": "command", "command": "{mtd} hook pre-edit", "timeout": 10, "onFailure": "continue"}]}
+    ],
+    "PostToolUse": [
+      {"matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell", "hooks": [{"type": "command", "command": "{mtd} hook post-tool", "timeout": 30, "onFailure": "continue"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "{mtd} hook stop", "timeout": 60, "onFailure": "continue"}]}
+    ]
+  }
+}

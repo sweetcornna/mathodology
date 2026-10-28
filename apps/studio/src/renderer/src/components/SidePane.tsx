@@ -21,6 +21,7 @@ import { useT } from '../lib/i18n'
 import { buildTranscript, formatTokens } from '../lib/transcript'
 import { useStudio, type PaneTab } from '../store'
 import { ArtifactsTab } from './Artifacts'
+import { ChecksTab } from './Checks'
 import { LiteratureTab } from './Literature'
 import { formatSize, PreviewBody } from './Preview'
 import { Spinner, Tip } from './ui'
@@ -245,6 +246,7 @@ export function SidePane() {
     { id: 'files', label: t('pane.files') },
     { id: 'artifacts', label: t('pane.artifacts') },
     { id: 'literature', label: t('pane.literature') },
+    { id: 'checks', label: t('pane.checks') },
     { id: 'tasks', label: t('pane.tasks') },
     { id: 'preview', label: t('pane.preview') }
   ]
@@ -272,6 +274,7 @@ export function SidePane() {
       {tab === 'files' && <FilesTab />}
       {tab === 'artifacts' && <ArtifactsTab />}
       {tab === 'literature' && <LiteratureTab />}
+      {tab === 'checks' && <ChecksTab />}
       {tab === 'tasks' && <TasksTab />}
       {tab === 'preview' && <PreviewTab />}
     </aside>

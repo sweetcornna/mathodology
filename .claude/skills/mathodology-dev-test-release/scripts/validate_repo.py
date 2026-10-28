@@ -15,7 +15,7 @@ import tempfile
 from urllib.parse import unquote, urlsplit
 
 ROOT_FILES = {'AGENTS.md', 'CLAUDE.md', 'README.md', 'README_en.md', 'LICENSE', '.gitignore', '.mcp.json',
-              '.github/workflows/studio-windows.yml'}
+              '.claude/settings.json', '.github/workflows/studio-windows.yml'}
 DOC_FILES = {f'docs/{name}{suffix}.md' for name in ['SKILLS', 'INSTALL', 'WORKFLOWS', 'BACKUP']
              for suffix in ['', '_zh']}
 PREFIXES = ('.claude/skills/', '.claude/agents/', '.claude/workflows/', '.codex/agents/', 'apps/studio/')

@@ -512,6 +512,29 @@ export interface RefEntryCheck {
   candidate?: RefCandidate
 }
 
+/** One finding of the workbench checks (`mtd.py status --json`). */
+export interface CheckIssue {
+  severity: 'error' | 'warning' | 'info'
+  stage: CheckStageId
+  code: string
+  message: string
+  /** Project-relative path. */
+  file?: string
+  line?: number
+  hint?: string
+}
+
+export type CheckStageId = 'brief' | 'experiment' | 'results' | 'figures' | 'paper'
+
+export interface CheckReport {
+  schema: 'mathodology.report/1'
+  root: string
+  generated_at: string
+  counts: { error: number; warning: number; info: number }
+  stages: { id: CheckStageId; state: 'ok' | 'warning' | 'error' | 'missing'; summary: string }[]
+  issues: CheckIssue[]
+}
+
 /** A check of one bibliography file against the DOI registries. */
 export interface RefReport {
   /** Project-relative path of the file checked. */

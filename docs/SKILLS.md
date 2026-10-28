@@ -1,6 +1,6 @@
 # Skill index
 
-Eight skills maintained in `.claude/skills/`. Load only those relevant to the task.
+Nine skills maintained in `.claude/skills/`. Load only those relevant to the task.
 
 | Skill | Purpose |
 |---|---|
@@ -9,6 +9,7 @@ Eight skills maintained in `.claude/skills/`. Load only those relevant to the ta
 | [mathodology-figure-presets](../.claude/skills/mathodology-figure-presets/SKILL.md) | 46 figure presets, experiment kits, image2 and previews |
 | [mathodology-evidence-search](../.claude/skills/mathodology-evidence-search/SKILL.md) | Evidence, data and license verification |
 | [mathodology-award-gates](../.claude/skills/mathodology-award-gates/SKILL.md) | Mathematical and editorial review questions |
+| [mathodology-workbench](../.claude/skills/mathodology-workbench/SKILL.md) | Workspace, recorded runs, results contract, number/figure/LaTeX checks and hooks |
 | [mathodology-project-orientation](../.claude/skills/mathodology-project-orientation/SKILL.md) | Repository boundaries |
 | [mathodology-skill-authoring](../.claude/skills/mathodology-skill-authoring/SKILL.md) | Skill authoring |
 | [mathodology-dev-test-release](../.claude/skills/mathodology-dev-test-release/SKILL.md) | Optional repository checks and requested releases |

@@ -20,6 +20,10 @@ Use this as a starting brief, not a sequence of compulsory phases.
 > absent or pending: supply real arrays, execute the code and export PNG/PDF.
 > Do not stop at prompts alone. Do not mislabel a different image model as image2.
 >
+> Have code write results to the mathodology-workbench contract, run experiments
+> through `mtd.py run` and cite values in the paper with `\res{}`; run
+> `mtd.py check --compile` before delivery.
+>
 > Explain the result in the problem's terms. Use mathodology-award-gates to review
 > consequential mathematical, empirical and presentation issues. Inspect actual
 > figure exports and dense pages of the final paper. Deliver the requested files,

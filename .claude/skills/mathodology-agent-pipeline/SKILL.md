@@ -31,6 +31,8 @@ paper's claims to the implemented mathematics and the data actually used.
 ## Communicate the answer
 
 Answer the problem's questions with interpretable quantities and limitations.
+Keep each number traceable through the [workbench](../mathodology-workbench/SKILL.md):
+code writes results files, the paper cites them with `\res{}`.
 Choose figures from [figure presets](../mathodology-figure-presets/SKILL.md),
 including the once-per-task image2 question. Build the explanation around the
 results, not the history of experiments. Review with

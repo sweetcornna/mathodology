@@ -13,10 +13,15 @@ CLI's own account and limits. It is MIT-licensed like the rest of the repository
 ## What it does
 
 - **Projects.** Each contest is a folder (`problem/`, `attachments/`, `code/`,
-  `figures/`, `paper/`). Creating one installs the five contest skills, the eight
-  specialist roles, the workflow prompts and an `AGENTS.md` that Claude Code
+  `figures/`, `paper/`). Creating one installs the six contest skills, the eight
+  specialist roles, the workflow prompts, the workbench hooks in
+  `.claude/settings.json` (merged with any you have) and an `AGENTS.md` that Claude Code
   (`CLAUDE.md`), Codex and Gemini CLI (`GEMINI.md`) all read. Existing files are
   never overwritten.
+- **Checks.** The Checks tab runs the workbench (`mtd.py status`) on the project:
+  the state of the brief, experiments, results, figures and paper, and every
+  issue with its file and line; clicking an issue opens the file. It can also
+  compile the paper and refresh the `\res` macros. It needs Python 3 on the PATH.
 - **Humanizer.** Kit projects also get [humanizer](https://github.com/blader/humanizer)
   (MIT), which rewrites AI-sounding prose without changing what it says: the
   Claude Code plugin at project scope (`claude plugin … --scope project`, user

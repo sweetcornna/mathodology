@@ -2,6 +2,7 @@ import type {
   AgentInfo,
   AppInfo,
   Artifact,
+  CheckReport,
   Connector,
   ConnectorCheck,
   CreateProjectInput,
@@ -75,6 +76,8 @@ export interface StudioCalls {
   'refs:check': (projectId: string, file?: string) => RefReport
   /** Write a DOI into an entry that has none and check the entry again. */
   'refs:setDoi': (projectId: string, file: string, key: string, doi: string) => RefEntryCheck
+  /** Run the workbench checks on the project; `compile` also builds the LaTeX paper. */
+  'checks:run': (projectId: string, options?: { compile?: boolean }) => CheckReport
   'reviews:list': (sessionId: string) => Review[]
   /** Start a read-only review of the session with its own agent; progress arrives as `review:changed`. */
   'reviews:start': (sessionId: string) => Review

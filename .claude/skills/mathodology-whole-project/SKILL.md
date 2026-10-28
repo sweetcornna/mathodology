@@ -6,8 +6,10 @@ description: Use when starting a modeling task or installing, backing up or main
 # Mathodology Modeling Companion
 
 Mathodology helps turn a problem into a justified model, reproducible results and
-clear scientific communication. It is a skills pack, not an application or an
-execution engine. Use [modeling prompts](../mathodology-agent-pipeline/SKILL.md)
+clear scientific communication. It is a skills pack with one executable part:
+the [workbench](../mathodology-workbench/SKILL.md) records runs and checks that
+results, figures and the paper agree, through a script and Claude Code hooks.
+Use [modeling prompts](../mathodology-agent-pipeline/SKILL.md)
 as a flexible guide. For figures use
 [figure presets](../mathodology-figure-presets/SKILL.md), including its image2
 availability question. For evidence use
@@ -17,7 +19,9 @@ availability question. For evidence use
 
 Work in the user's chosen directory or an ignored `work/` directory in this
 checkout. Produce only artifacts needed for the requested deliverable and keep
-numerical results traceable. Use specialists where they help and the host allows
+numerical results traceable: `mtd.py init` sets up a workspace whose hooks keep
+results, figures and the paper consistent, and `mtd.py status` shows where an
+existing one stands. Use specialists where they help and the host allows
 it.
 
 ## Maintain and distribute

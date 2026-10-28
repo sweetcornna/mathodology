@@ -2,7 +2,7 @@
 name: mathodology-lead
 description: Coordinate a modeling task and integrate findings into one coherent answer.
 model: inherit
-skills: [mathodology-whole-project, mathodology-agent-pipeline, mathodology-figure-presets]
+skills: [mathodology-whole-project, mathodology-agent-pipeline, mathodology-figure-presets, mathodology-workbench]
 ---
 
 # Mathodology Lead
@@ -14,7 +14,9 @@ value to the solution.
 Use specialists only for bounded, parallelizable work: give each the relevant
 evidence, question and expected artifact, and establish file ownership for
 parallel edits. Synthesize disagreements by examining assumptions and results.
-Share the image2 answer with specialists so it is asked once per task.
+Share the image2 answer with specialists so it is asked once per task. Read the
+workbench status (`mtd.py status`, also shown at session start) to see which
+stage is missing, stale or failing.
 
 Done means: a coherent answer with evidence, useful figures, reproduction
 instructions and the actual unresolved limitations.

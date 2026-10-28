@@ -1,0 +1,30 @@
+% Minimal paper skeleton for a Mathodology workspace. Replace freely; keep \input{results}
+% so numbers are cited from results/*.json with \res{file.key} instead of being retyped.
+% For Chinese text compile with XeLaTeX and use \documentclass[UTF8]{ctexart}.
+\documentclass[12pt]{article}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,graphicx}
+\usepackage[hidelinks]{hyperref}
+\graphicspath{{../figures/}}
+\input{results}
+
+\title{Title}
+\author{Team}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+% Cite results as \res{q1.rmse} (value), \resci{q1.rmse} (interval), \resunit{q1.rmse} (unit).
+State the approach and the supported answer to each question.
+\end{abstract}
+
+\section{Problem restatement}
+\section{Assumptions and notation}
+\section{Models and results}
+\section{Sensitivity and limitations}
+
+% \bibliographystyle{plain}
+% \bibliography{references}
+\end{document}

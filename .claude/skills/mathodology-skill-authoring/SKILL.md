@@ -23,7 +23,10 @@ never execute downloaded source snapshots as an installation step.
 
 Small scripts are appropriate when they perform concrete work such as plotting,
 backup or rendering. Keep them optional, declare dependencies, and verify the
-behavior they actually promise. Do not create a framework to enforce prompts.
+behavior they actually promise. Executable checks and hooks belong in
+`mathodology-workbench`: add a check there when it is deterministic and catches a
+real inconsistency, keep hooks silent outside a workspace, and do not turn
+judgment (model choice, writing quality) into pass/fail rules or quotas.
 
 Update all affected entry points, role skill lists, metadata and English/Chinese
 documentation. Keep each language natural; heading or code-block counts need
