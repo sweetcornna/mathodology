@@ -42,6 +42,8 @@ __pycache__/
 !/.claude/agents/**
 !/.claude/workflows/
 !/.claude/workflows/**
+# Shared project hooks (the workbench); personal overrides stay in settings.local.json.
+!/.claude/settings.json
 
 # Re-apply interpreter-output exclusions after the source-tree allowlists.
 **/__pycache__/

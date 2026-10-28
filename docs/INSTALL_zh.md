@@ -1,7 +1,8 @@
 # 安装与更新
 
-使用标准 [skills CLI](https://github.com/vercel-labs/skills)。完整仓库提供 8 个技能、
-8 个可选 Claude Code 角色、2 份工作提示词和项目 search MCP 配置，不运行自定义更新器。
+使用标准 [skills CLI](https://github.com/vercel-labs/skills)。完整仓库提供 9 个技能、
+8 个可选 Claude Code 角色、2 份工作提示词、工作台钩子（`.claude/settings.json`）和项目 search MCP 配置，
+不运行自定义更新器。
 
 ## 使用完整仓库
 
@@ -31,6 +32,15 @@ npx -y skills@latest add sweetcornna/mathodology --copy --yes --skill '*' --agen
 命令安装技能及其参考资料、样张，不复制根 AGENTS.md、项目角色、工作流或
 MCP 配置。不要覆盖目标项目的指引和自定义 MCP 设置。可选角色与工作流可在
 检查目标路径冲突后从仓库复制；只把需要的建模指引合入已有项目说明。
+
+skills CLI 不会改动 `.claude/settings.json`，所以不会装上工作台钩子。需要时在目标项目中运行：
+
+```bash
+python3 .claude/skills/mathodology-workbench/scripts/mtd.py install-hooks
+```
+
+它只合并 Mathodology 的四个钩子，保留已有设置和其他钩子；`--remove` 撤销。
+Codex 等不读取 Claude Code 钩子的 agent 可在交付前手动运行 `mtd.py check`。
 
 确实需要全局安装时，为选定命令增加 `--global`。它会影响其他项目，项目使用
 无需此选项；全局安装同样不安装项目角色或 MCP 配置。

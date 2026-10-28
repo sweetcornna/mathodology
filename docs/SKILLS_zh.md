@@ -1,6 +1,6 @@
 # 技能索引
 
-8 个技能，统一维护于 `.claude/skills/`。根据任务选用，不需要全部加载。
+9 个技能，统一维护于 `.claude/skills/`。根据任务选用，不需要全部加载。
 
 | 技能 | 用途 |
 |---|---|
@@ -9,6 +9,7 @@
 | [mathodology-figure-presets](../.claude/skills/mathodology-figure-presets/SKILL.md) | 46 类图表、实验组件、image2 和效果样张 |
 | [mathodology-evidence-search](../.claude/skills/mathodology-evidence-search/SKILL.md) | 证据、数据和许可核验 |
 | [mathodology-award-gates](../.claude/skills/mathodology-award-gates/SKILL.md) | 数学与论文审稿问题 |
+| [mathodology-workbench](../.claude/skills/mathodology-workbench/SKILL.md) | 工作区、实验运行记录、结果契约、数字/图表/LaTeX 检查和钩子 |
 | [mathodology-project-orientation](../.claude/skills/mathodology-project-orientation/SKILL.md) | 仓库边界 |
 | [mathodology-skill-authoring](../.claude/skills/mathodology-skill-authoring/SKILL.md) | 技能维护规范 |
 | [mathodology-dev-test-release](../.claude/skills/mathodology-dev-test-release/SKILL.md) | 可选仓库检查与发布 |

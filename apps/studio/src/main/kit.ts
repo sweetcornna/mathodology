@@ -8,8 +8,62 @@ export const CONTEST_SKILLS = [
   'mathodology-agent-pipeline',
   'mathodology-evidence-search',
   'mathodology-figure-presets',
-  'mathodology-award-gates'
+  'mathodology-award-gates',
+  'mathodology-workbench'
 ]
+
+/** Where the workbench lives inside a project, and the hook definitions it ships. */
+export const WORKBENCH = '.claude/skills/mathodology-workbench'
+const HOOK_MARK = 'mathodology-workbench'
+
+type HookGroup = { matcher?: string; hooks: { type: string; command: string; timeout?: number }[] }
+type HookSpec = Record<string, HookGroup[]>
+
+/**
+ * The command a hook runs: the project's own copy of mtd.py, through the first Python 3.9+ on PATH
+ * (stubs such as the Windows Store alias fail the probe). Without one it exits 0 and does nothing.
+ */
+export const HOOK_COMMAND =
+  'p=; for c in python3 python py; do "$c" -c "import sys; sys.exit(sys.version_info < (3, 9))" ' +
+  `>/dev/null 2>&1 && { p=$c; break; }; done; [ -z "$p" ] || exec "$p" "$CLAUDE_PROJECT_DIR"/${WORKBENCH}/scripts/mtd.py`
+
+/**
+ * Settings with the workbench hooks merged in: other settings and other hooks are kept, earlier
+ * workbench hooks are replaced, so installing twice changes nothing. The same merge as `mtd.py install-hooks`.
+ */
+export function mergeHooks(settings: Record<string, unknown>, spec: HookSpec, command = HOOK_COMMAND): Record<string, unknown> {
+  const current = (settings.hooks ?? {}) as HookSpec
+  const merged: HookSpec = {}
+  for (const event of [...new Set([...Object.keys(current), ...Object.keys(spec)])].sort()) {
+    const groups = (current[event] ?? []).filter((g) => !g.hooks?.some((h) => h.command?.includes(HOOK_MARK)))
+    for (const group of spec[event] ?? []) {
+      groups.push({ ...group, hooks: group.hooks.map((h) => ({ ...h, command: h.command.replace('{mtd}', command) })) })
+    }
+    if (groups.length) merged[event] = groups
+  }
+  return { ...settings, hooks: merged }
+}
+
+/** Merge the workbench hooks into the project's `.claude/settings.json`. Returns false when it cannot. */
+export function installHooks(kitRoot: string, projectDir: string): boolean {
+  const specFile = join(kitRoot, WORKBENCH, 'hooks/hooks.json')
+  if (!existsSync(specFile)) return false
+  const target = join(projectDir, '.claude/settings.json')
+  let settings: Record<string, unknown> = {}
+  if (existsSync(target)) {
+    try {
+      settings = JSON.parse(readFileSync(target, 'utf8'))
+    } catch {
+      return false // leave a settings file we cannot parse alone
+    }
+  }
+  const spec = JSON.parse(readFileSync(specFile, 'utf8')).hooks as HookSpec
+  const next = JSON.stringify(mergeHooks(settings, spec), null, 2) + '\n'
+  if (existsSync(target) && readFileSync(target, 'utf8') === next) return false
+  mkdirSync(join(target, '..'), { recursive: true })
+  writeFileSync(target, next, 'utf8')
+  return true
+}
 
 function frontmatter(text: string): Record<string, string> {
   // A checkout made on Windows may have CRLF line endings.
@@ -63,8 +117,14 @@ This folder is a mathematical-modeling contest workspace set up by Mathodology S
   \`SKILL.md\` directly when it has no native skill loader.
 - Roles for parallel or isolated work: \`.claude/agents/\` (Codex: \`.codex/agents/\`).
 - Put the problem statement and data under \`problem/\`, files the user attaches
-  under \`attachments/\`, code under \`code/\`, figures under \`figures/\` and the
-  paper under \`paper/\`.
+  under \`attachments/\`, code under \`code/\`, results under \`results/\`, figures
+  under \`figures/\` and the paper under \`paper/\`.
+- \`mathodology-workbench\` links these: \`problem/questions.json\` lists each
+  question's deliverables and metrics, experiment code writes \`results/*.json\`
+  (run it with \`python3 ${WORKBENCH}/scripts/mtd.py run -- python code/<file>.py\`),
+  and the paper cites values with \`\\res{file.key}\` after \`\\input{results}\`.
+  Hooks check this in Claude Code; other agents run \`mtd.py check\` before
+  handing over. Never edit results by hand to match the paper.
 - Keep calculations reproducible from the actual inputs, state assumptions and
   report real limitations. Ask about image2 once, when figure work begins.
 - Before handing over prose that readers will see (the paper, its summary, a
@@ -121,10 +181,12 @@ export function installKit(kitRoot: string, projectDir: string): KitInstallResul
     copy(join(kitRoot, '.claude/workflows', f), join(projectDir, '.claude/workflows', f))
   }
 
+  if (installHooks(kitRoot, projectDir)) installed.push('.claude/settings.json (workbench hooks)')
+
   write('AGENTS.md', PROJECT_AGENTS_MD)
   write('CLAUDE.md', '@AGENTS.md\n')
   write('GEMINI.md', '@AGENTS.md\n')
-  for (const dir of ['problem', 'attachments', 'code', 'figures', 'paper']) {
+  for (const dir of ['problem', 'attachments', 'code', 'results', 'figures', 'paper']) {
     mkdirSync(join(projectDir, dir), { recursive: true })
   }
 

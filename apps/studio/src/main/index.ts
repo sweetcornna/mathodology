@@ -9,6 +9,7 @@ import type { AgentInfo, Project, Settings } from '@shared/types'
 import { killAllAgents } from './agents/base'
 import { agentEnv, detectAgents, resolveBinary } from './agents/detect'
 import { ArtifactStore } from './artifacts'
+import { runChecks } from './checks'
 import { McpPool, migrateConnectors, syncConnectors } from './connectors'
 import { listFiles, previewBytes, previewFile, safeJoin, within } from './files'
 import { runner, syncHumanizer, type HumanizerCache } from './humanizer'
@@ -293,6 +294,13 @@ const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>
     push('files:changed', { projectId })
     const entry = parseBibtex(next).find((e) => e.key === key)!
     return checkEntry(entry, registryFetch)
+  },
+  'checks:run': async (projectId, options) => {
+    const project = store.project(projectId)
+    if (!project) throw new Error('Unknown project')
+    const report = await runChecks(project.path, kitRoot, await agentEnv(), options)
+    push('files:changed', { projectId })
+    return report
   },
   // Review files are named after the session, so only stored sessions are looked up.
   'reviews:list': (sessionId) => (store.session(sessionId) ? reviews.list(sessionId) : []),

@@ -4,6 +4,7 @@ import {
   BookOpen,
   ChartScatter,
   ChevronDown,
+  ClipboardCheck,
   FileSearch,
   FolderOpen,
   FolderPlus,
@@ -42,6 +43,7 @@ const PANE_TOGGLES: { tab: PaneTab; icon: typeof Sigma; label: MessageKey }[] = 
   { tab: 'files', icon: FolderOpen, label: 'pane.files' },
   { tab: 'artifacts', icon: Layers, label: 'pane.artifacts' },
   { tab: 'literature', icon: BookOpen, label: 'pane.literature' },
+  { tab: 'checks', icon: ClipboardCheck, label: 'pane.checks' },
   { tab: 'tasks', icon: ListChecks, label: 'pane.tasks' }
 ]
 

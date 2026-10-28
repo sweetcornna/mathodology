@@ -35,6 +35,17 @@ layout concepts may use image2; numerical layers must remain data-driven.
 
 When image2 is absent, pending or manual-only, run the [chart code templates](../.claude/skills/mathodology-figure-presets/templates/README.md) against actual task data and export PNG/PDF. Adapt the code as needed and deliver rendered images, not just instructions.
 
+## Let files connect the stages
+
+The [workbench](../.claude/skills/mathodology-workbench/SKILL.md) gives the stages
+an executable contract: `problem/questions.json` names each question's deliverables
+and metrics, experiments run through `mtd.py run`, code writes `results/*.json`,
+figure scripts read those files and the paper cites values with `\res{file.key}`.
+`mtd.py status` reports every stage and `mtd.py check --compile` lists errors before
+delivery. Claude Code's hooks run these checks automatically. When the report and
+the paper disagree, correct the paper from the results or rerun the experiment;
+never edit results to fit the text.
+
 ## Review and deliver
 
 Use [review questions](../.claude/skills/mathodology-award-gates/SKILL.md) to examine

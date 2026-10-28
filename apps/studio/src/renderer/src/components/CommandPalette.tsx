@@ -1,6 +1,6 @@
 import { Command } from 'cmdk'
 import { Dialog as RDialog } from 'radix-ui'
-import { BookOpen, FolderOpen, FolderPlus, Layers, ListChecks, MessageSquare, Moon, PanelLeft, PanelRight, Plus, Settings, ShieldCheck, Sun } from 'lucide-react'
+import { BookOpen, ClipboardCheck, FolderOpen, FolderPlus, Layers, ListChecks, MessageSquare, Moon, PanelLeft, PanelRight, Plus, Settings, ShieldCheck, Sun } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { mod } from '../lib/api'
 import { useT } from '../lib/i18n'
@@ -74,6 +74,9 @@ export function CommandPalette() {
                 </Item>
                 <Item value="literature papers search references bibliography" icon={<BookOpen size={15} />} onSelect={() => run(() => st().togglePane('literature'))}>
                   {t('pane.literature')}
+                </Item>
+                <Item value="checks workbench results numbers latex compile" icon={<ClipboardCheck size={15} />} onSelect={() => run(() => st().togglePane('checks'))}>
+                  {t('pane.checks')}
                 </Item>
                 {st().activeSessionId && (
                   <Item value="review session check" icon={<ShieldCheck size={15} />} onSelect={() => run(() => void st().startReview())}>

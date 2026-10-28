@@ -1,8 +1,9 @@
 # Installation and updates
 
 Mathodology uses the standard [skills CLI](https://github.com/vercel-labs/skills).
-A full checkout contains eight skills, eight optional Claude Code roles, two
-workflow prompts and a project search MCP configuration. No custom updater runs.
+A full checkout contains nine skills, eight optional Claude Code roles, two
+workflow prompts, the workbench hooks (`.claude/settings.json`) and a project
+search MCP configuration. No custom updater runs.
 
 ## Use a full checkout
 
@@ -36,6 +37,17 @@ not copy root AGENTS.md, project roles, workflows or MCP configuration. Do not
 overwrite the target project's instructions or custom MCP settings. Optional roles
 and workflows can be copied from the checkout after checking destination conflicts.
 Add only the needed Mathodology guidance to existing project instructions.
+
+The skills CLI does not touch `.claude/settings.json`, so it does not install the
+workbench hooks. To add them, run from the target project:
+
+```bash
+python3 .claude/skills/mathodology-workbench/scripts/mtd.py install-hooks
+```
+
+It merges only Mathodology's four hooks and keeps existing settings and hooks;
+`--remove` takes them out again. Agents that do not load Claude Code hooks, such
+as Codex, can run `mtd.py check` before handing over a draft.
 
 For a deliberate global skills install, add `--global` to the selected command.
 Global scope affects other projects and is not required for project use. It does

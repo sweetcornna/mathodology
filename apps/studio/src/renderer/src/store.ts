@@ -17,7 +17,7 @@ import type {
 import type { StudioCalls } from '@shared/ipc'
 import { api } from './lib/api'
 
-export type PaneTab = 'files' | 'artifacts' | 'literature' | 'tasks' | 'preview'
+export type PaneTab = 'files' | 'artifacts' | 'literature' | 'checks' | 'tasks' | 'preview'
 
 interface StreamBlock {
   text: string

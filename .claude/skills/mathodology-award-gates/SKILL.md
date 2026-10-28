@@ -50,6 +50,11 @@ python3 .claude/skills/mathodology-award-gates/scripts/make_contact_sheet.py sol
 An overview helps find layout problems; zoom into dense pages to judge actual
 legibility. A successful render is not a certificate of quality.
 
+Before reviewing the substance, run `mtd.py check` from the
+[workbench](../mathodology-workbench/SKILL.md): it finds paper numbers that no
+longer match results, missing figures, undefined citations and stale outputs, so
+review time goes to what it cannot judge.
+
 ## Useful review output
 
 Explain each material issue, its evidence, its effect on the conclusion and a

@@ -30,6 +30,14 @@ image2 回答和文件所有权。小任务可由一个 agent 完成。
 
 无 image2、尚未回答或只能手动使用时，默认运行 [绘图代码模板](../.claude/skills/mathodology-figure-presets/templates/README.md)，传入本题数据生成 PNG/PDF。根据真实数据调整代码，不只交付待执行提示词。
 
+## 让文件把环节串起来
+
+[工作台](../.claude/skills/mathodology-workbench/SKILL.md)给五个环节一套可执行的约定：
+`problem/questions.json` 写清每问的交付物和评价指标；实验用 `mtd.py run` 运行并留下记录；
+代码把结果写进 `results/*.json`；绘图脚本读取结果文件；论文用 `\res{文件.键}` 引用数值。
+`mtd.py status` 汇报每个环节，`mtd.py check --compile` 在交付前给出错误。Claude Code
+的钩子会自动做这些检查；报告与论文不一致时，以结果为准改论文或重跑实验，不改结果去迁就正文。
+
 ## 审阅与交付
 
 使用 [审稿问题](../.claude/skills/mathodology-award-gates/SKILL.md) 检查论证，不预测奖项。
