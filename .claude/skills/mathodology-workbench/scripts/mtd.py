@@ -4,7 +4,7 @@
     mtd.py init [--paper-template] [--no-hooks]   create problem/ code/ results/ figures/ paper/
     mtd.py brief [STATEMENT] [--force]            list the questions in problem/questions.json
     mtd.py run [--name N] [--seed S] -- CMD ...   run an experiment and record its provenance
-    mtd.py sync                                   write paper/results.tex (\\res macros) from results
+    mtd.py sync                                   write paper/results.tex (\\res macros) and paper/tables/*.tex
     mtd.py status [--json] [--compile]            report every stage; exit 0
     mtd.py check [--json] [--compile] [--strict]  same report; exit 1 on errors (or warnings)
     mtd.py install-hooks [--remove]               merge the Claude Code hooks into .claude/settings.json
@@ -143,7 +143,7 @@ def cmd_run(args) -> int:
     for issue in issues:
         if issue.severity == 'error':
             print('[mtd] ' + issue.render(), file=sys.stderr)
-    if rs.values and ws.dir('paper').is_dir():
+    if (rs.values or results.table_texts(rs)) and ws.dir('paper').is_dir():
         path, changed = results.sync(ws, rs)
         if changed:
             print(f'[mtd] refreshed {ws.rel(path)}', file=sys.stderr)
@@ -157,7 +157,9 @@ def cmd_sync(args) -> int:
         if issue.severity != 'info':
             print(issue.render())
     path, changed = results.sync(ws, rs)
-    print(f'{ws.rel(path)}: {len(rs.values)} value(s), {"updated" if changed else "already current"}')
+    tables = len(results.table_texts(rs))
+    print(f'{ws.rel(path)}: {len(rs.values)} value(s), {tables} table(s) in {ws.rel(results.tables_dir(ws))}/, '
+          f'{"updated" if changed else "already current"}')
     return 1 if any(i.severity == 'error' for i in issues) else 0
 
 

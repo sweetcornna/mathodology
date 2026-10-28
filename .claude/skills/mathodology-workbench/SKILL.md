@@ -12,10 +12,10 @@ stage reads what the previous one actually produced:
 | Stage | Produces | Executable support |
 |---|---|---|
 | Problem brief | `problem/questions.json`: per question, deliverables, metrics, inputs, assumptions, dependencies | `mtd.py brief` lists the numbered questions; you fill in the rest |
-| Experiments | code under `code/`, a recorded run per execution | `mtd.py run -- python code/q1.py` logs command, seed, inputs, outputs, exit code |
+| Experiments | code under `code/`, a recorded run per execution | `mtd.py run -- python code/q1.py` logs command, seed, inputs, outputs, exit code; placeholder scripts and stub functions are flagged |
 | Results | `results/*.json` in the contract below, written by code | validation, provenance and staleness against the code that produced them |
-| Figures | images drawn by scripts that read results | traces script → data → image and flags stale or missing figures |
-| Paper | LaTeX citing `\res{q1.rmse}`, or Markdown citing `{{res:q1.rmse}}` | `mtd.py sync` writes `paper/results.tex`; checks numbers, refs, cites, figures and the compile log |
+| Figures | images drawn by scripts that read results | traces script → data → image; flags stale, missing, corrupt or low-resolution figures |
+| Paper | LaTeX citing `\res{q1.rmse}`, or Markdown citing `{{res:q1.rmse}}` | `mtd.py sync` writes `paper/results.tex` and booktabs tables in `paper/tables/`; checks numbers, refs, cites, figures and the compile log, and math and citations in Markdown |
 
 Run it from the workspace (or pass `--root`); the path below is relative to a
 project with the skill installed:
@@ -44,7 +44,9 @@ Experiment code writes one JSON file per question or analysis:
 ```
 
 In LaTeX, `\input{results}` in the preamble, then write `\res{q1.rmse}`,
-`\resci{q1.rmse}` and `\resunit{q1.rmse}`. A rerun followed by `sync` updates
+`\resci{q1.rmse}` and `\resunit{q1.rmse}`. Each table becomes
+`paper/tables/q1-compare.tex`; put `\input{tables/q1-compare}` inside your own
+`table` float. A rerun followed by `sync` updates
 every number in the paper. Numbers typed by hand are still compared with the
 results, allowing for the rounding shown: a value that no longer matches after a
 rerun is reported as a near miss.
@@ -56,7 +58,7 @@ four Claude Code hooks into `.claude/settings.json`, preserving other settings:
 
 - Session start: a short status of every stage enters the agent's context.
 - Before an edit: hand edits to `results/*.json` and the generated
-  `paper/results.tex` are refused; results change by rerunning code. A user who
+  `paper/results.tex` and `paper/tables/*.tex` are refused; results change by rerunning code. A user who
   really wants manual results sets `"allow_result_edits": true` in
   `.mathodology/config.json`.
 - After an edit or command: an edited paper file is checked at once; when a
@@ -66,7 +68,8 @@ four Claude Code hooks into `.claude/settings.json`, preserving other settings:
   agent is asked once to fix them or explain why they remain.
 
 `"stop_gate"` in `.mathodology/config.json` is `errors` (default), `warnings`
-or `off`. Hooks are silent outside a workspace and never fail the session.
+or `off`. A check that cannot run (no TeX engine, a crashed checker) is a
+note and never blocks. Hooks are silent outside a workspace and never fail the session.
 Codex, Gemini CLI and other agents do not load these hooks: run
 `mtd.py check` before handing over a draft.
 

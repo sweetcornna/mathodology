@@ -13,19 +13,21 @@ import math
 import os
 from pathlib import Path
 import subprocess
+import struct
 import sys
 import tempfile
 import time
 import unittest
 from unittest import mock
 import zipfile
+import zlib
 
 sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import mtd  # noqa: E402
-from workbench import brief, engine, figures, latex, numbers, results, runs  # noqa: E402
+from workbench import assets, brief, engine, figures, hooks, latex, numbers, results, runs, stubs  # noqa: E402
 from workbench.workspace import find_workspace, init, load  # noqa: E402
 
 MTD = HERE / 'mtd.py'
@@ -36,8 +38,23 @@ END = '\\end{document}\n'
 def write(path, text):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding='utf-8')
+    if isinstance(text, bytes):
+        path.write_bytes(text)
+    else:
+        path.write_text(text, encoding='utf-8')
     return path
+
+
+def png(width=1200, height=800):
+    """The bytes of a valid (blank, greyscale) PNG of the given size."""
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xFFFFFFFF)
+    raw = b''.join(b'\x00' + b'\xff' * width for _ in range(height))
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 0, 0, 0, 0))
+            + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b''))
+
+
+PDF = b'%PDF-1.4\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n'
 
 
 def contract(values, question='Q1', **extra):
@@ -528,9 +545,9 @@ class LatexTests(unittest.TestCase):
             with mock.patch.object(latex.shutil, 'which', return_value=None):
                 self.assertIsNone(latex.engine_for(paper))
                 issues = latex.compile_paper(ws, paper)
-                self.assertEqual([(i.severity, i.code) for i in issues], [('info', 'latex.no-engine')])
+                self.assertEqual([(i.severity, i.code) for i in issues], [('info', 'compile.unavailable')])
                 report = engine.status(ws, compile=True)
-            self.assertIn('latex.no-engine', codes(report['issues']))
+            self.assertIn('compile.unavailable', codes(report['issues']))
             self.assertEqual(report['counts']['error'], 0)
 
     def test_engine_choice_follows_cjk(self):
@@ -578,7 +595,7 @@ class EngineTests(unittest.TestCase):
                 'problem/questions.json': json.dumps({'questions': [{'id': 'Q1', 'deliverables': ['a'], 'metrics': ['b']}]}),
                 'code/q1.py': 'print(1)\n',
                 'results/q1.json': contract({'rmse': 0.0912}),
-                'figures/f.png': 'x',
+                'figures/f.png': png(),
                 'paper/main.tex': DOC + 'RMSE \\res{q1.rmse}; see \\ref{nope}. \\includegraphics{../figures/f}\n' + END,
             })
             report = engine.status(ws, sync=True)
@@ -1002,7 +1019,7 @@ class CliTests(unittest.TestCase):
             write(root / 'results' / 'q1.json', contract({'rmse': 0.0912}))
             code, out, _ = run_cli(tmp, '--root', str(root), 'sync')
             self.assertEqual(code, 0)
-            self.assertIn('1 value(s), updated', out)
+            self.assertIn('1 value(s), 0 table(s) in paper/tables/, updated', out)
             self.assertIn('already current', run_cli(tmp, '--root', str(root), 'sync')[1])
 
             main = root / 'paper' / 'main.tex'
@@ -1093,6 +1110,237 @@ class ReviewRegressionTests(unittest.TestCase):
                        'tool_input': {'file_path': str(ws.root / 'paper' / 'main.tex')}}
             code, out, err = run_hook(tmp, 'post-tool', payload)
             self.assertEqual(json.loads(out)['decision'], 'block', err)
+
+
+class FigureAssetTests(unittest.TestCase):
+    def test_inspect_formats(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            t = Path(tmp)
+            image = assets.inspect(write(t / 'a.png', png(640, 480)))
+            self.assertEqual((image.ok, image.width_px, image.height_px), (True, 640, 480))
+            self.assertTrue(assets.inspect(write(t / 'a.pdf', PDF)).ok)
+            cut = assets.inspect(write(t / 'b.pdf', PDF[:30]))
+            self.assertFalse(cut.ok)
+            self.assertIn('truncated', cut.problem)
+            self.assertIn('empty', assets.inspect(write(t / 'c.png', b'')).problem)
+            self.assertFalse(assets.inspect(write(t / 'd.png', b'<html>not an image</html>')).ok)
+            jpeg = b'\xff\xd8\xff\xe0\x00\x04ab\xff\xc0\x00\x0b\x08\x01\x2c\x02\x58\x01\x01\x11\x00\xff\xd9'
+            image = assets.inspect(write(t / 'e.jpg', jpeg))
+            self.assertEqual((image.ok, image.width_px, image.height_px), (True, 600, 300))
+            self.assertFalse(assets.inspect(write(t / 'f.jpg', jpeg[:4])).ok)
+
+    def test_print_width(self):
+        self.assertAlmostEqual(assets.print_width_in('width=0.5\\textwidth', 6.0), 3.0)
+        self.assertAlmostEqual(assets.print_width_in('width=\\linewidth', 6.0), 6.0)
+        self.assertAlmostEqual(assets.print_width_in('height=3cm, width=5.08cm', 6.0), 2.0)
+        self.assertIsNone(assets.print_width_in('height=3cm', 6.0))
+        self.assertIsNone(assets.print_width_in('textwidth=3cm', 6.0))
+
+    def test_corrupt_and_low_resolution_figures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {
+                'figures/good.png': png(2000, 1000), 'figures/small.png': png(300, 200), 'figures/bad.pdf': PDF[:20],
+                'figures/orphan.png': b'', 'figures/fine.pdf': PDF,
+                'paper/main.tex': DOC.replace('\\usepackage{graphicx}', '\\usepackage{graphicx}\n\\usepackage[margin=2cm]{geometry}')
+                + '\\includegraphics[width=\\textwidth]{../figures/good}\n\\includegraphics[width=0.8\\linewidth]{../figures/small}\n'
+                  '\\includegraphics{../figures/bad}\n\\includegraphics[width=8cm]{../figures/fine}\n' + END,
+            })
+            report = engine.status(ws, sync=True)
+            got = {(i['code'], i.get('file'), i['severity']) for i in report['issues'] if i['code'].startswith('figures.')
+                   and i['code'] in ('figures.corrupt', 'figures.low-resolution')}
+            self.assertEqual(got, {('figures.low-resolution', 'paper/main.tex', 'warning'),
+                                   ('figures.corrupt', 'paper/main.tex', 'error'),
+                                   ('figures.corrupt', 'figures/orphan.png', 'warning')})
+            low = next(i for i in report['issues'] if i['code'] == 'figures.low-resolution')
+            self.assertEqual(low['line'], 7)
+            self.assertIn('300 px wide', low['message'])
+            bad = next(i for i in report['issues'] if i['code'] == 'figures.corrupt' and i['severity'] == 'error')
+            self.assertIn('figures/bad.pdf', bad['message'])
+            self.assertEqual(self.stage(report)['state'], 'error')
+
+    def stage(self, report):
+        return next(s for s in report['stages'] if s['id'] == 'figures')
+
+
+class StubTests(unittest.TestCase):
+    def test_placeholder_code_and_empty_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {
+                'code/todo.py': '"""Q2 model."""\n# TODO\npass\n',
+                'code/half.py': 'def fit(x):\n    """Fit."""\n    ...\n\ndef run():\n    raise NotImplementedError\n\n'
+                                'def ok():\n    return 1\n',
+                'code/abstract.py': 'from abc import ABC, abstractmethod\nclass M(ABC):\n    @abstractmethod\n    def f(self):\n        pass\n',
+                'code/broken.py': 'def f(:\n',
+                'code/empty.py': '',
+                'code/__init__.py': '',
+                'code/test_x.py': 'def test_a():\n    pass\n',
+                'code/real.py': 'print(sum(range(3)))\n',
+                'results/q2.json': contract({}),
+                'results/q3.json': contract({}, tables={'t': {'columns': ['a'], 'rows': [[1]]}}),
+            })
+            got = {(i.code, i.file) for i in stubs.check(ws)}
+            self.assertEqual(got, {('stubs.placeholder-script', 'code/todo.py'), ('stubs.functions', 'code/half.py'),
+                                   ('stubs.syntax', 'code/broken.py'), ('stubs.empty-file', 'code/empty.py')})
+            half = next(i for i in stubs.check(ws) if i.code == 'stubs.functions')
+            self.assertIn('fit, run', half.message)
+            self.assertNotIn('ok', half.message)
+            _, issues = results.load(ws)
+            self.assertEqual([(i.code, i.file) for i in issues if i.code == 'results.empty'], [('results.empty', 'results/q2.json')])
+            report = engine.status(ws)
+            self.assertIn('stubs.syntax', codes(report['issues']))
+            self.assertEqual(next(s for s in report['stages'] if s['id'] == 'experiment')['state'], 'error')
+
+
+class UnavailableTests(unittest.TestCase):
+    def test_broken_checker_is_a_note_not_a_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'results/q1.json': contract({'rmse': 0.5}), 'paper/main.tex': DOC + 'See \\ref{nope}.\n' + END})
+            with mock.patch.object(figures, 'check', side_effect=RuntimeError('boom')):
+                report = engine.status(ws, sync=True)
+            note = next(i for i in report['issues'] if i['code'] == 'figures.unavailable')
+            self.assertEqual(note['severity'], 'info')
+            self.assertIn('boom', note['message'])
+            fig = next(s for s in report['stages'] if s['id'] == 'figures')
+            self.assertIn('(1 check(s) could not run)', fig['summary'])
+            self.assertIn('latex.undefined-ref', codes(report['issues']))  # the other checks still ran
+
+    def test_stop_gate_ignores_unavailable_checks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'results/q1.json': contract({'rmse': 0.5}), 'paper/main.tex': DOC + 'Text \\res{q1.rmse}.\n' + END},
+                         config={'stop_gate': 'warnings'})
+            with mock.patch.object(latex, 'static_checks', side_effect=ValueError('parser broke')), \
+                    mock.patch.object(stubs, 'check', side_effect=OSError('denied')):
+                self.assertIsNone(hooks.stop({'session_id': 'u1', 'cwd': str(ws.root)}))
+                report = engine.status(ws)
+            self.assertEqual(report['counts']['error'] + report['counts']['warning'], 0)
+            self.assertTrue({'latex.unavailable', 'stubs.unavailable'} <= set(codes(report['issues'])))
+
+    def test_compile_timeout_and_missing_engine_are_unavailable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'paper/main.tex': DOC + 'Hi.\n' + END})
+            paper = latex.load(ws)
+            with mock.patch.object(latex, 'engine_for', return_value=['pdflatex']), \
+                    mock.patch.object(latex.subprocess, 'run', side_effect=subprocess.TimeoutExpired('pdflatex', 5)):
+                issues = latex.compile_paper(ws, paper, timeout=5)
+            self.assertEqual([(i.severity, i.code) for i in issues], [('info', 'compile.unavailable')])
+            with mock.patch.object(latex, 'engine_for', return_value=['pdflatex']), \
+                    mock.patch.object(latex.subprocess, 'run', side_effect=OSError('no such file')):
+                issues = latex.compile_paper(ws, paper)
+            self.assertEqual([(i.severity, i.code) for i in issues], [('info', 'compile.unavailable')])
+
+
+class TableTests(unittest.TestCase):
+    TABLE = {'compare': {'columns': ['Model', 'RMSE', 'R^2 & co'], 'rows': [['ARIMA', 0.123456, 0.9], ['LSTM_v2', 0.0981, None]],
+                         'digits': [None, 3, 2]}}
+
+    def test_sync_writes_booktabs_tables(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'results/q1.json': contract({'rmse': 0.5}, tables=self.TABLE),
+                               'paper/main.tex': DOC + '\\begin{table}\\centering\\input{tables/q1-compare}\\end{table}\n' + END})
+            results.sync(ws, results.load(ws)[0])
+            table = ws.root / 'paper' / 'tables' / 'q1-compare.tex'
+            text = table.read_text(encoding='utf-8')
+            self.assertTrue(results.is_generated(table))
+            self.assertIn('\\begin{tabular}{lrr}', text)
+            self.assertIn('Model & RMSE & R\\textasciicircum{}2 \\& co \\\\', text)
+            self.assertIn('ARIMA & 0.123 & 0.90 \\\\', text)
+            self.assertIn('LSTM\\_v2 & 0.098 & -- \\\\', text)
+            for rule in ('\\toprule', '\\midrule', '\\bottomrule'):
+                self.assertIn(rule, text)
+            report = engine.status(ws)
+            self.assertFalse({'latex.missing-input', 'numbers.tables-stale'} & set(codes(report['issues'])))
+            # Numbers inside the generated table are not read as hand-typed paper numbers.
+            self.assertNotIn('numbers.unbound', codes(report['issues']))
+            write(table, text.replace('0.123', '0.100'))
+            report = engine.status(ws)
+            self.assertIn('numbers.tables-stale', codes(report['issues']))
+            engine.status(ws, sync=True)
+            self.assertEqual(table.read_text(encoding='utf-8'), text)
+
+    def test_stale_tables_removed_and_hand_written_kept(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'results/q1.json': contract({'rmse': 0.5}, tables=self.TABLE),
+                               'paper/tables/mine.tex': 'hand written\n', 'paper/main.tex': DOC + END})
+            results.sync(ws, results.load(ws)[0])
+            write(ws.root / 'paper' / 'tables' / 'q1-other.tex', 'mine too\n')
+            write(ws.root / 'results' / 'q1.json', contract({'rmse': 0.5}))
+            write(ws.root / 'results' / 'q2.json', contract({}, tables={'other': {'columns': ['a'], 'rows': [[1]]}}))
+            results.sync(ws, results.load(ws)[0])
+            names = sorted(p.name for p in (ws.root / 'paper' / 'tables').iterdir())
+            self.assertEqual(names, ['mine.tex', 'q1-other.tex', 'q2-other.tex'])
+            self.assertEqual((ws.root / 'paper' / 'tables' / 'q1-other.tex').read_text(encoding='utf-8'), 'mine too\n')
+
+    def test_missing_table_input_hints_sync(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'paper/main.tex': DOC + '\\input{tables/q9-x}\n\\input{sections/gone}\n' + END})
+            issues, _ = paper_issues(ws)
+            missing = [i for i in issues if i.code == 'latex.missing-input']
+            self.assertEqual([i.line for i in missing], [5, 6])
+            self.assertIn('mtd.py sync', missing[0].hint)
+            self.assertNotIn('sync', missing[1].hint)
+
+    def test_cli_sync_reports_tables_and_hook_guards_them(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'results/q1.json': contract({'rmse': 0.5}, tables=self.TABLE), 'paper/main.tex': DOC + END})
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(mtd.main(['--root', str(ws.root), 'sync']), 0)
+            self.assertIn('1 table(s) in paper/tables/', out.getvalue())
+            edit = lambda rel: {'cwd': str(ws.root), 'tool_name': 'Edit', 'tool_input': {'file_path': str(ws.root / rel)}}
+            self.assertEqual(hooks.pre_edit(edit('paper/tables/q1-compare.tex'))['hookSpecificOutput']['permissionDecision'], 'deny')
+            write(ws.root / 'paper' / 'tables' / 'mine.tex', 'x\n')
+            self.assertIsNone(hooks.pre_edit(edit('paper/tables/mine.tex')))
+            self.assertIsNone(hooks.pre_edit(edit('paper/tables/new.tex')))
+
+
+class MarkdownTests(unittest.TestCase):
+    def check(self, text, bib=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            files = {'paper/main.md': text}
+            if bib:
+                files['paper/refs.bib'] = bib
+            ws = make_ws(tmp, files)
+            issues, _ = paper_issues(ws)
+            return [(i.code, i.line) for i in issues if i.code.startswith('md.')], issues
+
+    def test_clean_document(self):
+        got, _ = self.check('# Model\n\nThe loss $L = \\sum_i (y_i - \\hat y_i)^2$ and price \\$5 [1].\n\n'
+                            '$$\nE = mc^2\n$$\n\nAlso \\(a+b\\) and \\[x\\] [2-3]<sup>[4]</sup>.\n\n'
+                            '```python\nx = "$" + "\\\\frac"  # [9]\n```\n\nCode `a$b` here.\n\n'
+                            '## 参考文献\n\n[1] A. One.\n[2] B. Two.\n3. C. Three.\n- [4] D. Four.\n')
+        self.assertEqual(got, [])
+
+    def test_math_delimiters(self):
+        got, _ = self.check('Cost is $x + y here.\n\nNext $a$ paragraph.\n\nOpen \\[ x\n\nand \\) stray.\n')
+        self.assertEqual(sorted(got), [('md.unclosed-math', 5), ('md.unclosed-math', 7), ('md.unpaired-dollar', 1)])
+        got, _ = self.check('Fine $$a$$ and\n\n$$\nE = mc^2\n$$\n\n$$\nx = 1\n\nnever closed\n')
+        self.assertEqual(got, [('md.unclosed-display-math', 7)])
+        got, _ = self.check('```\ncode\n')
+        self.assertEqual(got, [('md.unclosed-fence', 1)])
+
+    def test_bare_latex(self):
+        got, _ = self.check('The rate is \\frac{a}{b} per day.\n\nFine: $\\alpha$ and $$\\beta$$.\n\n\\begin{equation}\nx\n\\end{equation}\n')
+        self.assertEqual(got, [('md.bare-latex', 1), ('md.bare-latex', 5)])
+
+    def test_citation_closure(self):
+        got, issues = self.check('Prior work [1, 3] and [5-6]; see [link](x) and ![i](y) and [^1].\n\n'
+                                 '# References\n\n[1] One.\n[2] Two.\n[3] Three.\n[5] Five.\n\n# Appendix\n\nAgain [6], outside the list.\n')
+        self.assertEqual(sorted(got), [('md.undefined-cite', 1), ('md.undefined-cite', 12), ('md.unused-ref', 3)])
+        undefined = next(i for i in issues if i.code == 'md.undefined-cite')
+        self.assertIn('[6]', undefined.message)
+        self.assertIn('[2]', next(i for i in issues if i.code == 'md.unused-ref').message)
+
+    def test_numbered_citations_without_list(self):
+        got, _ = self.check('As shown in [2].\n')
+        self.assertEqual(got, [('md.no-references', 1)])
+
+    def test_pandoc_citations(self):
+        bib = '@article{smith2020, title={X}}\n@book{li2019, title={Y}}\n'
+        got, issues = self.check('See [@smith2020; @li2019, p. 3] and [-@ghost2021]. Mail me at a@b.com.\n', bib)
+        self.assertEqual(got, [('md.undefined-cite', 1)])
+        self.assertIn('@ghost2021', next(i for i in issues if i.code == 'md.undefined-cite').message)
+        got, _ = self.check('See [@smith2020].\n')
+        self.assertEqual(got, [('md.undefined-cite', 1)])
 
 
 if __name__ == '__main__':

@@ -1,34 +1,60 @@
 """Run every check over a workspace and summarise each stage."""
 from __future__ import annotations
 
-from . import brief, figures, latex, numbers, results, runs
+from . import assets, brief, figures, latex, numbers, results, runs, stubs
 from .report import Issue, build, stage_state
 from .workspace import Workspace, read_text, write_json
 
 
+def guarded(stage: str, name: str, fn, *args, default=None):
+    """Run one check; if the checker itself breaks, say so as a note instead of failing the stage.
+    A broken or missing tool is not a problem with the work, so it must never block the Stop gate."""
+    try:
+        return fn(*args), []
+    except Exception as exc:  # noqa: BLE001 - one broken checker must not hide the others
+        return default, [Issue('info', stage, f'{name}.unavailable', f'{name} check could not run: {type(exc).__name__}: {exc}',
+                               hint='the other checks still ran; report this if it persists')]
+
+
 def status(ws: Workspace, compile: bool = False, sync: bool = False, save: bool = True) -> dict:
-    rs, issues = results.load(ws)
+    issues: list[Issue] = []
+
+    def run(stage, name, fn, *args, default=None):
+        value, notes = guarded(stage, name, fn, *args, default=default)
+        issues.extend(notes)
+        return value
+
+    def add(stage, name, fn, *args):
+        issues.extend(run(stage, name, fn, *args, default=[]))
+
+    rs, load_issues = run('results', 'results', results.load, ws, default=(results.ResultSet(), []))
+    issues += load_issues
     contract_files = sum(1 for d in rs.files.values() if isinstance(d, dict) and d.get('schema') == results.SCHEMA)
 
-    brief_issues, brief_summary = brief.check(ws, rs.questions, contract_files)
+    brief_issues, brief_summary = run('brief', 'brief', brief.check, ws, rs.questions, contract_files, default=([], {'questions': 0}))
     issues += brief_issues
-    run_issues, run_summary = runs.check(ws, sorted(rs.files))
+    run_issues, run_summary = run('experiment', 'runs', runs.check, ws, sorted(rs.files), default=([], {'runs': 0, 'failed': 0}))
     issues += run_issues
+    add('experiment', 'stubs', stubs.check, ws)
 
-    paper = latex.load(ws)
-    static, used = latex.static_checks(ws, paper, set(rs.values))
+    if sync and latex.find_main(ws)[1] == 'tex':
+        run('paper', 'sync', results.sync, ws, rs)  # macros and tables first, so the checks below see current files
+    paper = run('paper', 'latex', latex.load, ws, default=latex.Paper())
+    static, used = run('paper', 'latex', latex.static_checks, ws, paper, set(rs.values), default=([], set()))
     issues += static
-    num = numbers.check(paper, rs, float(ws.config.get('near_miss_rel', 0.02)))
+    num = run('paper', 'numbers', numbers.check, paper, rs, float(ws.config.get('near_miss_rel', 0.02)), default=numbers.NumberReport([]))
     issues += num.issues
-    issues += macro_checks(ws, paper, rs, sync)
+    add('paper', 'macros', macro_checks, ws, paper, rs)
     if compile:
-        issues += latex.compile_paper(ws, paper)
+        add('paper', 'compile', latex.compile_paper, ws, paper)
     else:
-        issues += latex.log_checks(ws, paper)
-    issues += pdf_freshness(ws, paper, rs, used)
+        add('paper', 'log', latex.log_checks, ws, paper)
+    add('paper', 'freshness', pdf_freshness, ws, paper, rs, used)
 
-    fig_issues, fig_summary = figures.check(ws, used, paper.main is not None)
+    fig_issues, fig_summary = run('figures', 'figures', figures.check, ws, used, paper.main is not None,
+                                  default=([], {'figures': 0, 'traced': 0}))
     issues += fig_issues
+    add('figures', 'assets', assets.check, ws, paper, lambda name: latex.resolve_graphic(paper, name))
 
     code_files = ws.files('code', runs.CODE)
     by_stage = lambda s: [i for i in issues if i.stage == s]
@@ -46,23 +72,28 @@ def status(ws: Workspace, compile: bool = False, sync: bool = False, save: bool 
                   'summary': (f'{ws.rel(paper.main)}: {num.checked} number(s) checked, {num.matched} match results, '
                               f'{num.near} near miss(es), {num.bound} cited with \\res') if paper.main else 'no paper source yet'},
     }
+    for stage, info in stages.items():
+        down = sum(1 for i in issues if i.stage == stage and i.code.endswith('.unavailable'))
+        if down:
+            info['summary'] += f' ({down} check(s) could not run)'
     report = build(str(ws.root), stages, issues)
     if save:
         write_json(ws.state / 'report.json', report)
     return report
 
 
-def macro_checks(ws: Workspace, paper: latex.Paper, rs: results.ResultSet, sync: bool) -> list[Issue]:
+def macro_checks(ws: Workspace, paper: latex.Paper, rs: results.ResultSet) -> list[Issue]:
     if paper.kind != 'tex' or not paper.main:
         return []
-    uses_res = any(latex.RES.search(l.text) for l in paper.lines)
-    target = results.macro_path(ws)
-    inputs_macros = any(m.group(1).strip().endswith(('results', 'results.tex')) for l in paper.lines for m in latex.INPUT.finditer(l.text))
-    if sync and (uses_res or inputs_macros or target.exists()):
-        results.sync(ws, rs)
-    if not uses_res:
-        return []
     out = []
+    tables = results.table_texts(rs)
+    stale = [p for p in paper.generated if read_text(p) != tables.get(p.name)]
+    if stale:
+        out.append(Issue('warning', 'paper', 'numbers.tables-stale', f'{len(stale)} generated table(s) differ from results/*.json: '
+                         + ', '.join(ws.rel(p) for p in stale[:4]), ws.rel(stale[0]), hint='run `mtd.py sync`'))
+    if not any(latex.RES.search(l.text) for l in paper.lines):
+        return out
+    target = results.macro_path(ws)
     rel = ws.rel(target)
     if not target.exists():
         out.append(Issue('error', 'paper', 'numbers.macros-missing', f'the paper uses \\res but {rel} does not exist', rel, hint='run `mtd.py sync`'))
