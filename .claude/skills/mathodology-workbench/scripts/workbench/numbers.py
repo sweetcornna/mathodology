@@ -67,19 +67,17 @@ class Index:
 
     @classmethod
     def build(cls, rs: ResultSet) -> 'Index':
-        pairs = sorted((abs(v), origin) for v, origin in rs.numbers)
+        pairs = sorted((v, origin) for v, origin in rs.numbers)
         return cls([p[0] for p in pairs], [p[1] for p in pairs])
 
     def matches(self, value: float, tol: float) -> list[str]:
-        value = abs(value)
-        eps = 1e-9 * max(1.0, value)
+        eps = 1e-9 * max(1.0, abs(value))
         lo, hi = bisect_left(self.keys, value - tol - eps), bisect_right(self.keys, value + tol + eps)
         return self.origins[lo:hi]
 
     def nearest(self, value: float) -> tuple[float, str] | None:
         if not self.keys:
             return None
-        value = abs(value)
         i = bisect_left(self.keys, value)
         best = min((j for j in (i - 1, i) if 0 <= j < len(self.keys)), key=lambda j: abs(self.keys[j] - value))
         return self.keys[best], self.origins[best]
@@ -184,21 +182,21 @@ def check(paper: Paper, rs: ResultSet, near_rel: float = 0.02, only: str | None 
     report = NumberReport([], bound=sum(bound.values()))
     unmatched: dict[str, list[Mention]] = {}
     typed: dict[str, int] = {}
-    addressable = {abs(v.value) for v in rs.values.values()}
+    addressable = {v.value for v in rs.values.values()}
     for m in mentions:
         report.checked += 1
         readings = [(m.value, m.tol)] + m.alternatives
         hit = next((index.matches(v, t) for v, t in readings if index.matches(v, t)), None)
         if hit:
             report.matched += 1
-            if any(abs(abs(v) - a) <= t + 1e-12 for v, t in readings for a in addressable):
+            if any(abs(v - a) <= t + 1e-12 for v, t in readings for a in addressable):
                 typed[m.file] = typed.get(m.file, 0) + 1
             continue
         near = None
         if '.' in m.text or m.alternatives:
             for v, t in readings:
                 cand = index.nearest(v)
-                if cand and cand[0] and abs(abs(v) - cand[0]) / cand[0] <= near_rel:
+                if cand and cand[0] and abs(v - cand[0]) / abs(cand[0]) <= near_rel:
                     near = (cand, v)
                     break
         if near:

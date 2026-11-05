@@ -1,12 +1,14 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import type { Connector } from '../src/shared/types'
-import { connectorId, migrateConnectors, SEARCH_CONNECTOR, syncCodexToml, syncConnectors } from '../src/main/connectors'
+import { connectorId, McpPool, migrateConnectors, SEARCH_CONNECTOR, syncCodexToml, syncConnectors } from '../src/main/connectors'
 
 const dirs: string[] = []
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })))
+afterEach(() => vi.restoreAllMocks())
 function temp(): string {
   const d = mkdtempSync(join(tmpdir(), 'studio-conn-'))
   dirs.push(d)
@@ -17,6 +19,54 @@ const remote: Connector = { id: 'zotero', name: 'Zotero', enabled: true, url: 'h
 /** Studio's record of the entries it wrote, kept outside the project like the real one. */
 const ledger = (): string => join(temp(), 'connectors', 'p1.json')
 const servers = (dir: string, file: string) => JSON.parse(readFileSync(join(dir, file), 'utf8')).mcpServers
+
+describe('MCP connection recovery', () => {
+  function mockClients() {
+    const clients: Client[] = []
+    const connect = vi.spyOn(Client.prototype, 'connect').mockImplementation(async function (this: Client) {
+      clients.push(this)
+    })
+    vi.spyOn(Client.prototype, 'listTools').mockResolvedValue({ tools: [{ name: 'search', inputSchema: { type: 'object' } }] })
+    const close = vi.spyOn(Client.prototype, 'close').mockResolvedValue()
+    return { clients, connect, close, pool: new McpPool(async () => ({})) }
+  }
+
+  it('reuses a live client and reconnects on the next check after a transport closes', async () => {
+    const { pool, clients } = mockClients()
+    expect(await Promise.all([pool.check(remote), pool.check(remote)])).toEqual([{ ok: true, tools: ['search'] }, { ok: true, tools: ['search'] }])
+    expect(clients).toHaveLength(1)
+    clients[0].onclose?.()
+    expect(await pool.check(remote)).toEqual({ ok: true, tools: ['search'] })
+    expect(clients).toHaveLength(2)
+    await pool.close()
+  })
+
+  it('does not let an old close event evict a newer connection for the same connector', async () => {
+    const { pool, clients, close } = mockClients()
+    await pool.check(remote)
+    const replacement = { ...remote, url: `${remote.url}/new` }
+    await pool.check(replacement)
+    expect(clients).toHaveLength(2)
+    expect(close).toHaveBeenCalledOnce()
+    clients[0].onclose?.()
+    await pool.check(replacement)
+    expect(clients).toHaveLength(2)
+    clients[1].onclose?.()
+    await pool.check(replacement)
+    expect(clients).toHaveLength(3)
+    await pool.close()
+  })
+
+  it('retries a failed connection instead of retaining its rejected promise', async () => {
+    const { pool, clients, connect } = mockClients()
+    connect.mockRejectedValueOnce(new Error('server unavailable'))
+    expect(await pool.check(remote)).toEqual({ ok: false, tools: [], error: 'server unavailable' })
+    expect(await pool.check(remote)).toEqual({ ok: true, tools: ['search'] })
+    expect(connect).toHaveBeenCalledTimes(2)
+    expect(clients).toHaveLength(1)
+    await pool.close()
+  })
+})
 
 describe('migrateConnectors', () => {
   it('keeps the old search switch and always includes the built-in server', () => {

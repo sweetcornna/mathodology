@@ -105,7 +105,8 @@ def pre_edit(payload: dict) -> dict | None:
         return None
     rel = ws.rel(path)
     reason = None
-    if rel == ws.rel(results.macro_path(ws)) or (rel.startswith('paper/tables/') and path.is_file() and results.is_generated(path)):
+    if ((rel == ws.rel(results.macro_path(ws)) and (not path.exists() or results.is_generated(path)))
+            or (rel.startswith('paper/tables/') and path.is_file() and results.is_generated(path))):
         reason = f'{rel} is generated from results/*.json. Change the code that writes the results and run `{mtd_hint(ws)} sync` instead of editing it.'
     elif rel.startswith('results/') and rel.lower().endswith('.json') and not ws.config.get('allow_result_edits') \
             and os.environ.get('MATHODOLOGY_ALLOW_RESULT_EDITS') != '1':
@@ -167,9 +168,12 @@ def _results_changed(ws: Workspace, force: bool = False) -> list[str]:
         out.append('Results contract problems:\n' + '\n'.join('- ' + i.render() for i in errors[:10]))
     target = results.macro_path(ws)
     if (rs.values or results.table_texts(rs)) and (target.exists() or ws.dir('paper').is_dir()):
-        _, changed = results.sync(ws, rs)
-        if changed:
-            out.append(f'Results changed: refreshed {ws.rel(target)} ({len(rs.values)} values citable as \\res{{file.key}}).')
+        try:
+            _, changed = results.sync(ws, rs)
+            if changed:
+                out.append(f'Results changed: refreshed {ws.rel(target)} ({len(rs.values)} values citable as \\res{{file.key}}).')
+        except results.SyncError as exc:
+            out.append(str(exc))
     ws.state.mkdir(parents=True, exist_ok=True)
     stamp.write_text(str(newest), encoding='utf-8')
     return out

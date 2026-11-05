@@ -274,7 +274,10 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
       let sessionId = ''
       let finished = false
       let interrupted = false
+      let closed = false
+      let prompting = false
       let failure: string | null = null
+      const stopTimers: ReturnType<typeof setTimeout>[] = []
 
       const reply = (rpcId: unknown, result: Json): void => send({ jsonrpc: '2.0', id: rpcId, result })
       const answer = (rpcId: unknown, options: AcpPermissionOption[], allow: boolean, always?: boolean): void => {
@@ -338,12 +341,16 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
         } else w.resolve((msg.result ?? {}) as Json)
       }
 
-      const { child, exited, kill } = spawnLines(req.binary, [...spec.acpArgs, ...splitArgs(req.settings.extraArgs)], req.cwd, req.env, onLine)
+      const { child, exited, kill, beginStop } = spawnLines(req.binary, [...spec.acpArgs, ...splitArgs(req.settings.extraArgs)], req.cwd, req.env, onLine)
       const send = (obj: Json): void => {
         if (!child.stdin.destroyed && child.stdin.writable) child.stdin.write(JSON.stringify(obj) + '\n')
       }
       const call = (method: string, params: Json): Promise<Json> =>
         new Promise((resolve, reject) => {
+          if (interrupted || closed) {
+            reject(new Error(interrupted ? 'interrupted' : 'exited'))
+            return
+          }
           const rpcId = nextId++
           waiting.set(rpcId, { resolve, reject })
           send({ jsonrpc: '2.0', id: rpcId, method, params })
@@ -355,8 +362,8 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
         parser.close()
         sink.emit(body)
         child.stdin.end()
-        setTimeout(() => child.exitCode === null && kill('SIGTERM'), 3000)
-        setTimeout(() => child.exitCode === null && kill('SIGKILL'), 7000)
+        stopTimers.push(setTimeout(() => kill('SIGTERM'), 3000))
+        stopTimers.push(setTimeout(() => kill('SIGKILL'), 7000))
       }
 
       const run = async (): Promise<void> => {
@@ -365,6 +372,7 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
           clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
           clientInfo: { name: 'mathodology-studio', title: 'Mathodology Studio', version: '0.1.0' }
         })
+        if (interrupted || closed) return
         const caps = (init.agentCapabilities ?? {}) as Json
         const mcp = (caps.mcpCapabilities ?? {}) as Json
         const sessionCaps = (caps.sessionCapabilities ?? {}) as Json
@@ -391,6 +399,7 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
           } finally {
             parser.muted = false
           }
+          if (interrupted || closed) return
           if (!resumed) {
             sink.emit({
               kind: 'notice',
@@ -404,6 +413,7 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
           session = await call('session/new', base)
           sessionId = String(session.sessionId ?? '')
         }
+        if (interrupted || closed) return
         if (sessionId) sink.nativeSession(sessionId)
         const offered = modelsFrom(session)
         if (offered.length) learnedModels.set(id, offered)
@@ -411,8 +421,14 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
         // The agent's own mode for the permission mode, its model and its reasoning level.
         const modes = (session.modes ?? {}) as Json
         const available = (Array.isArray(modes.availableModes) ? modes.availableModes : []) as AcpMode[]
+        // accept-edits can use a normal approval mode: Studio handles its edit approvals.
         const modeId = pickMode(available, req.permissionMode)
-        if (modeId && modeId !== modes.currentModeId) await call('session/set_mode', { sessionId, modeId }).catch(() => undefined)
+          ?? (req.permissionMode === 'acceptEdits' ? pickMode(available, 'ask') : undefined)
+        if (!modeId && req.permissionMode !== 'bypass' && (req.permissionMode === 'plan' || available.length || modes.currentModeId)) {
+          throw new Error(`The agent does not offer a verifiable ${req.permissionMode} permission mode; no prompt was sent.`)
+        }
+        // Continuing after this fails could keep a resumed session in unrestricted mode.
+        if (modeId && modeId !== modes.currentModeId) await call('session/set_mode', { sessionId, modeId })
         const modelOption = configOption(session, 'model')
         if (req.model) {
           if (modelOption) await call('session/set_config_option', { sessionId, configId: modelOption.id, value: req.model }).catch(() => undefined)
@@ -420,6 +436,7 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
         }
         const effortOption = configOption(session, 'thought_level')
         if (req.effort && effortOption) await call('session/set_config_option', { sessionId, configId: effortOption.id, value: req.effort }).catch(() => undefined)
+        if (interrupted || closed) return
 
         const current = (session.models ?? {}) as Json
         sink.emit({
@@ -433,8 +450,9 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
         // ACP has no system prompt; Studio's note leads the first message of a conversation.
         const text = req.systemAppend && !resumed ? `${req.systemAppend}\n\n---\n\n${req.prompt}` : req.prompt
         const started = Date.now()
+        prompting = true
         const result = await call('session/prompt', { sessionId, prompt: [{ type: 'text', text }] })
-        const stop = String(result.stopReason ?? 'end_turn')
+        const stop = interrupted ? 'cancelled' : String(result.stopReason ?? 'end_turn')
         if (stop === 'refusal') sink.emit({ kind: 'notice', level: 'warning', text: `${name} declined to continue.` })
         if (stop === 'max_tokens' || stop === 'max_turn_requests') sink.emit({ kind: 'notice', level: 'warning', text: `${name} stopped early (${stop}).` })
         const u = (result.usage ?? {}) as Json
@@ -457,7 +475,7 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
         if (finished) return
         failure = err.message
         // -32000 is ACP's "authentication required".
-        if (err.code === -32000 || SIGN_IN_PROMPT.test(err.message)) {
+        if (!interrupted && (err.code === -32000 || SIGN_IN_PROMPT.test(err.message))) {
           sink.emit({
             kind: 'notice',
             level: 'warning',
@@ -472,6 +490,8 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
       })
 
       const done = exited.then(({ code, signal, stderr }) => {
+        closed = true
+        for (const timer of stopTimers) clearTimeout(timer)
         for (const requestId of pending.keys()) sink.emit({ kind: 'permission.resolved', requestId, allow: false })
         pending.clear()
         for (const w of waiting.values()) w.reject(new Error('exited'))
@@ -494,20 +514,24 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
 
       return {
         interrupt() {
+          if (interrupted || closed) return
           interrupted = true
+          beginStop()
           for (const [requestId, p] of pending) {
             reply(p.rpcId, { outcome: { outcome: 'cancelled' } })
             sink.emit({ kind: 'permission.resolved', requestId, allow: false })
           }
           pending.clear()
-          if (sessionId) send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } })
-          setTimeout(() => {
-            if (child.exitCode === null) {
-              child.stdin.end()
-              kill('SIGTERM')
-            }
-          }, 5000)
-          setTimeout(() => child.exitCode === null && kill('SIGKILL'), 9000)
+          if (prompting && !finished) send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } })
+          else {
+            child.stdin.end()
+            kill('SIGTERM')
+          }
+          stopTimers.push(setTimeout(() => {
+            if (!child.stdin.destroyed) child.stdin.end()
+            kill('SIGTERM')
+          }, 5000))
+          stopTimers.push(setTimeout(() => kill('SIGKILL'), 9000))
         },
         respondPermission(requestId, allow, always) {
           const p = pending.get(requestId)

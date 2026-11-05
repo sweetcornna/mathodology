@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -25,6 +26,14 @@ SKIP_DIRS = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', 'site-packa
 MAX_FILES = 5000  # per folder walk; keeps hooks fast in an oversized workspace
 
 
+class FileScanError(OSError):
+    """A bounded scan could not finish; preserve the files already discovered for reporting."""
+
+    def __init__(self, message: str, paths: list[Path]):
+        super().__init__(message)
+        self.paths = paths
+
+
 @dataclass
 class Workspace:
     root: Path
@@ -43,18 +52,30 @@ class Workspace:
         except ValueError:
             return str(path)
 
-    def files(self, sub: str, suffixes: tuple[str, ...]) -> list[Path]:
+    def files(self, sub: str, suffixes: tuple[str, ...], *, strict: bool = False) -> list[Path]:
         base = self.root / sub
-        if not base.is_dir():
+        if strict:
+            try:
+                if not stat.S_ISDIR(base.stat().st_mode):
+                    raise FileScanError(f'{base} is not a directory', [])
+            except FileNotFoundError:
+                return []
+        elif not base.is_dir():
             return []
         out = []
-        for dirpath, dirnames, filenames in os.walk(base):
+
+        def scan_error(exc: OSError) -> None:
+            raise FileScanError(f'could not scan {sub}: {exc}', out)
+
+        for dirpath, dirnames, filenames in os.walk(base, onerror=scan_error if strict else None):
             dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith('.')
                                  and not (Path(dirpath) / d / 'pyvenv.cfg').exists())
-            if len(out) >= MAX_FILES:
+            if not strict and len(out) >= MAX_FILES:
                 break
             for name in sorted(filenames):
                 if name.lower().endswith(suffixes) and not name.startswith('._'):
+                    if strict and len(out) >= MAX_FILES:
+                        raise FileScanError(f'{sub} contains more than {MAX_FILES} matching files; scan is incomplete', out)
                     out.append(Path(dirpath) / name)
         return out
 
@@ -125,15 +146,17 @@ def sha256(path: Path, limit: int = 64 * 1024 * 1024) -> str | None:
         return None
 
 
-def read_text(path: Path) -> str:
+def read_text(path: Path, *, strict: bool = False) -> str:
     for encoding in ('utf-8-sig', 'gb18030'):
         try:
             return path.read_text(encoding=encoding)
         except UnicodeDecodeError:
             continue
         except OSError:
+            if strict:
+                raise
             return ''
-    return path.read_text(encoding='utf-8', errors='replace')
+    return path.read_text(encoding='utf-8', errors='strict' if strict else 'replace')
 
 
 def write_json(path: Path, data) -> None:

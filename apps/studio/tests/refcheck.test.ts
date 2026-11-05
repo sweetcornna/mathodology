@@ -323,7 +323,8 @@ describe('checkEntry', () => {
               ]
             }
           }
-        ]
+        ],
+        [/api\.crossref\.org\/works\/10\.1098\//, 200, { message: { DOI: '10.1098/RSPA.1927.0118', title: ['A contribution to the mathematical theory of epidemics'], author: [{ family: 'Kermack', given: 'W. O.' }], issued: { 'date-parts': [[1927]] } } }]
       ],
       seen
     )
@@ -333,6 +334,36 @@ describe('checkEntry', () => {
     expect(r.problems.map((p) => p.code)).toEqual(['no_doi'])
     expect(decodeURIComponent(seen[0])).toContain('query.bibliographic=A Contribution to the Mathematical Theory of Epidemics Kermack 1927'.replace(/ /g, '+'))
     expect(await findCandidate('Unrelated title words here', '', undefined, net)).toBeUndefined()
+  })
+
+  it.each(['crossref', 'openalex'])('checks %s retraction notices for a title-matched entry without a DOI', async (source) => {
+    const title = 'A reproducible paper about cooling'
+    const message = { DOI: '10.1000/cooling', title: [title], author: [{ family: 'Smith' }], issued: { 'date-parts': [[2020]] } }
+    const seen: string[] = []
+    const net = routes([
+      [/api\.crossref\.org\/works\?/, 200, { message: { items: [message] } }],
+      [/api\.crossref\.org\/works\/10\.1000\/cooling/, 200, { message: { ...message, 'updated-by': source === 'crossref' ? [{ DOI: '10.1000/notice', type: 'retraction' }] : [] } }],
+      [/api\.openalex\.org/, 200, { is_retracted: source === 'openalex' }]
+    ], seen)
+    const checked = await checkEntry(entry({ title, author: 'Smith', year: '2020' }), net)
+    expect(checked.candidate?.doi).toBe('10.1000/cooling')
+    expect(checked.check?.notices).toContainEqual(expect.objectContaining({ kind: 'retraction', source }))
+    expect(checked.verdict).toBe('fail')
+    expect(checked.problems.map((p) => p.code)).toEqual(['retracted', 'no_doi'])
+    expect(seen).toContain('https://api.crossref.org/works/10.1000/cooling')
+  })
+
+  it('keeps the candidate but reports an inconclusive result when its DOI check is unavailable', async () => {
+    const title = 'A reproducible paper about cooling'
+    const net = routes([
+      [/api\.crossref\.org\/works\?/, 200, { message: { items: [{ DOI: '10.1000/cooling', title: [title], author: [{ family: 'Smith' }] }] } }],
+      [/./, 0, '']
+    ])
+    const checked = await checkEntry(entry({ title, author: 'Smith' }), net)
+    expect(checked.candidate?.doi).toBe('10.1000/cooling')
+    expect(checked.check?.state).toBe('unverifiable')
+    expect(checked.verdict).toBe('inconclusive')
+    expect(checked.problems).toContainEqual({ code: 'unverifiable', severity: 'inconclusive', detail: 'network down' })
   })
 
   it('checks arXiv entries through their DataCite DOI', async () => {

@@ -231,8 +231,9 @@ export class McpPool {
 
   constructor(private readonly env: () => Promise<NodeJS.ProcessEnv>) {}
 
-  private async open(c: Connector): Promise<Client> {
+  private async open(c: Connector, onclose: () => void): Promise<Client> {
     const client = new Client({ name: 'mathodology-studio', version: '1' })
+    client.onclose = onclose
     if (c.url) {
       await client.connect(new StreamableHTTPClientTransport(new URL(c.url)))
       return client
@@ -249,10 +250,15 @@ export class McpPool {
     const cached = this.clients.get(c.id)
     if (cached?.key === key) return cached.client
     if (cached) void cached.client.then((x) => x.close()).catch(() => undefined)
-    const client = this.open(c)
+    const evict = (): void => {
+      // A replaced connector may finish closing after its replacement has connected.
+      if (this.clients.get(c.id)?.client === client) this.clients.delete(c.id)
+    }
+    // Install the cache entry before connect can invoke onclose, including failed handshakes.
+    const client = Promise.resolve().then(() => this.open(c, evict))
     this.clients.set(c.id, { key, client })
-    // A failed start is not cached, so the next call tries again.
-    client.catch(() => this.clients.get(c.id)?.client === client && this.clients.delete(c.id))
+    // Failed starts and later disconnections are both retried on the next user operation.
+    void client.catch(evict)
     return client
   }
 

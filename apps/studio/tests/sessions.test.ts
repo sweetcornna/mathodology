@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Project, Settings } from '@shared/types'
 import type { AgentAdapter, TurnRequest, TurnSink } from '../src/main/agents/base'
 import { ArtifactStore } from '../src/main/artifacts'
@@ -9,11 +9,13 @@ import { ADAPTERS, SessionManager } from '../src/main/sessions'
 import { Store } from '../src/main/store'
 
 // No login shell and no installed CLI: the agent is the fake below.
+const detection = vi.hoisted(() => ({ agentEnv: vi.fn<() => Promise<NodeJS.ProcessEnv>>() }))
 vi.mock('../src/main/agents/detect', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/agents/detect')>()),
-  agentEnv: async () => ({}),
+  agentEnv: detection.agentEnv,
   resolveBinary: () => '/usr/bin/true'
 }))
+beforeEach(() => detection.agentEnv.mockReset().mockResolvedValue({}))
 
 const dirs: string[] = []
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })))
@@ -105,6 +107,130 @@ describe('deleting while a turn winds down', () => {
     store.removeSession(session.id)
     await sending
     expect(agent.requests).toEqual([])
+    expect(manager.isRunning(session.id)).toBe(false)
+    store.flush()
+  })
+})
+
+describe('reserving a turn before asynchronous preparation', () => {
+  function delayedEnvironment(): () => void {
+    let resolve!: (env: NodeJS.ProcessEnv) => void
+    detection.agentEnv.mockImplementationOnce(() => new Promise((r) => { resolve = r }))
+    return () => resolve({})
+  }
+
+  function controlledAgent() {
+    const requests: TurnRequest[] = []
+    const turns: { sink: TurnSink; end(): void }[] = []
+    ADAPTERS.claude = {
+      ...ADAPTERS.claude,
+      start(req, sink) {
+        requests.push(req)
+        let end!: () => void
+        const done = new Promise<void>((resolve) => { end = resolve })
+        turns.push({ sink, end })
+        return { done, interrupt() {}, respondPermission() {} }
+      }
+    }
+    return { requests, turns }
+  }
+
+  it('queues simultaneous sends and keeps the next turn owned when old callbacks arrive', async () => {
+    const release = delayedEnvironment()
+    const agent = controlledAgent()
+    const { store, manager, session } = setup()
+    const first = manager.send({ sessionId: session.id, text: 'first', attachments: [] })
+    await manager.send({ sessionId: session.id, text: 'second', attachments: [] })
+    expect(manager.isRunning(session.id)).toBe(true)
+    expect(store.session(session.id)?.status).toBe('running')
+    expect(store.session(session.id)?.queue?.map((q) => q.text)).toEqual(['second'])
+    expect(agent.requests).toHaveLength(0)
+    release()
+    await first
+    expect(agent.requests.map((r) => r.prompt)).toEqual(['first'])
+    agent.turns[0].sink.emit({ kind: 'turn.completed', ok: true })
+    agent.turns[0].end()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(agent.requests.map((r) => r.prompt)).toEqual(['first', 'second'])
+    agent.turns[0].sink.emit({ kind: 'turn.completed', ok: false })
+    expect(manager.isRunning(session.id)).toBe(true)
+    expect(store.session(session.id)?.status).toBe('running')
+    expect(store.events(session.id).filter((e) => e.kind === 'turn.completed')).toHaveLength(1)
+    agent.turns[1].sink.emit({ kind: 'turn.completed', ok: true })
+    agent.turns[1].end()
+    await Promise.resolve()
+    expect(manager.isRunning(session.id)).toBe(false)
+    store.flush()
+  })
+
+  it('stops pending preparation immediately and cannot remove a newer turn when it resumes', async () => {
+    const release = delayedEnvironment()
+    const agent = controlledAgent()
+    const { store, manager, session } = setup()
+    const first = manager.send({ sessionId: session.id, text: 'cancelled', attachments: [] })
+    manager.interrupt(session.id)
+    expect(manager.isRunning(session.id)).toBe(false)
+    expect(store.events(session.id).at(-1)).toMatchObject({ kind: 'turn.completed', ok: false, summary: 'interrupted' })
+    await manager.send({ sessionId: session.id, text: 'replacement', attachments: [] })
+    release()
+    await first
+    expect(agent.requests.map((r) => r.prompt)).toEqual(['replacement'])
+    expect(manager.isRunning(session.id)).toBe(true)
+    expect(store.session(session.id)?.status).toBe('running')
+    agent.turns[0].sink.emit({ kind: 'turn.completed', ok: true })
+    agent.turns[0].end()
+    await Promise.resolve()
+    store.flush()
+  })
+
+  it('shuts down a pending start without launching later or accepting more messages', async () => {
+    const release = delayedEnvironment()
+    const agent = fakeAgent()
+    const { store, manager, session } = setup()
+    const sending = manager.send({ sessionId: session.id, text: 'hi', attachments: [] })
+    await manager.shutdown()
+    release()
+    await sending
+    expect(agent.requests).toEqual([])
+    expect(manager.isRunning(session.id)).toBe(false)
+    expect(store.session(session.id)?.status).toBe('idle')
+    await expect(manager.send({ sessionId: session.id, text: 'late', attachments: [] })).rejects.toThrow('shutting down')
+    store.flush()
+  })
+
+  it('releases a reservation when environment preparation fails', async () => {
+    detection.agentEnv.mockRejectedValueOnce(new Error('environment unavailable'))
+    const agent = fakeAgent()
+    const { store, manager, session } = setup()
+    await expect(manager.send({ sessionId: session.id, text: 'first', attachments: [] })).rejects.toThrow('environment unavailable')
+    expect(manager.isRunning(session.id)).toBe(false)
+    expect(store.session(session.id)?.status).toBe('error')
+    expect(store.events(session.id).at(-1)).toMatchObject({ kind: 'turn.completed', ok: false })
+    await manager.send({ sessionId: session.id, text: 'retry', attachments: [] })
+    expect(agent.requests.map((r) => r.prompt)).toEqual(['retry'])
+    await agent.finish()
+    store.flush()
+  })
+
+  it.each(['stop', 'delete'] as const)('ignores a preparation error arriving after %s', async (action) => {
+    let reject!: (err: Error) => void
+    detection.agentEnv.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail }))
+    const agent = fakeAgent()
+    const { store, manager, session, data } = setup()
+    const sending = manager.send({ sessionId: session.id, text: 'first', attachments: [] })
+    manager.interrupt(session.id)
+    if (action === 'delete') store.removeSession(session.id)
+    reject(new Error('late environment failure'))
+    await expect(sending).resolves.toBeUndefined()
+    expect(agent.requests).toEqual([])
+    expect(manager.isRunning(session.id)).toBe(false)
+    if (action === 'delete') {
+      expect(store.session(session.id)).toBeUndefined()
+      expect(existsSync(join(data, 'events', `${session.id}.jsonl`))).toBe(false)
+    } else {
+      expect(store.session(session.id)?.status).toBe('idle')
+      expect(store.events(session.id).filter((e) => e.kind === 'notice')).toEqual([])
+    }
     store.flush()
   })
 })
@@ -140,6 +266,8 @@ describe('a CLI that cannot be started', () => {
     const events = store.events(session.id)
     expect(events.find((e) => e.kind === 'notice')).toMatchObject({ level: 'error', text: expect.stringContaining('spawn ENAMETOOLONG') })
     expect(events.at(-1)).toMatchObject({ kind: 'turn.completed', ok: false })
+    expect(manager.isRunning(session.id)).toBe(false)
+    store.flush()
   })
 })
 

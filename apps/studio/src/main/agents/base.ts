@@ -171,6 +171,8 @@ export interface SpawnedTurn {
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null; stderr: string }>
   /** Signal the CLI's whole process group: node-based CLIs re-spawn themselves as a child. */
   kill(signal: NodeJS.Signals): void
+  /** Mark cancellation before a protocol interrupt, so exiting wrappers cannot orphan work. */
+  beginStop(): void
 }
 
 /** CLIs whose output is still open, so quitting can make sure none outlives Studio. */
@@ -206,28 +208,42 @@ export function spawnLines(
   child.stdin.on('error', () => undefined)
   const out = new LineSplitter()
   let stderr = ''
+  let closed = false
+  let stopping = false
   child.stdout.setEncoding('utf8')
   child.stderr.setEncoding('utf8')
   child.stdout.on('data', (d: string) => out.push(d).forEach(onLine))
   child.stderr.on('data', (d: string) => {
     stderr = (stderr + d).slice(-20_000)
   })
+  // During cancellation a wrapper can exit while descendants retain the pipes, or redirect
+  // them and outlive `close`. Normal completion may intentionally leave a server running.
+  child.on('exit', () => { if (stopping) killTree(child, 'SIGKILL') })
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null; stderr: string }>((resolve) => {
     child.on('error', (err) => {
       stderr += `\n${err.message}`
       if (!child.pid) running.delete(child)
     })
     child.on('close', (code, signal) => {
+      closed = true
       running.delete(child)
       out.flush().forEach(onLine)
       resolve({ code, signal, stderr })
     })
   })
+  const beginStop = (): void => {
+    if (closed) return
+    stopping = true
+    // taskkill needs the root PID to still exist to discover its descendants. Run it before
+    // a Windows protocol interrupt lets the root exit; POSIX groups survive their leader.
+    if (process.platform === 'win32' || child.exitCode !== null || child.signalCode !== null) killTree(child, 'SIGKILL')
+  }
   const kill = (signal: NodeJS.Signals): void => {
-    if (child.exitCode !== null || child.signalCode !== null) return
+    if (closed) return
+    stopping = true
     killTree(child, signal)
   }
-  return { child, exited, kill }
+  return { child, exited, kill, beginStop }
 }
 
 /**

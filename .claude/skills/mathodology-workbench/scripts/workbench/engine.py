@@ -11,6 +11,8 @@ def guarded(stage: str, name: str, fn, *args, default=None):
     A broken or missing tool is not a problem with the work, so it must never block the Stop gate."""
     try:
         return fn(*args), []
+    except results.SyncError as exc:
+        return default, [exc.issue]
     except Exception as exc:  # noqa: BLE001 - one broken checker must not hide the others
         return default, [Issue('info', stage, f'{name}.unavailable', f'{name} check could not run: {type(exc).__name__}: {exc}',
                                hint='the other checks still ran; report this if it persists')]
@@ -27,7 +29,7 @@ def status(ws: Workspace, compile: bool = False, sync: bool = False, save: bool 
     def add(stage, name, fn, *args):
         issues.extend(run(stage, name, fn, *args, default=[]))
 
-    rs, load_issues = run('results', 'results', results.load, ws, default=(results.ResultSet(), []))
+    rs, load_issues = run('results', 'results', results.load, ws, default=(results.ResultSet(valid=False), []))
     issues += load_issues
     contract_files = sum(1 for d in rs.files.values() if isinstance(d, dict) and d.get('schema') == results.SCHEMA)
 
@@ -37,7 +39,7 @@ def status(ws: Workspace, compile: bool = False, sync: bool = False, save: bool 
     issues += run_issues
     add('experiment', 'stubs', stubs.check, ws)
 
-    if sync and latex.find_main(ws)[1] == 'tex':
+    if sync and rs.valid and latex.find_main(ws)[1] == 'tex':
         run('paper', 'sync', results.sync, ws, rs)  # macros and tables first, so the checks below see current files
     paper = run('paper', 'latex', latex.load, ws, default=latex.Paper())
     static, used = run('paper', 'latex', latex.static_checks, ws, paper, set(rs.values), default=([], set()))

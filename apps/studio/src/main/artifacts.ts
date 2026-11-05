@@ -120,6 +120,7 @@ export class ArtifactStore {
         return
       }
       for (const name of names) {
+        if (out.length >= SCAN_LIMIT) break
         if (SKIP_DIRS.has(name) || name.startsWith('.')) continue
         const abs = join(dir, name)
         let st
@@ -204,7 +205,17 @@ export class ArtifactStore {
     }
     if (scan) {
       const present = new Set(paths)
-      for (const a of idx.artifacts) if (!present.has(a.rel) && !a.missing) a.missing = true
+      for (const a of idx.artifacts) {
+        if (present.has(a.rel)) continue
+        // A bounded scan may skip deep, inaccessible or excluded folders. Only an explicit
+        // missing-path error confirms deletion; permissions and transient I/O failures do not.
+        try {
+          a.missing = !statSync(safeJoin(project.path, a.rel)).isFile()
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code
+          if (code === 'ENOENT' || code === 'ENOTDIR') a.missing = true
+        }
+      }
     }
     if (found.length || scan) this.save(project.id)
     return found

@@ -1,4 +1,4 @@
-import { appendFileSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, fstatSync, fsyncSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Project, Session, SessionEvent, SessionEventBody, Settings } from '@shared/types'
 
@@ -50,13 +50,33 @@ export function readJson<T>(path: string, fallback: T): T {
 export class Store {
   private state: StateFile
   private seqs = new Map<string, number>()
+  private appendReady = new Set<string>()
   private flushTimer: NodeJS.Timeout | null = null
 
   constructor(private readonly dir: string) {
     mkdirSync(join(dir, 'events'), { recursive: true })
     this.state = readJson<StateFile>(join(dir, 'state.json'), { version: 1, projects: [], sessions: [] })
-    // A session cannot still be running after a restart.
-    for (const s of this.state.sessions) if (s.status === 'running' || s.status === 'waiting') s.status = 'idle'
+    // State is debounced, but the transcript is written immediately. Recover from the event
+    // history too, including a crash before the running status reached state.json.
+    let recovered = false
+    for (const s of this.state.sessions) {
+      let openTurn = false
+      const permissions = new Set<string>()
+      for (const e of this.events(s.id)) {
+        if (e.kind === 'user.message' || e.kind === 'session.started') openTurn = true
+        if (e.kind === 'turn.completed') openTurn = false
+        if (e.kind === 'permission.request') permissions.add(e.requestId)
+        if (e.kind === 'permission.resolved') permissions.delete(e.requestId)
+      }
+      // Old approval cards have no live agent to receive an answer after a restart.
+      for (const requestId of permissions) this.record(s.id, { kind: 'permission.resolved', requestId, allow: false })
+      if (openTurn) this.record(s.id, { kind: 'turn.completed', ok: false, summary: 'interrupted' })
+      if (openTurn || permissions.size || s.status === 'running' || s.status === 'waiting') {
+        s.status = 'idle'
+        recovered = true
+      }
+    }
+    if (recovered) this.flush()
   }
 
   get projects(): Project[] {
@@ -100,6 +120,7 @@ export class Store {
     this.state.sessions = this.state.sessions.filter((s) => s.id !== id)
     rmSync(this.eventsPath(id), { force: true })
     this.seqs.delete(id)
+    this.appendReady.delete(id)
     this.scheduleFlush()
   }
 
@@ -134,6 +155,29 @@ export class Store {
     return seq
   }
 
+  private prepareAppend(sessionId: string): void {
+    if (this.appendReady.has(sessionId)) return
+    const path = this.eventsPath(sessionId)
+    if (existsSync(path)) {
+      const fd = openSync(path, 'r')
+      let needsNewline = false
+      try {
+        const size = fstatSync(fd).size
+        if (size) {
+          const last = Buffer.alloc(1)
+          readSync(fd, last, 0, 1, size - 1)
+          needsNewline = last[0] !== 10
+        }
+      } finally {
+        closeSync(fd)
+      }
+      // Preserve every byte, whether the final record is valid or torn. Isolating that tail
+      // keeps the next complete event from being swallowed by the invalid JSON fragment.
+      if (needsNewline) appendFileSync(path, '\n', 'utf8')
+    }
+    this.appendReady.add(sessionId)
+  }
+
   /**
    * Stamp an event; persist it unless it is a streaming delta, or the session was deleted while its
    * turn wound down (its events file must not come back).
@@ -142,6 +186,7 @@ export class Store {
     const live = Boolean(this.session(sessionId))
     const event = { ...body, sessionId, seq: live ? this.nextSeq(sessionId) : 0, ts: Date.now() } as SessionEvent
     if (live && body.kind !== 'assistant.delta' && body.kind !== 'tool.output' && body.kind !== 'turn.progress') {
+      this.prepareAppend(sessionId)
       appendFileSync(this.eventsPath(sessionId), JSON.stringify(event) + '\n', 'utf8')
     }
     return event

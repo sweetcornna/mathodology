@@ -390,7 +390,7 @@ function piAdapter(flavour: PiFlavour): AgentAdapter {
     inspect: inspectPi(flavour),
     start(req: TurnRequest, sink: TurnSink): Turn {
       const parser = new PiRpcParser(sink, id)
-      const { child, exited, kill } = spawnLines(req.binary, piArgs(flavour, req), req.cwd, req.env, (l) => {
+      const { child, exited, kill, beginStop } = spawnLines(req.binary, piArgs(flavour, req), req.cwd, req.env, (l) => {
         const was = parser.settled
         parser.line(l)
         // Settled: closing stdin asks for an orderly shutdown; a CLI that lingers is stopped.
@@ -428,6 +428,7 @@ function piAdapter(flavour: PiFlavour): AgentAdapter {
       return {
         interrupt() {
           interrupted = true
+          beginStop()
           for (const requestId of [...parser.pending.keys()]) {
             const reply = parser.reply(requestId, false)
             if (reply) send(reply)

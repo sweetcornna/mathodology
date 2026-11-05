@@ -35,7 +35,10 @@ export function mergeHooks(settings: Record<string, unknown>, spec: HookSpec, co
   const current = (settings.hooks ?? {}) as HookSpec
   const merged: HookSpec = {}
   for (const event of [...new Set([...Object.keys(current), ...Object.keys(spec)])].sort()) {
-    const groups = (current[event] ?? []).filter((g) => !g.hooks?.some((h) => h.command?.includes(HOOK_MARK)))
+    const groups = (current[event] ?? []).flatMap((group) => {
+      const hooks = (group.hooks ?? []).filter((hook) => !hook.command?.includes(HOOK_MARK))
+      return hooks.length || !group.hooks?.length ? [{ ...group, hooks }] : []
+    })
     for (const group of spec[event] ?? []) {
       groups.push({ ...group, hooks: group.hooks.map((h) => ({ ...h, command: h.command.replace('{mtd}', command) })) })
     }

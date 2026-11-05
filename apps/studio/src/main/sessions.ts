@@ -62,6 +62,7 @@ function uniqueTarget(dir: string, requested: string): string {
 
 export class SessionManager {
   private turns = new Map<string, Turn>()
+  private closing = false
 
   constructor(
     private readonly store: Store,
@@ -150,6 +151,7 @@ export class SessionManager {
   }
 
   async send(input: SendMessageInput): Promise<void> {
+    if (this.closing) throw new Error('Studio is shutting down')
     const session = this.store.session(input.sessionId)
     if (!session) throw new Error('Unknown session')
     if (this.turns.has(session.id)) {
@@ -164,156 +166,207 @@ export class SessionManager {
     const project = this.store.project(session.projectId)
     if (!project) throw new Error('Unknown project')
 
-    // Edits made between turns (by you or other programs) are recorded before the agent starts.
-    const outside = this.artifacts.capture(project, 'scan', { origin: 'external' })
-    if (outside.length) this.hooks.artifactsChanged(project.id)
-
-    const attached: string[] = []
-    if (input.attachments.length) {
-      const dir = join(project.path, 'attachments')
-      mkdirSync(dir, { recursive: true })
-      for (const a of input.attachments) {
-        const target = uniqueTarget(dir, a.name)
-        copyFileSync(a.path, target)
-        attached.push(`attachments/${basename(target)}`)
-      }
-      this.hooks.filesChanged(project.id)
+    // Reserve the session before any asynchronous preparation. A second send must queue even
+    // while the login environment is loading, and stopping during preparation must prevent spawn.
+    let actual: Turn | undefined
+    let cancelled = false
+    let started = false
+    let handedOff = false
+    let settled = false
+    let settle!: () => void
+    const reservation: Turn = {
+      done: new Promise<void>((resolve) => { settle = resolve }),
+      interrupt: () => {
+        cancelled = true
+        if (actual) actual.interrupt()
+        else {
+          if (owns() && this.store.session(session.id)) {
+            if (started) this.emit(session.id, { kind: 'turn.completed', ok: false, summary: 'interrupted' })
+            this.update(session.id, { status: 'idle' })
+          }
+          release()
+        }
+      },
+      respondPermission: (...args) => actual?.respondPermission(...args)
     }
-    const turnSeq = this.emit(session.id, { kind: 'user.message', text: input.text, attachments: attached }).seq
-    const calls = new Map<string, Extract<SessionEventBody, { kind: 'tool.call' }>>()
-    let continueQueue = false
-
-    const prompt = attached.length
-      ? `${input.text}\n\nAttached files (copied into the project): ${attached.join(', ')}`
-      : input.text
-
-    const settings = this.settings()
-    const adapter = ADAPTERS[session.agent]
-    const own = agentSettings(settings, session.agent)
-    const env = envFor(await agentEnv(), own)
-    // Deleted (with its project, perhaps) while the environment was resolved.
-    if (!this.store.session(session.id)) return
-    const binary = adapter && resolveBinary(adapter, settings, env)
-
-    let current: Session = session
-    // Start from the stored session each time: the queue, title or model may change mid-turn.
-    // Once the session is deleted, the turn winding down must not bring it back.
-    const save = (patch: Partial<Session>): void => {
-      const stored = this.store.session(session.id)
-      if (!stored) return
-      current = { ...stored, ...patch, updatedAt: Date.now() }
-      this.store.upsertSession(current)
-      this.hooks.changed(current)
+    const owns = (): boolean => this.turns.get(session.id) === reservation
+    const release = (): void => {
+      if (settled) return
+      settled = true
+      if (owns()) this.turns.delete(session.id)
+      settle()
     }
-    save({ title: session.title || input.text.replace(/\s+/g, ' ').trim().slice(0, 48) || 'Untitled', status: 'running' })
+    this.turns.set(session.id, reservation)
 
-    if (!binary) {
-      const agent = adapter?.name ?? session.agent
-      this.emit(session.id, {
-        kind: 'notice',
-        level: 'error',
-        text: `${agent} was not found. Install it or set its path in Settings → Agents.`,
-        code: 'agentMissing',
-        vars: { agent }
-      })
-      this.emit(session.id, { kind: 'turn.completed', ok: false })
-      save({ status: 'error' })
-      return
-    }
-
-    const resumeId = current.nativeSessionId
-    // Some CLIs accept a session id up front, which makes the next turn's resume reliable. It is
-    // stored only once the agent confirms the session, so an aborted first turn starts fresh.
-    const newSessionId = !resumeId && adapter.takesSessionId ? randomUUID() : undefined
-    let resumeFailed = false
-    let turn: Turn
     try {
-      turn = adapter.start(
-        {
-          binary,
-          cwd: project.path,
-          prompt,
-          model: current.model || own.defaultModel || undefined,
-          effort: current.effort || undefined,
-          permissionMode: current.permissionMode,
-          resumeId,
-          newSessionId,
-          // Some CLIs take this as a system prompt each run; the others only need it once per thread.
-          systemAppend: adapter.systemPromptEachTurn || !resumeId ? STUDIO_PREAMBLE : undefined,
-          settings: own,
-          env,
-          mcpServers: settings.connectors.filter((c) => c.enabled)
-        },
-        {
-          emit: (body) => {
-            if (body.kind === 'permission.request') save({ status: 'waiting' })
-            if (body.kind === 'permission.resolved' && current.status === 'waiting') save({ status: 'running' })
-            if (body.kind === 'tool.result') this.hooks.filesChanged(project.id)
-            if (body.kind === 'tool.call') calls.set(body.callId, body)
-            if (body.kind === 'notice' && resumeId && RESUME_FAILED.test(body.text)) resumeFailed = true
-            if (body.kind === 'turn.completed') {
-              continueQueue = body.ok
-              // Files written by scripts or commands appear here, attributed to the turn as a whole.
-              this.capture(session.id, project, 'scan', { origin: 'turn', sessionId: session.id, turnSeq })
-            }
-            if (body.kind === 'turn.completed' && body.usage) {
-              const u = current.usage
-              save({
-                usage: {
-                  inputTokens: u.inputTokens + (body.usage.inputTokens ?? 0),
-                  outputTokens: u.outputTokens + (body.usage.outputTokens ?? 0),
-                  cacheReadTokens: u.cacheReadTokens + (body.usage.cacheReadTokens ?? 0),
-                  costUsd: u.costUsd + (body.usage.costUsd ?? 0)
-                }
-              })
-            }
-            this.emit(session.id, body)
-            if (body.kind === 'tool.result' && !body.isError) {
-              const call = calls.get(body.callId)
-              if (call && (call.toolKind === 'edit' || call.toolKind === 'write')) {
-                this.capture(session.id, project, namedPaths(project, call), {
-                  origin: 'tool',
-                  sessionId: session.id,
-                  turnSeq,
-                  callId: call.callId,
-                  tool: call.name
+      // Edits made between turns (by you or other programs) are recorded before the agent starts.
+      const outside = this.artifacts.capture(project, 'scan', { origin: 'external' })
+      if (outside.length) this.hooks.artifactsChanged(project.id)
+
+      const attached: string[] = []
+      if (input.attachments.length) {
+        const dir = join(project.path, 'attachments')
+        mkdirSync(dir, { recursive: true })
+        for (const a of input.attachments) {
+          const target = uniqueTarget(dir, a.name)
+          copyFileSync(a.path, target)
+          attached.push(`attachments/${basename(target)}`)
+        }
+        this.hooks.filesChanged(project.id)
+      }
+      const turnSeq = this.emit(session.id, { kind: 'user.message', text: input.text, attachments: attached }).seq
+      started = true
+      const calls = new Map<string, Extract<SessionEventBody, { kind: 'tool.call' }>>()
+      let continueQueue = false
+
+      const prompt = attached.length
+        ? `${input.text}\n\nAttached files (copied into the project): ${attached.join(', ')}`
+        : input.text
+
+      const settings = this.settings()
+      const adapter = ADAPTERS[session.agent]
+      const own = agentSettings(settings, session.agent)
+      this.update(session.id, { status: 'running' })
+      const env = envFor(await agentEnv(), own)
+      // Deleted (with its project, perhaps) while the environment was resolved.
+      if (cancelled || !owns() || !this.store.session(session.id)) return
+      const binary = adapter && resolveBinary(adapter, settings, env)
+
+      let current: Session = session
+      // Start from the stored session each time: the queue, title or model may change mid-turn.
+      // Once the session is deleted, the turn winding down must not bring it back.
+      const save = (patch: Partial<Session>): void => {
+        const stored = this.store.session(session.id)
+        if (!stored || !owns()) return
+        current = { ...stored, ...patch, updatedAt: Date.now() }
+        this.store.upsertSession(current)
+        this.hooks.changed(current)
+      }
+      save({ title: session.title || input.text.replace(/\s+/g, ' ').trim().slice(0, 48) || 'Untitled', status: 'running' })
+
+      if (!binary) {
+        const agent = adapter?.name ?? session.agent
+        this.emit(session.id, {
+          kind: 'notice',
+          level: 'error',
+          text: `${agent} was not found. Install it or set its path in Settings → Agents.`,
+          code: 'agentMissing',
+          vars: { agent }
+        })
+        this.emit(session.id, { kind: 'turn.completed', ok: false })
+        save({ status: 'error' })
+        return
+      }
+
+      const resumeId = current.nativeSessionId
+      // Some CLIs accept a session id up front, which makes the next turn's resume reliable. It is
+      // stored only once the agent confirms the session, so an aborted first turn starts fresh.
+      const newSessionId = !resumeId && adapter.takesSessionId ? randomUUID() : undefined
+      let resumeFailed = false
+      let turn: Turn
+      try {
+        turn = adapter.start(
+          {
+            binary,
+            cwd: project.path,
+            prompt,
+            model: current.model || own.defaultModel || undefined,
+            effort: current.effort || undefined,
+            permissionMode: current.permissionMode,
+            resumeId,
+            newSessionId,
+            // Some CLIs take this as a system prompt each run; the others only need it once per thread.
+            systemAppend: adapter.systemPromptEachTurn || !resumeId ? STUDIO_PREAMBLE : undefined,
+            settings: own,
+            env,
+            mcpServers: settings.connectors.filter((c) => c.enabled)
+          },
+          {
+            emit: (body) => {
+              if (!owns() || !this.store.session(session.id)) return
+              if (body.kind === 'permission.request') save({ status: 'waiting' })
+              if (body.kind === 'permission.resolved' && current.status === 'waiting') save({ status: 'running' })
+              if (body.kind === 'tool.result') this.hooks.filesChanged(project.id)
+              if (body.kind === 'tool.call') calls.set(body.callId, body)
+              if (body.kind === 'notice' && resumeId && RESUME_FAILED.test(body.text)) resumeFailed = true
+              if (body.kind === 'turn.completed') {
+                continueQueue = body.ok
+                // Files written by scripts or commands appear here, attributed to the turn as a whole.
+                this.capture(session.id, project, 'scan', { origin: 'turn', sessionId: session.id, turnSeq })
+              }
+              if (body.kind === 'turn.completed' && body.usage) {
+                const u = current.usage
+                save({
+                  usage: {
+                    inputTokens: u.inputTokens + (body.usage.inputTokens ?? 0),
+                    outputTokens: u.outputTokens + (body.usage.outputTokens ?? 0),
+                    cacheReadTokens: u.cacheReadTokens + (body.usage.cacheReadTokens ?? 0),
+                    costUsd: u.costUsd + (body.usage.costUsd ?? 0)
+                  }
                 })
               }
-            }
-            if (body.kind === 'turn.completed') {
-              save({ status: body.ok || body.summary === 'interrupted' ? 'idle' : 'error' })
-              if (resumeFailed) {
-                save({ nativeSessionId: undefined })
-                this.emit(session.id, { kind: 'notice', level: 'info', text: RESUME_RESET, code: 'resumeReset' })
+              this.emit(session.id, body)
+              if (body.kind === 'tool.result' && !body.isError) {
+                const call = calls.get(body.callId)
+                if (call && (call.toolKind === 'edit' || call.toolKind === 'write')) {
+                  this.capture(session.id, project, namedPaths(project, call), {
+                    origin: 'tool',
+                    sessionId: session.id,
+                    turnSeq,
+                    callId: call.callId,
+                    tool: call.name
+                  })
+                }
               }
+              if (body.kind === 'turn.completed') {
+                save({ status: body.ok || body.summary === 'interrupted' ? 'idle' : 'error' })
+                if (resumeFailed) {
+                  save({ nativeSessionId: undefined })
+                  this.emit(session.id, { kind: 'notice', level: 'info', text: RESUME_RESET, code: 'resumeReset' })
+                }
+              }
+            },
+            nativeSession: (id) => {
+              // A turn still winding down after you switched agents must not hand its id to the new one.
+              if (!owns() || this.store.session(session.id)?.agent !== session.agent) return
+              if (id && id !== current.nativeSessionId) save({ nativeSessionId: id })
             }
-          },
-          nativeSession: (id) => {
-            // A turn still winding down after you switched agents must not hand its id to the new one.
-            if (this.store.session(session.id)?.agent !== session.agent) return
-            if (id && id !== current.nativeSessionId) save({ nativeSessionId: id })
           }
-        }
-      )
-    } catch (err) {
-      // spawn throws for some failures, such as a command line longer than the system allows.
-      this.emit(session.id, { kind: 'notice', level: 'error', text: `${adapter.name} could not be started: ${(err as Error).message}` })
-      this.emit(session.id, { kind: 'turn.completed', ok: false })
-      save({ status: 'error' })
-      return
-    }
-    this.turns.set(session.id, turn)
-    turn.done.finally(() => {
-      this.turns.delete(session.id)
-      if (current.status === 'running' || current.status === 'waiting') save({ status: 'idle' })
-      this.hooks.filesChanged(project.id)
-      // After an interrupt or failure the queue waits for you; otherwise the next message starts.
-      const next = this.store.session(session.id)?.queue?.[0]
-      if (next && continueQueue) {
-        this.dequeue(session.id, next.id)
-        void this.send({ sessionId: session.id, text: next.text, attachments: next.attachments }).catch(() => undefined)
+        )
+      } catch (err) {
+        // spawn throws for some failures, such as a command line longer than the system allows.
+        this.emit(session.id, { kind: 'notice', level: 'error', text: `${adapter.name} could not be started: ${(err as Error).message}` })
+        this.emit(session.id, { kind: 'turn.completed', ok: false })
+        save({ status: 'error' })
+        return
       }
-    })
+      actual = turn
+      handedOff = true
+      if (cancelled) turn.interrupt()
+      const finished = (): void => {
+        if (!owns()) { release(); return }
+        if (current.status === 'running' || current.status === 'waiting') save({ status: 'idle' })
+        release()
+        this.hooks.filesChanged(project.id)
+        // After an interrupt or failure the queue waits for you; otherwise the next message starts.
+        const next = this.store.session(session.id)?.queue?.[0]
+        if (next && continueQueue && !cancelled && !this.closing) {
+          this.dequeue(session.id, next.id)
+          void this.send({ sessionId: session.id, text: next.text, attachments: next.attachments }).catch(() => undefined)
+        }
+      }
+      // Register both outcomes without creating an unhandled rejected finally() promise.
+      void turn.done.then(finished, finished)
+    } catch (err) {
+      // A cancelled/deleted preparation may reject later; it no longer owns the session's UI.
+      if (cancelled || !owns() || !this.store.session(session.id)) return
+      this.emit(session.id, { kind: 'notice', level: 'error', text: `The turn could not be prepared: ${(err as Error).message}` })
+      if (started) this.emit(session.id, { kind: 'turn.completed', ok: false })
+      this.update(session.id, { status: 'error' })
+      throw err
+    } finally {
+      if (!handedOff) release()
+    }
   }
 
   interrupt(sessionId: string): void {
@@ -325,6 +378,7 @@ export class SessionManager {
   }
 
   async shutdown(): Promise<void> {
+    this.closing = true
     const pending = [...this.turns.values()]
     for (const t of pending) t.interrupt()
     await Promise.race([Promise.allSettled(pending.map((t) => t.done)), new Promise((r) => setTimeout(r, 3000))])

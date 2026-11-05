@@ -504,7 +504,18 @@ export async function checkEntry(entry: BibEntry, fetch: Fetcher): Promise<RefEn
         const candidate = await findCandidate(title, plainField(firstSurname(entry.fields.author ?? '')), year ? Number(year) : undefined, fetch)
         if (candidate) {
           result.candidate = candidate
-          compareRecord(entry, candidate.record, problems)
+          // Search records rank candidates; they are not a full notice check. Resolve the
+          // matched DOI exactly as for an explicit DOI, including registry and OpenAlex flags.
+          const check = await resolveDoi(candidate.doi, fetch)
+          result.check = check
+          compareRecord(entry, check.record ?? candidate.record, problems)
+          if (check.state !== 'resolves') {
+            problems.push({ code: 'unverifiable', severity: 'inconclusive', detail: check.error })
+          } else {
+            if (!check.record) problems.push({ code: 'no_record', severity: check.error ? 'inconclusive' : 'info', detail: check.error })
+            noticeProblems(check, problems)
+            publishedProblem(check.record ?? candidate.record, problems)
+          }
           problems.push({ code: 'no_doi', severity: 'info' })
         } else problems.push({ code: 'no_match', severity: 'inconclusive' })
       } else problems.push({ code: 'no_match', severity: 'inconclusive' })
