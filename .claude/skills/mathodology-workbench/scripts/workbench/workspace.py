@@ -17,6 +17,9 @@ DEFAULT_CONFIG = {
     'near_miss_rel': 0.02,
     # Hand edits to results/*.json through the agent's file tools are refused unless this is true.
     'allow_result_edits': False,
+    # Contest whose paper format `check` compares against (cumcm, mcm, stats, huawei, mathorcup, apmcm),
+    # set by `mtd.py init --paper-template NAME`. null checks nothing contest-specific.
+    'contest': None,
 }
 SKIP_DIRS = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', 'site-packages', '.mathodology', '.claude', '.agents', '.codex'}
 MAX_FILES = 5000  # per folder walk; keeps hooks fast in an oversized workspace

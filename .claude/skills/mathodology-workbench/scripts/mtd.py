@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Mathodology workbench: executable checks and recorded runs for a contest workspace.
 
-    mtd.py init [--paper-template] [--no-hooks]   create problem/ code/ results/ figures/ paper/
+    mtd.py init [--paper-template [NAME]] [--no-hooks]
+                                                  create problem/ code/ results/ figures/ paper/;
+                                                  NAME picks a contest skeleton (cumcm, mcm, stats, ...)
     mtd.py brief [STATEMENT] [--force]            list the questions in problem/questions.json
     mtd.py run [--name N] [--seed S] -- CMD ...   run an experiment and record its provenance
     mtd.py sync                                   write paper/results.tex (\\res macros) and paper/tables/*.tex
@@ -23,7 +25,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from workbench import brief, engine, hooks, results, runs  # noqa: E402
+from workbench import brief, contest, engine, hooks, results, runs  # noqa: E402
 from workbench.report import render  # noqa: E402
 from workbench.workspace import find_workspace, init, load  # noqa: E402
 
@@ -90,15 +92,32 @@ def install_hooks(root: Path, remove: bool = False) -> Path:
     return path
 
 
+def set_contest(root: Path, name: str) -> None:
+    path = root / '.mathodology' / 'config.json'
+    try:
+        config = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        config = {}
+    if not isinstance(config, dict):
+        config = {}
+    config['contest'] = name
+    path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+
+
 def cmd_init(args) -> int:
     root = Path(args.root or '.').resolve()
     created = init(root)
     ws = load(root)
     if args.paper_template:
+        name = args.paper_template
+        source = SKILL / 'templates' / 'paper' / ('main.tex' if name == 'generic' else f'contests/{name}/main.tex')
         target = ws.dir('paper') / 'main.tex'
         if not target.exists():
-            shutil.copyfile(SKILL / 'templates' / 'paper' / 'main.tex', target)
-            created.append('paper/main.tex')
+            shutil.copyfile(source, target)
+            created.append(f'paper/main.tex ({name})')
+        if name != 'generic':
+            set_contest(root, name)
+            created.append(f'.mathodology/config.json: contest = {name}')
         results.sync(ws, results.load(ws)[0])  # the template inputs results.tex, so it must exist
     if not args.no_hooks:
         created.append(str(install_hooks(root).relative_to(root)) + ' (hooks)')
@@ -193,7 +212,8 @@ def main(argv=None) -> int:
     add = sub.add_parser
     sub.add_parser = lambda *a, **k: add(*a, parents=[common], **k)
     p = sub.add_parser('init', help='create a workspace')
-    p.add_argument('--paper-template', action='store_true', help='also write paper/main.tex from the template')
+    p.add_argument('--paper-template', nargs='?', const='generic', choices=('generic',) + contest.NAMES, metavar='NAME',
+                   help='also write paper/main.tex: generic (default) or a contest skeleton: ' + ', '.join(contest.NAMES))
     p.add_argument('--no-hooks', action='store_true', help='do not touch .claude/settings.json')
     p.set_defaults(func=cmd_init)
     p = sub.add_parser('brief', help='detect questions in the statement')

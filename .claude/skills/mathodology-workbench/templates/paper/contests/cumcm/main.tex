@@ -1,0 +1,54 @@
+% CUMCM (全国大学生数学建模竞赛) electronic paper skeleton for a Mathodology workspace.
+% Rules: 全国大学生数学建模竞赛论文格式规范（2026年修订稿）, checked 2026-11-05:
+%   https://www.mcm.edu.cn/html_cn/node/4cd596519c9eb9fbd866398f6df0caa3.html
+% Not an official template. Re-read the rules of the year you enter; see
+% ../../../../references/contest-formats.md. Compile with XeLaTeX.
+%
+% Electronic version: the first page is the abstract page (no 承诺书, no 编号专用页).
+% No table of contents. Pages are numbered from the abstract page, centred in the footer.
+% No name, school or region anywhere. Body at most 30 pages; appendix unlimited.
+\documentclass[UTF8,12pt,a4paper]{ctexart}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{gbt7714}
+\bibliographystyle{gbt7714-numerical}
+\graphicspath{{../figures/}}
+\input{results}
+\ctexset{section/format=\centering\zihao{4}\heiti}
+\pagestyle{plain}
+
+\newcommand{\PaperTitle}{论文标题}
+
+\begin{document}
+
+% ---- 摘要专用页：第 1 页，原则上不超过一页 ----
+\begin{center}
+  {\zihao{3}\heiti \PaperTitle}\par\medskip
+  {\zihao{4}\heiti 摘\quad 要}
+\end{center}
+% 写清每个问题的方法与结论，数值用 \res{q1.key} 引用。
+针对问题一，……
+
+\medskip
+\noindent{\heiti 关键词：}关键词一；关键词二；关键词三
+\clearpage
+
+% ---- 正文（不超过 30 页，不要目录）----
+\section{问题重述}
+\section{模型假设}
+\section{符号说明}
+\section{问题一的模型建立与求解}
+% \begin{table}[htbp]\centering\caption{...}\label{tab:q1}\input{tables/q1-compare}\end{table}
+\section{模型的评价}
+
+% \bibliography{references}
+
+% ---- 附录：支撑材料文件清单 + 全部可运行源程序 ----
+\clearpage
+\appendix
+\section*{附录}
+支撑材料文件清单（无支撑材料时写“本论文没有支撑材料”）。
+
+源程序（未用到程序时写“本论文没有用到程序”）。
+\end{document}

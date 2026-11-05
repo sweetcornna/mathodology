@@ -27,7 +27,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import mtd  # noqa: E402
-from workbench import assets, brief, engine, figures, hooks, latex, numbers, results, runs, stubs  # noqa: E402
+from workbench import assets, brief, contest, engine, figures, hooks, latex, numbers, results, runs, stubs  # noqa: E402
 from workbench.workspace import find_workspace, init, load  # noqa: E402
 
 MTD = HERE / 'mtd.py'
@@ -1110,6 +1110,78 @@ class ReviewRegressionTests(unittest.TestCase):
                        'tool_input': {'file_path': str(ws.root / 'paper' / 'main.tex')}}
             code, out, err = run_hook(tmp, 'post-tool', payload)
             self.assertEqual(json.loads(out)['decision'], 'block', err)
+
+
+class ContestTests(unittest.TestCase):
+    TEMPLATES = HERE.parent / 'templates' / 'paper' / 'contests'
+
+    def issues(self, ws):
+        return contest.check(ws, latex.load(ws))
+
+    def test_every_profile_has_a_template_that_cites_results(self):
+        for name in contest.NAMES:
+            text = (self.TEMPLATES / name / 'main.tex').read_text(encoding='utf-8')
+            self.assertIn('\\input{results}', text, name)
+            self.assertIn('\\graphicspath{{../figures/}}', text, name)
+
+    def test_init_writes_the_contest_template_and_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out, err = run_cli(tmp, '--root', tmp, 'init', '--paper-template', 'cumcm', '--no-hooks')
+            self.assertEqual(code, 0, err)
+            self.assertEqual((Path(tmp) / 'paper' / 'main.tex').read_text(encoding='utf-8'),
+                             (self.TEMPLATES / 'cumcm' / 'main.tex').read_text(encoding='utf-8'))
+            self.assertEqual(load(Path(tmp)).config['contest'], 'cumcm')
+            self.assertTrue((Path(tmp) / 'paper' / 'results.tex').is_file())
+            code, _, _ = run_cli(tmp, '--root', tmp, 'init', '--paper-template', 'nosuch', '--no-hooks')
+            self.assertNotEqual(code, 0)
+
+    def test_no_contest_means_no_contest_checks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'paper/main.tex': DOC + '\\tableofcontents\n' + END})
+            self.assertEqual(self.issues(ws), [])
+
+    def test_cumcm_table_of_contents_is_flagged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'paper/main.tex': DOC + '\\tableofcontents\n% \\tableofcontents\n' + END}, {'contest': 'cumcm'})
+            found = self.issues(ws)
+            self.assertEqual(codes(found), ['contest.toc'])
+            self.assertEqual(found[0].line, 5)
+
+    def test_mcm_counted_pages_and_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'paper/main.tex': DOC + '\\author{Jane Doe}\n' + END,
+                               'paper/main.aux': '\\newlabel{SolutionLastPage}{{6}{27}{Conclusion}{section*.7}{}}\n'},
+                         {'contest': 'mcm'})
+            self.assertEqual(sorted(codes(self.issues(ws))), ['contest.identity', 'contest.page-limit'])
+            write(ws.root / 'paper' / 'main.aux', '\\newlabel{SolutionLastPage}{{6}{25}{}{}{}}\n')
+            write(ws.root / 'paper' / 'main.tex', DOC + '\\author{}\n' + END)
+            self.assertEqual(self.issues(load(ws.root)), [])
+
+    def test_mcm_without_the_label_falls_back_to_the_log(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'paper/main.tex': DOC + END, 'paper/main.log': 'Output written on main.pdf (30 pages, 1 bytes).\n'},
+                         {'contest': 'mcm'})
+            found = self.issues(ws)
+            self.assertEqual([(i.code, i.severity) for i in found], [('contest.page-limit', 'info')])
+
+    def test_unverified_and_unknown_contests_are_notes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'paper/main.tex': DOC + END}, {'contest': 'huawei'})
+            self.assertEqual([(i.code, i.severity) for i in self.issues(ws)], [('contest.rules-unverified', 'info')])
+            ws = load(ws.root)
+            ws.config['contest'] = 'imaginary'
+            self.assertEqual(codes(self.issues(ws)), ['contest.unknown'])
+
+    def test_stats_non_anonymous_build_is_a_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'paper/main.tex': DOC + '\\anonymousfalse\n' + END}, {'contest': 'stats'})
+            self.assertEqual(codes(self.issues(ws)), ['contest.not-anonymous'])
+
+    def test_status_reports_contest_issues(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'paper/main.tex': DOC + '\\tableofcontents\n' + END}, {'contest': 'cumcm'})
+            report = engine.status(ws, save=False)
+            self.assertIn('contest.toc', codes(report['issues']))
 
 
 class FigureAssetTests(unittest.TestCase):

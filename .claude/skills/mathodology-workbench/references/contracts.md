@@ -138,5 +138,11 @@ hook: a broken tool is not a problem with the work.
 ## Configuration (`.mathodology/config.json`)
 
 ```json
-{"stop_gate": "errors", "near_miss_rel": 0.02, "allow_result_edits": false}
+{"stop_gate": "errors", "near_miss_rel": 0.02, "allow_result_edits": false, "contest": null}
 ```
+
+`contest` names a profile in `scripts/workbench/contest.py` (`cumcm`, `mcm`, `stats`, `huawei`,
+`mathorcup`, `apmcm`); `init --paper-template NAME` sets it. Its checks are
+`contest.toc`, `contest.page-limit`, `contest.identity`, `contest.not-anonymous`
+and `contest.rules-unverified`, described with their sources in
+[contest-formats.md](contest-formats.md).

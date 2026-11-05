@@ -1,7 +1,7 @@
 """Run every check over a workspace and summarise each stage."""
 from __future__ import annotations
 
-from . import assets, brief, figures, latex, numbers, results, runs, stubs
+from . import assets, brief, contest, figures, latex, numbers, results, runs, stubs
 from .report import Issue, build, stage_state
 from .workspace import Workspace, read_text, write_json
 
@@ -50,6 +50,7 @@ def status(ws: Workspace, compile: bool = False, sync: bool = False, save: bool 
     else:
         add('paper', 'log', latex.log_checks, ws, paper)
     add('paper', 'freshness', pdf_freshness, ws, paper, rs, used)
+    add('paper', 'contest', contest.check, ws, paper)  # after compiling, so page counts are current
 
     fig_issues, fig_summary = run('figures', 'figures', figures.check, ws, used, paper.main is not None,
                                   default=([], {'figures': 0, 'traced': 0}))

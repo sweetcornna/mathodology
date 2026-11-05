@@ -36,7 +36,8 @@ image2 回答和文件所有权。小任务可由一个 agent 完成。
 `problem/questions.json` 写清每问的交付物和评价指标；实验用 `mtd.py run` 运行并留下记录；
 代码把结果写进 `results/*.json`；绘图脚本读取结果文件；论文用 `\res{文件.键}` 引用数值。
 `mtd.py status` 汇报每个环节，`mtd.py check --compile` 在交付前给出错误。Claude Code
-的钩子会自动做这些检查；报告与论文不一致时，以结果为准改论文或重跑实验，不改结果去迁就正文。
+的钩子会自动做这些检查；报告与论文不一致时，以结果为准改论文或重跑实验，不改结果去迁就正文。`mtd.py init --paper-template cumcm`（或 `mcm`、`stats`、`huawei`、`mathorcup`、`apmcm`）
+从对应赛事的论文骨架开始，并加上已核实的[格式检查](../.claude/skills/mathodology-workbench/references/contest-formats.md)；仍以当年官方规则为准。
 
 ## 审阅与交付
 

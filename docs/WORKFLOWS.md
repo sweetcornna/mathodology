@@ -44,7 +44,10 @@ figure scripts read those files and the paper cites values with `\res{file.key}`
 `mtd.py status` reports every stage and `mtd.py check --compile` lists errors before
 delivery. Claude Code's hooks run these checks automatically. When the report and
 the paper disagree, correct the paper from the results or rerun the experiment;
-never edit results to fit the text.
+never edit results to fit the text. `mtd.py init --paper-template cumcm` (or `mcm`,
+`stats`, `huawei`, `mathorcup`, `apmcm`) starts from a contest skeleton and adds the
+verified [format checks](../.claude/skills/mathodology-workbench/references/contest-formats.md);
+the current official rules still take precedence.
 
 ## Review and deliver
 

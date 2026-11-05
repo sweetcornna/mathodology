@@ -46,6 +46,35 @@ Merge results by DOI or canonical URL. Read an accepted source once, using the
 appropriate reader. When sources disagree, cite both, prefer the official or
 primary record, and record why the adopted value fits the model.
 
+## Local papers and chosen sources
+
+Start from what the team already has. Look for PDFs in a folder the user names,
+then in the folders listed under `## Paper Library` in the project's `CLAUDE.md`
+or `AGENTS.md` (read both when both exist), then in `papers/` and `literature/`.
+With many files, shortlist by filename and read the title, abstract and
+introduction of the relevant ones before searching for what is missing. A
+personal library such as Zotero or Obsidian is available only when its MCP
+server is configured; tool names vary, so read the live tool list.
+
+When the user limits the sources ("local only", "Zotero and local", "no web"),
+the limit holds for every later step, not just the first search: no WebSearch,
+MCP search, DOI resolution, metadata lookup or download outside the chosen
+sources. The reference checker below needs the network, so with the web
+excluded record it as not run and list the identifiers that remain unverified.
+Note in the source notes which channels were used and which were skipped.
+
+## Bibliography file
+
+`paper/references.bib` is the bibliography the paper reads; Mathodology Studio's
+literature pane writes to the same file. Add an entry only after its source has
+been retrieved and its identifier resolved, taking the fields from the
+retrieved record. Keep an entry that is still unresolved out of the file and
+record the gap, rather than completing it from recall. Add new entries without
+removing ones the user wrote, and keep keys unique. Write `\cite` only for
+entries that exist: the [workbench](../mathodology-workbench/SKILL.md) reports
+an undefined citation, and its fix is to find the source, not to search for
+the citation key as if it were a title.
+
 ## Verify citations and retain evidence
 
 Resolve every DOI or arXiv identifier with a tool, including papers you are sure
