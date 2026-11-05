@@ -48,7 +48,8 @@ export interface StudioCalls {
     sessionId: string,
     requestId: string,
     allow: boolean,
-    always?: boolean
+    always?: boolean,
+    answers?: Record<string, string[]>
   ) => void
   'files:list': (projectId: string, rel?: string) => FileEntry[]
   'files:preview': (projectId: string, rel: string) => FilePreview

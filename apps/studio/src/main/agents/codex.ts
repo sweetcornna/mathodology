@@ -1,6 +1,7 @@
-import type { AgentAccount, FileChange, ModelInfo, PermissionMode, SessionEventBody, TodoItem, Usage } from '@shared/types'
+import type { AgentAccount, AgentQuestion, FileChange, ModelInfo, PermissionMode, SessionEventBody, TodoItem, Usage } from '@shared/types'
 import {
   askCli,
+  cleanAnswers,
   parseJson,
   spawnLines,
   splitArgs,
@@ -36,6 +37,9 @@ export function codexArgs(req: TurnRequest): string[] {
     'tools.update_plan.enabled=true',
     '-c',
     'model_reasoning_summary="detailed"',
+    // Lets the model ask through request_user_input (a question card) outside plan mode too.
+    '-c',
+    'features.default_mode_request_user_input=true',
     ...splitArgs(req.settings.extraArgs)
   ]
 }
@@ -49,6 +53,28 @@ function changesOf(item: Json): FileChange[] {
       kind: kind === 'add' || kind === 'delete' ? kind : 'update',
       diff: typeof c.diff === 'string' ? c.diff : undefined
     }
+  })
+}
+
+/** request_user_input questions. Codex keys the answers by question id. */
+export function codexQuestions(p: Json): AgentQuestion[] {
+  const list = Array.isArray(p.questions) ? (p.questions as Json[]) : []
+  return list.flatMap((q): AgentQuestion[] => {
+    const question = String(q?.question ?? '')
+    if (!question) return []
+    const options = (Array.isArray(q.options) ? (q.options as Json[]) : [])
+      .map((o) => ({ label: String(o?.label ?? ''), description: typeof o?.description === 'string' && o.description ? o.description : undefined }))
+      .filter((o) => o.label)
+    return [
+      {
+        id: String(q.id ?? question),
+        question,
+        header: typeof q.header === 'string' && q.header ? q.header : undefined,
+        options,
+        allowOther: q.isOther === true || options.length === 0,
+        secret: q.isSecret === true
+      }
+    ]
   })
 }
 
@@ -271,18 +297,39 @@ export class CodexAppServerParser {
         })
         return null
       }
+      case 'item/tool/requestUserInput': {
+        const questions = codexQuestions(p)
+        if (!questions.length) return { answers: {} }
+        this.pending.set(requestId, req)
+        this.emit({
+          kind: 'permission.request',
+          requestId,
+          callId: p.itemId ? String(p.itemId) : undefined,
+          toolName: 'request_user_input',
+          title: questions[0].question,
+          input: { questions: p.questions },
+          questions
+        })
+        return null
+      }
       case 'item/permissions/requestApproval':
         return { decision: 'decline' }
+      case 'mcpServer/elicitation/request':
+        return { action: 'decline', content: null, _meta: null }
       default:
         return undefined
     }
   }
 
-  /** The JSON-RPC result answering a pending approval. */
-  decision(requestId: string, allow: boolean, always?: boolean): { id: number | string; result: unknown } | null {
+  /** The JSON-RPC result answering a pending approval or question. */
+  decision(requestId: string, allow: boolean, always?: boolean, answers?: Record<string, string[]>): { id: number | string; result: unknown } | null {
     const req = this.pending.get(requestId)
     if (!req) return null
     this.pending.delete(requestId)
+    if (req.method === 'item/tool/requestUserInput') {
+      const given = allow ? cleanAnswers(answers) : {}
+      return { id: req.id, result: { answers: Object.fromEntries(Object.entries(given).map(([id, list]) => [id, { answers: list }])) } }
+    }
     const legacy = req.method === 'execCommandApproval' || req.method === 'applyPatchApproval'
     const decision = legacy
       ? allow
@@ -503,11 +550,17 @@ export const codexAdapter: AgentAdapter = {
         }, 4000)
         setTimeout(() => child.exitCode === null && kill('SIGKILL'), 8000)
       },
-      respondPermission(requestId, allow, always) {
-        const reply = parser.decision(requestId, allow, always)
+      respondPermission(requestId, allow, always, raw) {
+        const question = parser.pending.get(requestId)?.method === 'item/tool/requestUserInput'
+        const answers = question && allow ? cleanAnswers(raw) : undefined
+        const reply = parser.decision(requestId, allow, always, answers)
         if (!reply) return
         send(reply)
-        sink.emit({ kind: 'permission.resolved', requestId, allow, always })
+        if (!question) sink.emit({ kind: 'permission.resolved', requestId, allow, always })
+        else {
+          const answered = Boolean(answers && Object.keys(answers).length)
+          sink.emit({ kind: 'permission.resolved', requestId, allow: answered, ...(answered ? { answers } : {}) })
+        }
       },
       done
     }

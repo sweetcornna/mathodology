@@ -6,7 +6,9 @@ import { useT, type MessageKey } from '../lib/i18n'
 import { useStudio } from '../store'
 import { Modal, Segmented, Switch } from './ui'
 
-const CONTESTS: ContestKind[] = ['MCM', 'ICM', 'CUMCM', 'Huashu', 'Other']
+const CONTESTS: ContestKind[] = ['MCM', 'ICM', 'CUMCM', 'Huawei', 'MathorCup', 'Stats', 'APMCM', 'Huashu', 'Other']
+/** Mirrors CONTEST_TEMPLATES in the main process: contests that come with a paper skeleton. */
+const HAS_TEMPLATE = new Set<ContestKind>(['MCM', 'ICM', 'CUMCM', 'Huawei', 'MathorCup', 'Stats', 'APMCM'])
 
 export function NewProjectForm({
   onDone,
@@ -69,7 +71,16 @@ export function NewProjectForm({
       </label>
       <div className="flex flex-col gap-1.5">
         <span className="text-[0.86rem] font-medium text-fg-2">{t('project.contest')}</span>
-        <Segmented value={contest} onChange={setContest} options={CONTESTS.map((c) => ({ value: c, label: t(`contest.${c}` as MessageKey) }))} />
+        <select className="field" value={contest} onChange={(e) => setContest(e.target.value as ContestKind)} aria-label={t('project.contest')}>
+          {CONTESTS.map((c) => (
+            <option key={c} value={c}>
+              {t(`contest.${c}` as MessageKey)}
+            </option>
+          ))}
+        </select>
+        <span className="text-[0.8rem] leading-snug text-fg-3">
+          {HAS_TEMPLATE.has(contest) ? t('project.contestTemplate', { name: t(`contest.${contest}` as MessageKey) }) : t('project.contestNoTemplate')}
+        </span>
       </div>
       <div className="flex flex-col gap-1.5">
         <span className="text-[0.86rem] font-medium text-fg-2">{t('project.location')}</span>

@@ -15,6 +15,7 @@ import {
   Plug,
   Search,
   ShieldCheck,
+  MessageCircleQuestion,
   ShieldX,
   Sparkles,
   SquareTerminal,
@@ -322,6 +323,28 @@ function ResolvedPermission({ item }: { item: Extract<Item, { type: 'permission'
   const t = useT()
   if (!item.perm.resolved) return null
   const allow = item.perm.resolved.allow
+  const questions = item.perm.questions
+  if (questions?.length) {
+    const answers = item.perm.resolved.answers ?? {}
+    return (
+      <div className="flex flex-col gap-0.5 text-[0.929rem] text-fg-3">
+        {questions.map((q, i) => (
+          <div key={q.id} className="flex items-start gap-1.5">
+            <MessageCircleQuestion size={14} className={`mt-[3px] shrink-0 ${i ? 'invisible' : ''}`} />
+            <span className="selectable min-w-0">
+              {q.question}
+              {' · '}
+              {answers[q.id]?.length ? (
+                <span className="text-fg-2">{q.secret ? '••••' : answers[q.id].join(', ')}</span>
+              ) : (
+                Object.keys(answers).length ? '—' : t('ask.skipped')
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+    )
+  }
   return (
     <div className="flex items-center gap-1.5 text-[0.929rem] text-fg-3">
       {allow ? <ShieldCheck size={14} className="text-success" /> : <ShieldX size={14} className="text-danger" />}

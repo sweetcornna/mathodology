@@ -38,6 +38,7 @@ image2 回答和文件所有权。小任务可由一个 agent 完成。
 `mtd.py status` 汇报每个环节，`mtd.py check --compile` 在交付前给出错误。Claude Code
 的钩子会自动做这些检查；报告与论文不一致时，以结果为准改论文或重跑实验，不改结果去迁就正文。`mtd.py init --paper-template cumcm`（或 `mcm`、`stats`、`huawei`、`mathorcup`、`apmcm`）
 从对应赛事的论文骨架开始，并加上已核实的[格式检查](../.claude/skills/mathodology-workbench/references/contest-formats.md)；仍以当年官方规则为准。
+模型会根据题面和你的说明判断赛事并说明选了哪个模板；赛事不明确或规则尚未核实时会先问你。在 Studio 新建项目时选了赛事，就直接按所选赛事生成模板。
 
 ## 审阅与交付
 

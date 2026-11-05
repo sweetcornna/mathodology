@@ -1,4 +1,4 @@
-import type { ArtifactKind, FileChange, NoticeCode, SessionEvent, TodoItem, ToolKind, Usage, VersionOrigin } from '@shared/types'
+import type { AgentQuestion, ArtifactKind, FileChange, NoticeCode, SessionEvent, TodoItem, ToolKind, Usage, VersionOrigin } from '@shared/types'
 
 export interface ToolNode {
   callId: string
@@ -18,7 +18,9 @@ export interface PermissionItem {
   toolName: string
   title: string
   input: unknown
-  resolved?: { allow: boolean; always?: boolean }
+  /** The agent asks the user to answer rather than to approve. */
+  questions?: AgentQuestion[]
+  resolved?: { allow: boolean; always?: boolean; answers?: Record<string, string[]> }
 }
 
 export type Item =
@@ -179,14 +181,14 @@ export function buildTranscript(events: SessionEvent[]): Transcript {
         todos = e.items
         break
       case 'permission.request': {
-        const perm: PermissionItem = { requestId: e.requestId, toolName: e.toolName, title: e.title, input: e.input }
+        const perm: PermissionItem = { requestId: e.requestId, toolName: e.toolName, title: e.title, input: e.input, questions: e.questions }
         perms.set(e.requestId, perm)
         items.push({ type: 'permission', key: `p${e.seq}`, perm })
         break
       }
       case 'permission.resolved': {
         const perm = perms.get(e.requestId)
-        if (perm) perm.resolved = { allow: e.allow, always: e.always }
+        if (perm) perm.resolved = { allow: e.allow, always: e.always, answers: e.answers }
         break
       }
       case 'notice':

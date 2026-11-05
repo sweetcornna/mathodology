@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseReport, pythonCandidates, runChecks, workbenchScript } from '../src/main/checks'
-import { HOOK_COMMAND, installKit, mergeHooks, WORKBENCH } from '../src/main/kit'
+import { CONTEST_TEMPLATES, EMPTY_RESULTS_TEX, HOOK_COMMAND, installContestPaper, installKit, mergeHooks, WORKBENCH } from '../src/main/kit'
 
 const kitRoot = resolve(__dirname, '../../..')
 const spec = JSON.parse(readFileSync(join(kitRoot, WORKBENCH, 'hooks/hooks.json'), 'utf8')).hooks
@@ -65,6 +65,43 @@ describe('installKit', () => {
     const settings = JSON.parse(readFileSync(join(project, '.claude/settings.json'), 'utf8'))
     expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain('$CLAUDE_PROJECT_DIR')
     expect(readFileSync(join(project, 'AGENTS.md'), 'utf8')).toContain('mathodology-workbench')
+  })
+
+  it('creates the chosen contest paper template and records the contest', () => {
+    const project = temp()
+    const result = installKit(kitRoot, project, 'ICM')
+    expect(result.installed).toContain('paper/main.tex (mcm)')
+    expect(readFileSync(join(project, 'paper/main.tex'), 'utf8')).toBe(readFileSync(join(kitRoot, WORKBENCH, 'templates/paper/contests/mcm/main.tex'), 'utf8'))
+    expect(existsSync(join(project, 'paper/results.tex'))).toBe(true)
+    expect(JSON.parse(readFileSync(join(project, '.mathodology/config.json'), 'utf8'))).toEqual({ contest: 'mcm' })
+    for (const name of Object.values(CONTEST_TEMPLATES)) {
+      expect(existsSync(join(kitRoot, WORKBENCH, 'templates/paper/contests', name!, 'main.tex'))).toBe(true)
+    }
+  })
+
+  it('keeps an existing paper and contest setting, and adds nothing for contests without a template', () => {
+    const project = temp()
+    mkdirSync(join(project, 'paper'))
+    mkdirSync(join(project, '.mathodology'))
+    writeFileSync(join(project, 'paper/main.tex'), 'mine')
+    writeFileSync(join(project, '.mathodology/config.json'), JSON.stringify({ stop_gate: 'off', contest: 'stats' }))
+    expect(installContestPaper(kitRoot, project, 'CUMCM')).toEqual(['paper/results.tex'])
+    expect(readFileSync(join(project, 'paper/main.tex'), 'utf8')).toBe('mine')
+    expect(JSON.parse(readFileSync(join(project, '.mathodology/config.json'), 'utf8')).contest).toBe('stats')
+    const other = temp()
+    expect(installContestPaper(kitRoot, other, 'Other')).toEqual([])
+    expect(installContestPaper(kitRoot, other, 'Huashu')).toEqual([])
+    expect(existsSync(join(other, 'paper'))).toBe(false)
+  })
+
+  it('writes the same empty results file as the workbench and a config it reads', () => {
+    if (!hasPython()) return
+    const project = temp()
+    installKit(kitRoot, project, 'CUMCM')
+    const scripts = join(project, WORKBENCH, 'scripts')
+    const py = 'import sys; from pathlib import Path; from workbench import results, workspace; ws = workspace.load(Path(sys.argv[1])); print(ws.config["contest"]); sys.stdout.write(results.macros(results.load(ws)[0]))'
+    const out = execFileSync('python3', ['-c', py, project], { cwd: scripts, encoding: 'utf8' })
+    expect(out).toBe('cumcm\n' + EMPTY_RESULTS_TEX)
   })
 
   it('leaves a settings file it cannot parse alone', () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SessionEventBody } from '@shared/types'
 import { LineSplitter, classifyTool, splitArgs, toolTitle } from '../src/main/agents/base'
 import { joinArgs } from '../src/shared/args'
-import { ClaudeStreamParser, claudeArgs } from '../src/main/agents/claude'
+import { ClaudeStreamParser, claudeArgs, claudePermissionResponse } from '../src/main/agents/claude'
 import { CodexAppServerParser, codexArgs } from '../src/main/agents/codex'
 import { GeminiStreamParser, geminiArgs, geminiInput } from '../src/main/agents/gemini'
 import type { TurnRequest } from '../src/main/agents/base'
@@ -123,6 +123,33 @@ describe('Claude Code stream-json', () => {
     expect(s.events[1]).toMatchObject({ kind: 'tool.call', callId: 'tu_3', parentCallId: 'tu_task' })
   })
 
+  it('shows AskUserQuestion as a question and returns the answers by question text', () => {
+    const s = sink()
+    const p = new ClaudeStreamParser(s)
+    const input = {
+      questions: [
+        { question: 'Which contest?', header: 'Contest', multiSelect: false, options: [{ label: 'CUMCM', description: '国赛' }, { label: 'MCM', description: '美赛' }] },
+        { question: 'Which parts?', header: 'Parts', multiSelect: true, options: [{ label: 'Model' }, { label: 'Figures' }] }
+      ]
+    }
+    p.line(JSON.stringify({ type: 'control_request', request_id: 'req-q', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input, tool_use_id: 'tu_q' } }))
+    expect(s.events[0]).toMatchObject({
+      kind: 'permission.request',
+      title: 'Which contest?',
+      questions: [
+        { id: 'Which contest?', header: 'Contest', options: [{ label: 'CUMCM', description: '国赛' }, { label: 'MCM' }], multiSelect: false, allowOther: true },
+        { id: 'Which parts?', multiSelect: true }
+      ]
+    })
+    const pending = p.pending.get('req-q')!
+    expect(claudePermissionResponse(pending, true, false, { 'Which contest?': ['MCM'], 'Which parts?': ['Model', 'Figures'] })).toEqual({
+      behavior: 'allow',
+      updatedInput: { ...input, answers: { 'Which contest?': 'MCM', 'Which parts?': 'Model, Figures' } }
+    })
+    expect(claudePermissionResponse(pending, true, false, {})).toMatchObject({ behavior: 'deny' })
+    expect(claudePermissionResponse(pending, false)).toMatchObject({ behavior: 'deny' })
+  })
+
   it('builds headless arguments', () => {
     const args = claudeArgs({ ...req, resumeId: 'sess-1', model: 'opus', systemAppend: 'S' })
     expect(args).toContain('--include-partial-messages')
@@ -184,13 +211,42 @@ describe('Codex app-server', () => {
     expect(p.decision('7', true)).toBeNull()
     p.request({ id: 8, method: 'applyPatchApproval', params: {} })
     expect(p.decision('8', false)).toEqual({ id: 8, result: { decision: 'denied' } })
-    expect(p.request({ id: 9, method: 'item/tool/requestUserInput', params: {} })).toBeUndefined()
+    expect(p.request({ id: 9, method: 'item/tool/call', params: {} })).toBeUndefined()
+    expect(p.request({ id: 10, method: 'mcpServer/elicitation/request', params: {} })).toEqual({ action: 'decline', content: null, _meta: null })
+  })
+
+  it('turns request_user_input into a question and answers by question id', () => {
+    const s = sink()
+    const p = new CodexAppServerParser(s)
+    const questions = [
+      { id: 'contest', header: 'Contest', question: 'Which contest is this for?', isOther: true, isSecret: false, options: [{ label: 'CUMCM', description: '国赛' }, { label: 'MCM', description: '' }] },
+      { id: 'team', header: 'Team', question: 'Team number?', isOther: false, isSecret: false, options: null }
+    ]
+    expect(p.request({ id: 11, method: 'item/tool/requestUserInput', params: { threadId: 't', turnId: 'u', itemId: 'i1', questions, isBlocking: true } })).toBeNull()
+    expect(s.events[0]).toMatchObject({
+      kind: 'permission.request',
+      requestId: '11',
+      toolName: 'request_user_input',
+      title: 'Which contest is this for?',
+      questions: [
+        { id: 'contest', header: 'Contest', options: [{ label: 'CUMCM', description: '国赛' }, { label: 'MCM' }], allowOther: true },
+        { id: 'team', options: [], allowOther: true }
+      ]
+    })
+    expect(p.decision('11', true, false, { contest: ['MCM'], team: [' '], junk: [3 as unknown as string] })).toEqual({
+      id: 11,
+      result: { answers: { contest: { answers: ['MCM'] } } }
+    })
+    p.request({ id: 12, method: 'item/tool/requestUserInput', params: { questions } })
+    expect(p.decision('12', false)).toEqual({ id: 12, result: { answers: {} } })
+    expect(p.request({ id: 13, method: 'item/tool/requestUserInput', params: { questions: [] } })).toEqual({ answers: {} })
   })
 
   it('starts an app-server with plan and reasoning enabled', () => {
     const args = codexArgs(req)
     expect(args[0]).toBe('app-server')
     expect(args.join(' ')).toContain('tools.update_plan.enabled=true')
+    expect(args.join(' ')).toContain('features.default_mode_request_user_input=true')
     expect(args.slice(-2)).toEqual(['--foo', 'a b'])
   })
 })

@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentId, ModelInfo, PermissionMode } from '@shared/types'
+import type { AgentId, AgentQuestion, ModelInfo, PermissionMode } from '@shared/types'
 import {
   askCli,
   classifyTool,
+  cleanAnswers,
   parseJson,
   spawnLines,
   splitArgs,
@@ -28,6 +29,42 @@ export interface PendingPermission {
   requestId: string
   input: unknown
   suggestions: unknown
+  questions?: AgentQuestion[]
+}
+
+/** AskUserQuestion's questions. Claude keys the answers by question text. */
+export function claudeQuestions(input: unknown): AgentQuestion[] | undefined {
+  const list = (input as Json | undefined)?.questions
+  if (!Array.isArray(list)) return undefined
+  const questions = list.flatMap((raw): AgentQuestion[] => {
+    const q = (raw ?? {}) as Json
+    const question = typeof q.question === 'string' ? q.question : ''
+    if (!question) return []
+    const options = (Array.isArray(q.options) ? (q.options as Json[]) : [])
+      .map((o) => ({ label: String(o?.label ?? ''), description: typeof o?.description === 'string' && o.description ? o.description : undefined }))
+      .filter((o) => o.label)
+    return [{ id: question, question, header: typeof q.header === 'string' && q.header ? q.header : undefined, options, multiSelect: q.multiSelect === true, allowOther: true }]
+  })
+  return questions.length ? questions : undefined
+}
+
+/** The control response for a pending request; answered questions go back in `updatedInput.answers`. */
+export function claudePermissionResponse(p: PendingPermission, allow: boolean, always?: boolean, answers?: Record<string, string[]>): Json {
+  if (p.questions) {
+    const given = Object.fromEntries(
+      p.questions.flatMap((q) => (answers?.[q.id]?.length ? [[q.question, answers[q.id].join(', ')]] : []))
+    )
+    return allow && Object.keys(given).length
+      ? { behavior: 'allow', updatedInput: { ...((p.input ?? {}) as Json), answers: given } }
+      : { behavior: 'deny', message: 'The user dismissed the question in Mathodology Studio without answering. Continue with your best judgement and state the assumption, or ask again in plain text.' }
+  }
+  return allow
+    ? {
+        behavior: 'allow',
+        updatedInput: p.input,
+        ...(always && Array.isArray(p.suggestions) ? { updatedPermissions: p.suggestions } : {})
+      }
+    : { behavior: 'deny', message: 'The user declined this action in Mathodology Studio.' }
 }
 
 function toolResultText(content: unknown): string {
@@ -240,14 +277,16 @@ export class ClaudeStreamParser {
     const requestId = String(msg.request_id ?? '')
     if (request.subtype !== 'can_use_tool' || !requestId) return
     const toolName = String(request.tool_name ?? 'tool')
-    this.pending.set(requestId, { requestId, input: request.input, suggestions: request.permission_suggestions })
+    const questions = toolName === 'AskUserQuestion' ? claudeQuestions(request.input) : undefined
+    this.pending.set(requestId, { requestId, input: request.input, suggestions: request.permission_suggestions, questions })
     this.sink.emit({
       kind: 'permission.request',
       requestId,
       callId: request.tool_use_id ? String(request.tool_use_id) : undefined,
       toolName,
-      title: toolTitle(toolName, request.input),
-      input: request.input
+      title: questions ? questions[0].question : toolTitle(toolName, request.input),
+      input: request.input,
+      ...(questions ? { questions } : {})
     })
   }
 }
@@ -413,19 +452,15 @@ export function claudeStreamAdapter(flavour: ClaudeStreamFlavour): AgentAdapter 
           }, 1500)
           setTimeout(() => child.exitCode === null && kill('SIGKILL'), 6000)
         },
-        respondPermission(requestId, allow, always) {
+        respondPermission(requestId, allow, always, raw) {
           const p = parser.pending.get(requestId)
           if (!p) return
           parser.pending.delete(requestId)
-          const response = allow
-            ? {
-                behavior: 'allow',
-                updatedInput: p.input,
-                ...(always && Array.isArray(p.suggestions) ? { updatedPermissions: p.suggestions } : {})
-              }
-            : { behavior: 'deny', message: 'The user declined this action in Mathodology Studio.' }
+          const answers = p.questions && allow ? cleanAnswers(raw) : undefined
+          const response = claudePermissionResponse(p, allow, always, answers)
           write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } })
-          sink.emit({ kind: 'permission.resolved', requestId, allow, always })
+          const answered = answers && Object.keys(answers).length > 0
+          sink.emit({ kind: 'permission.resolved', requestId, allow: p.questions ? Boolean(answered) : allow, always: p.questions ? undefined : always, ...(answered ? { answers } : {}) })
         },
         done
       }

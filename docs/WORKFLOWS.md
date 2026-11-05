@@ -47,7 +47,9 @@ the paper disagree, correct the paper from the results or rerun the experiment;
 never edit results to fit the text. `mtd.py init --paper-template cumcm` (or `mcm`,
 `stats`, `huawei`, `mathorcup`, `apmcm`) starts from a contest skeleton and adds the
 verified [format checks](../.claude/skills/mathodology-workbench/references/contest-formats.md);
-the current official rules still take precedence.
+the current official rules still take precedence. The agent picks the template from
+the problem statement and says which it chose; it asks when the contest is unclear or
+its rules are unverified. Studio's new-project dialog sets it from the contest you pick.
 
 ## Review and deliver
 

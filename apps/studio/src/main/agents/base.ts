@@ -42,9 +42,21 @@ export interface TurnSink {
 
 export interface Turn {
   interrupt(): void
-  respondPermission(requestId: string, allow: boolean, always?: boolean): void
+  /** `answers` (by question id) answer a request that carried `questions`. */
+  respondPermission(requestId: string, allow: boolean, always?: boolean, answers?: Record<string, string[]>): void
   /** Resolves when the process has exited and the turn is closed. */
   done: Promise<void>
+}
+
+/** Answers from the renderer, kept to string lists. */
+export function cleanAnswers(answers: unknown): Record<string, string[]> {
+  if (!answers || typeof answers !== 'object') return {}
+  const out: Record<string, string[]> = {}
+  for (const [id, v] of Object.entries(answers as Record<string, unknown>)) {
+    const list = (Array.isArray(v) ? v : [v]).filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+    if (list.length) out[id] = list
+  }
+  return out
 }
 
 export interface AgentInspection {
