@@ -406,7 +406,7 @@ export function claudeStreamAdapter(flavour: ClaudeStreamFlavour): AgentAdapter 
     inspect: (binary, env) => inspectStream(binary, flavour.inspectArgs, env),
     start(req: TurnRequest, sink: TurnSink): Turn {
       const parser = new ClaudeStreamParser(sink, id)
-      const { child, exited, kill } = spawnLines(req.binary, flavour.args(req), req.cwd, req.env, (l) => parser.line(l))
+      const { child, exited, kill, beginStop } = spawnLines(req.binary, flavour.args(req), req.cwd, req.env, (l) => parser.line(l))
       const write = (obj: unknown): void => {
         if (!child.stdin.destroyed) child.stdin.write(JSON.stringify(obj) + '\n')
       }
@@ -443,6 +443,7 @@ export function claudeStreamAdapter(flavour: ClaudeStreamFlavour): AgentAdapter 
       return {
         interrupt() {
           interrupted = true
+          beginStop()
           write({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } })
           setTimeout(() => {
             if (child.exitCode === null) {

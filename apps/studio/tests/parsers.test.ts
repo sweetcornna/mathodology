@@ -215,6 +215,16 @@ describe('Codex app-server', () => {
     expect(p.request({ id: 10, method: 'mcpServer/elicitation/request', params: {} })).toEqual({ action: 'decline', content: null, _meta: null })
   })
 
+  it('declines additional permission profiles using the request-specific response schema', () => {
+    const s = sink()
+    const p = new CodexAppServerParser(s)
+    expect(p.request({ id: 12, method: 'item/permissions/requestApproval', params: {
+      threadId: 't', turnId: 'u', permissions: { network: { enabled: true }, fileSystem: { write: ['/private'] } }
+    } })).toEqual({ permissions: {}, scope: 'turn' })
+    expect(p.pending.size).toBe(0)
+    expect(s.events).toEqual([])
+  })
+
   it('turns request_user_input into a question and answers by question id', () => {
     const s = sink()
     const p = new CodexAppServerParser(s)

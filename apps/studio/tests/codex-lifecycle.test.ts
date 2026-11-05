@@ -30,10 +30,11 @@ function server() {
   }
   const child = { stdin, exitCode: null as number | null, signalCode: null }
   const kill = vi.fn()
+  const beginStop = vi.fn()
   const exited = new Promise<Exit>((resolve) => { resolveExit = resolve })
   spawnMock.mockImplementation((_binary, _args, _cwd, _env, receive: (line: string) => void): SpawnedTurn => {
     onLine = receive
-    return { child: child as unknown as ChildProcessWithoutNullStreams, exited, kill }
+    return { child: child as unknown as ChildProcessWithoutNullStreams, exited, kill, beginStop }
   })
   const events: SessionEventBody[] = []
   const nativeSession = vi.fn()
@@ -46,7 +47,7 @@ function server() {
     await Promise.resolve()
   }
   return {
-    turn, events, sent, stdin, kill, nativeSession, receive, respond,
+    turn, events, sent, stdin, child, kill, beginStop, nativeSession, receive, respond,
     async initialize() {
       await respond('initialize', {})
       await respond('thread/start', { thread: { id: 'parent-thread' } })
@@ -73,6 +74,66 @@ afterEach(() => {
 })
 
 describe('Codex app-server turn lifecycle', () => {
+  it.each(['initialize', 'thread/start', 'turn/start'])('does not resume startup after cancellation while awaiting %s', async (stage) => {
+    const app = server()
+    if (stage !== 'initialize') await app.respond('initialize', {})
+    if (stage === 'turn/start') await app.respond('thread/start', { thread: { id: 'parent-thread' } })
+    const before = app.sent.length
+    app.turn.interrupt()
+    expect(app.beginStop).toHaveBeenCalledOnce()
+    expect(app.kill).toHaveBeenCalledWith('SIGTERM')
+    await app.respond(stage, stage === 'thread/start' ? { thread: { id: 'parent-thread' } } : { turn: { id: 'parent-turn' } })
+    expect(app.sent).toHaveLength(before)
+    await app.exit()
+    expect(app.events.at(-1)).toMatchObject({ kind: 'turn.completed', ok: false, summary: 'interrupted' })
+    expect(app.events.some((event) => event.kind === 'turn.completed' && event.ok)).toBe(false)
+    const kills = app.kill.mock.calls.length
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(app.kill).toHaveBeenCalledTimes(kills)
+  })
+
+  it('still escalates a cancelled process group after its leader has exited', async () => {
+    const app = server()
+    await app.initialize()
+    await app.startTurn()
+    app.turn.interrupt()
+    app.child.exitCode = 0
+    await vi.advanceTimersByTimeAsync(8_000)
+    expect(app.kill).toHaveBeenCalledWith('SIGKILL')
+    await app.exit()
+  })
+
+  it('allows stopping a completed turn whose process has not closed yet', async () => {
+    const app = server()
+    await app.initialize()
+    await app.startTurn()
+    app.receive({ method: 'turn/completed', params: { threadId: 'parent-thread', turn: { id: 'parent-turn', status: 'completed' } } })
+    app.turn.interrupt()
+    expect(app.beginStop).toHaveBeenCalledOnce()
+    expect(app.kill).toHaveBeenCalledWith('SIGTERM')
+    expect(app.sent.some((frame) => frame.method === 'turn/interrupt')).toBe(false)
+    await app.exit()
+    expect(app.events.filter((event) => event.kind === 'turn.completed')).toHaveLength(1)
+  })
+
+  it('declines pending and late approvals after interruption without leaving permission cards open', async () => {
+    const app = server()
+    await app.initialize()
+    await app.startTurn()
+    app.receive({ id: 81, method: 'item/commandExecution/requestApproval', params: { command: 'touch result' } })
+    app.turn.interrupt()
+    expect(app.sent).toContainEqual({ id: 81, result: { decision: 'decline' } })
+    app.receive({ id: 82, method: 'item/commandExecution/requestApproval', params: { command: 'touch other-result' } })
+    expect(app.sent.at(-1)).toEqual({ id: 82, result: { decision: 'decline' } })
+    app.turn.respondPermission('82', true)
+    expect(app.sent.at(-1)).toEqual({ id: 82, result: { decision: 'decline' } })
+    await app.exit()
+    expect(app.events.filter((event) => event.kind === 'permission.resolved')).toEqual([
+      { kind: 'permission.resolved', requestId: '81', allow: false },
+      { kind: 'permission.resolved', requestId: '82', allow: false }
+    ])
+  })
+
   it('keeps stdin open when a child finishes and closes it once when the parent finishes', async () => {
     const app = server()
     await app.initialize()
@@ -103,6 +164,7 @@ describe('Codex app-server turn lifecycle', () => {
     app.receive({ method: 'turn/started', params: { threadId: 'child-thread', turn: { id: 'child-turn' } } })
     app.turn.interrupt()
     expect(app.sent.at(-1)).toMatchObject({ method: 'turn/interrupt', params: { threadId: 'parent-thread', turnId: 'parent-turn' } })
+    expect(app.beginStop.mock.invocationCallOrder[0]).toBeLessThan(app.stdin.write.mock.invocationCallOrder.at(-1)!)
     await app.respond('turn/interrupt', {})
     app.receive({ method: 'turn/completed', params: { threadId: 'parent-thread', turn: { id: 'parent-turn', status: 'interrupted' } } })
     await app.exit()

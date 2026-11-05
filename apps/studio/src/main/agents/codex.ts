@@ -327,7 +327,8 @@ export class CodexAppServerParser {
         return null
       }
       case 'item/permissions/requestApproval':
-        return { decision: 'decline' }
+        // This request grants permission profiles, not a command approval decision.
+        return { permissions: {}, scope: 'turn' }
       case 'mcpServer/elicitation/request':
         return { action: 'decline', content: null, _meta: null }
       default:
@@ -466,6 +467,9 @@ export const codexAdapter: AgentAdapter = {
     const waiting = new Map<number, { resolve(v: Json): void; reject(e: Error): void }>()
     const notifications: { method: string; params: Json }[] = []
     let turnReady = false
+    let interrupted = false
+    let closed = false
+    const stopTimers: ReturnType<typeof setTimeout>[] = []
 
     const notify = (method: string, params: Json): void => {
       const wasDone = parser.done
@@ -480,6 +484,13 @@ export const codexAdapter: AgentAdapter = {
         const reply = parser.request({ id: msg.id as number, method: String(msg.method), params: (msg.params ?? {}) as Json })
         if (reply === undefined) send({ id: msg.id, error: { code: -32601, message: 'Not supported by Mathodology Studio' } })
         else if (reply !== null) send({ id: msg.id, result: reply })
+        else if (interrupted) {
+          const denied = parser.decision(String(msg.id), false)
+          if (denied) {
+            send(denied)
+            sink.emit({ kind: 'permission.resolved', requestId: String(msg.id), allow: false })
+          }
+        }
         return
       }
       if (msg.method) {
@@ -498,19 +509,22 @@ export const codexAdapter: AgentAdapter = {
       else w.resolve((msg.result ?? {}) as Json)
     }
 
-    const { child, exited, kill } = spawnLines(req.binary, codexArgs(req), req.cwd, req.env, onLine)
+    const { child, exited, kill, beginStop } = spawnLines(req.binary, codexArgs(req), req.cwd, req.env, onLine)
     const send = (obj: Json): void => {
       if (!child.stdin.destroyed) child.stdin.write(JSON.stringify(obj) + '\n')
     }
     const call = (method: string, params: Json): Promise<Json> =>
       new Promise((resolve, reject) => {
+        if (closed || (interrupted && method !== 'turn/interrupt')) {
+          reject(new Error(interrupted ? 'interrupted' : 'exited'))
+          return
+        }
         const id = nextId++
         waiting.set(id, { resolve, reject })
         send({ id, method, params })
       })
 
     const policy = POLICY[req.permissionMode]
-    let interrupted = false
     let failure: string | null = null
 
     const run = async (): Promise<void> => {
@@ -518,6 +532,7 @@ export const codexAdapter: AgentAdapter = {
         clientInfo: { name: 'mathodology-studio', title: 'Mathodology Studio', version: '0.1.0' },
         capabilities: null
       })
+      if (interrupted || closed) return
       send({ method: 'initialized', params: {} })
       const threadParams: Json = {
         cwd: req.cwd,
@@ -529,6 +544,7 @@ export const codexAdapter: AgentAdapter = {
       const started = req.resumeId
         ? await call('thread/resume', { ...threadParams, threadId: req.resumeId, excludeTurns: true })
         : await call('thread/start', threadParams)
+      if (interrupted || closed) return
       const thread = (started.thread ?? {}) as Json
       parser.threadId = String(thread.id ?? req.resumeId ?? '')
       if (parser.threadId) sink.nativeSession(parser.threadId)
@@ -540,6 +556,7 @@ export const codexAdapter: AgentAdapter = {
         effort: req.effort || null,
         summary: 'detailed'
       })
+      if (interrupted || closed) return
       parser.turnId = String(((turn.turn ?? {}) as Json).id ?? parser.turnId)
       // Notifications can precede the turn/start response. Bind the requested turn first so
       // replayed or concurrent turns cannot claim its lifecycle while startup is in flight.
@@ -552,6 +569,10 @@ export const codexAdapter: AgentAdapter = {
     })
 
     const done = exited.then(({ code, signal, stderr }) => {
+      closed = true
+      for (const timer of stopTimers) clearTimeout(timer)
+      for (const w of waiting.values()) w.reject(new Error('exited'))
+      waiting.clear()
       for (const id of parser.pending.keys()) sink.emit({ kind: 'permission.resolved', requestId: id, allow: false })
       parser.pending.clear()
       if (parser.done) return
@@ -570,15 +591,26 @@ export const codexAdapter: AgentAdapter = {
 
     return {
       interrupt() {
+        if (interrupted || closed) return
         interrupted = true
-        if (parser.threadId && parser.turnId) void call('turn/interrupt', { threadId: parser.threadId, turnId: parser.turnId }).catch(() => undefined)
-        setTimeout(() => {
-          if (child.exitCode === null) {
-            child.stdin.end()
-            kill('SIGTERM')
-          }
-        }, 4000)
-        setTimeout(() => child.exitCode === null && kill('SIGKILL'), 8000)
+        beginStop()
+        for (const requestId of parser.pending.keys()) {
+          const denied = parser.decision(requestId, false)
+          if (denied) send(denied)
+          sink.emit({ kind: 'permission.resolved', requestId, allow: false })
+        }
+        if (!parser.done && parser.threadId && parser.turnId) void call('turn/interrupt', { threadId: parser.threadId, turnId: parser.turnId }).catch(() => undefined)
+        else {
+          // There is no addressable turn during startup. Stop the process now and never send
+          // the prompt if an in-flight initialize/thread/start response arrives afterwards.
+          child.stdin.end()
+          kill('SIGTERM')
+        }
+        stopTimers.push(setTimeout(() => {
+          if (!child.stdin.destroyed) child.stdin.end()
+          kill('SIGTERM')
+        }, 4000))
+        stopTimers.push(setTimeout(() => kill('SIGKILL'), 8000))
       },
       respondPermission(requestId, allow, always, raw) {
         const question = parser.pending.get(requestId)?.method === 'item/tool/requestUserInput'
