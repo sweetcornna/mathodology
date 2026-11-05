@@ -1,9 +1,15 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import * as fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Project } from '@shared/types'
 import { ArtifactStore, artifactKind } from '../src/main/artifacts'
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return { ...actual, statSync: vi.fn(actual.statSync) }
+})
 
 const dirs: string[] = []
 function temp(): string {
@@ -11,7 +17,10 @@ function temp(): string {
   dirs.push(d)
   return d
 }
-afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })))
+afterEach(() => {
+  vi.mocked(fs.statSync).mockReset()
+  dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true }))
+})
 
 function setup(): { store: ArtifactStore; project: Project; write: (rel: string, text: string) => void } {
   const root = temp()
@@ -65,5 +74,43 @@ describe('artifact store', () => {
     rmSync(join(project.path, 'paper/draft.md'))
     store.capture(project, 'scan', { origin: 'external' })
     expect(store.get('p1', artifact.id)?.missing).toBe(true)
+  })
+
+  it('does not mark explicitly captured deep or excluded files missing after a scan', () => {
+    const { store, project, write } = setup()
+    const paths = ['a/b/c/d/e/f/g/deep.md', 'attachments/existing.md']
+    for (const path of paths) write(path, 'still here')
+    const captured = store.capture(project, paths, { origin: 'tool' })
+    store.capture(project, 'scan', { origin: 'external' })
+    for (const { artifact } of captured) expect(artifact.missing).toBe(false)
+    rmSync(join(project.path, paths[0]))
+    store.capture(project, 'scan', { origin: 'external' })
+    expect(captured[0].artifact.missing).toBe(true)
+    write(paths[0], 'returned')
+    store.capture(project, 'scan', { origin: 'external' })
+    expect(captured[0].artifact.missing).toBe(false)
+  })
+
+  it('does not mistake the scan file limit for deletion', () => {
+    const { store, project, write } = setup()
+    for (let i = 0; i < 4001; i++) write(`data/${String(i).padStart(4, '0')}.json`, '{}')
+    const [{ artifact }] = store.capture(project, ['data/4000.json'], { origin: 'tool' })
+    store.capture(project, 'scan', { origin: 'external' })
+    expect(artifact.missing).toBe(false)
+  })
+
+  it('preserves the last known state when a tracked file cannot be inspected', () => {
+    const { store, project, write } = setup()
+    write('paper/draft.md', 'intact')
+    const [{ artifact }] = store.capture(project, 'scan', { origin: 'external' })
+    const stat = vi.mocked(fs.statSync).getMockImplementation()!
+    vi.mocked(fs.statSync).mockImplementation(((path: fs.PathLike, ...args: unknown[]) => {
+      if (String(path) === join(project.path, 'paper/draft.md')) {
+        throw Object.assign(new Error('permission denied'), { code: 'EACCES' })
+      }
+      return (stat as (...args: unknown[]) => unknown)(path, ...args)
+    }) as typeof fs.statSync)
+    store.capture(project, 'scan', { origin: 'external' })
+    expect(artifact.missing).not.toBe(true)
   })
 })

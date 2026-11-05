@@ -22,7 +22,7 @@ from pathlib import Path
 import re
 
 from .report import Issue
-from .workspace import Workspace, read_text
+from .workspace import FileScanError, Workspace, read_text
 
 SCHEMA = 'mathodology.results/1'
 VALUE_KEYS = {'value', 'unit', 'ci', 'digits', 'display', 'label', 'note', 'se', 'n'}
@@ -52,6 +52,15 @@ class ResultSet:
     numbers: list[tuple[float, str]] = field(default_factory=list)  # every numeric leaf: (number, origin)
     files: dict[str, dict] = field(default_factory=dict)  # rel path -> parsed JSON
     questions: dict[str, list[str]] = field(default_factory=dict)  # question id -> result files
+    valid: bool = True  # only a completely read, valid set may replace generated paper files
+
+
+class SyncError(RuntimeError):
+    """An expected refusal to modify generated files, with an actionable report issue."""
+
+    def __init__(self, issue: Issue):
+        super().__init__(issue.render())
+        self.issue = issue
 
 
 def is_number(x) -> bool:
@@ -145,24 +154,36 @@ def _values(obj, prefix: str, rel: str, out: dict[str, Value], issues: list[Issu
 def load(ws: Workspace) -> tuple[ResultSet, list[Issue]]:
     rs = ResultSet()
     issues: list[Issue] = []
-    for path in ws.files('results', ('.json',)):
+    try:
+        paths = ws.files('results', ('.json',), strict=True)
+    except OSError as exc:
+        paths = exc.paths if isinstance(exc, FileScanError) else []
+        issues.append(Issue('error', 'results', 'results.scan', f'could not read all result files: {exc}', 'results',
+                            hint='restore access or move raw data outside results/ before syncing'))
+    for path in paths:
         rel = ws.rel(path)
 
         def file_issue(sev, code, msg, rel=rel):
             issues.append(Issue(sev, 'results', code, msg, rel))
 
-        if path.stat().st_size > MAX_BYTES:
-            file_issue('info', 'results.size', f'over {MAX_BYTES >> 20} MB; skipped (keep raw data out of results/)')
-            continue
         try:
-            data = json.loads(read_text(path))
+            if path.stat().st_size > MAX_BYTES:
+                file_issue('error', 'results.size', f'over {MAX_BYTES >> 20} MB; cannot safely sync an incomplete result set (keep raw data out of results/)')
+                continue
+            data = json.loads(read_text(path, strict=True))
+        except OSError as exc:
+            file_issue('error', 'results.read', f'could not read results: {exc}')
+            continue
         except ValueError as exc:
             file_issue('error', 'results.json', f'not valid JSON: {exc}')
             continue
         rs.files[rel] = data
         _leaves(data, stem(rel), rs.numbers)
         if not isinstance(data, dict) or data.get('schema') != SCHEMA:
-            file_issue('info', 'results.schema', f'no "schema": "{SCHEMA}"; its numbers are indexed but not validated or citable with \\res')
+            if isinstance(data, dict) and 'schema' in data:
+                file_issue('error', 'results.schema', f'unsupported schema {data["schema"]!r}; expected "{SCHEMA}"')
+            else:
+                file_issue('info', 'results.schema', f'no "schema": "{SCHEMA}"; its numbers are indexed but not validated or citable with \\res')
             continue
         if 'values' not in data:
             file_issue('error', 'results.values', 'contract file has no `values` object')
@@ -173,14 +194,24 @@ def load(ws: Workspace) -> tuple[ResultSet, list[Issue]]:
         q = data.get('question')
         if q is not None:
             rs.questions.setdefault(str(q), []).append(rel)
-        for name, table in (data.get('tables') or {}).items():
-            if not (isinstance(table, dict) and isinstance(table.get('columns'), list) and isinstance(table.get('rows'), list)):
+        tables = data.get('tables', {})
+        if not isinstance(tables, dict):
+            file_issue('error', 'results.tables-type', '`tables` must be an object of named tables')
+            continue
+        for name, table in tables.items():
+            if not (isinstance(table, dict) and isinstance(table.get('columns'), list) and table['columns']
+                    and isinstance(table.get('rows'), list)):
                 file_issue('error', 'results.table', f'table `{name}` needs `columns` and `rows` lists')
                 continue
             width = len(table['columns'])
             bad = [i for i, row in enumerate(table['rows']) if not isinstance(row, list) or len(row) != width]
             if bad:
                 file_issue('error', 'results.table', f'table `{name}` rows {bad[:5]} do not have {width} cells')
+            digits = table.get('digits')
+            valid_digit = lambda d: d is None or (type(d) is int and 0 <= d <= 12)
+            if not (valid_digit(digits) or (isinstance(digits, list) and len(digits) == width and all(map(valid_digit, digits)))):
+                file_issue('error', 'results.table-digits', f'table `{name}` digits must be 0–12, or one such value per column')
+    rs.valid = not any(i.severity == 'error' for i in issues)
     return rs, issues
 
 
@@ -261,6 +292,7 @@ def table_tex(source: str, name: str, table: dict) -> str | None:
         return None
     digits = table.get('digits')
     per_col = digits if isinstance(digits, list) and len(digits) == len(columns) else [digits if isinstance(digits, int) else None] * len(columns)
+    per_col = [d if type(d) is int and 0 <= d <= 12 else None for d in per_col]
     align = table.get('align')
     if not (isinstance(align, str) and len(align) == len(columns)):
         align = ''.join('r' if rows and all(is_number(r[i]) or r[i] is None for r in rows) else 'l' for i in range(len(columns)))
@@ -300,10 +332,21 @@ def _write(path: Path, text: str) -> bool:
 def sync(ws: Workspace, rs: ResultSet) -> tuple[Path, bool]:
     """Write paper/results.tex and paper/tables/*.tex when they differ; returns (macro path, changed).
 
-    Generated tables whose source table is gone are removed; hand-written files are never touched."""
+    Generated tables whose source table is gone are removed; hand-written files are never touched.
+    Validate before any write or removal: a failed load must not look like deleted results."""
     path = macro_path(ws)
-    changed = _write(path, macros(rs))
+    if not rs.valid:
+        raise SyncError(Issue('error', 'results', 'results.sync-skipped',
+                              'generated paper files were preserved because results could not be fully validated',
+                              hint='fix the results errors and rerun sync'))
+    if (path.exists() or path.is_symlink()) and not is_generated(path):
+        raise SyncError(Issue('error', 'paper', 'results.unmanaged-macros',
+                              f'{ws.rel(path)} is not a Workbench-generated file; it was preserved', ws.rel(path),
+                              hint='rename the hand-written file and update its inputs before running sync'))
+    # Render everything before touching any existing output, so rendering errors are non-destructive.
+    macro_text = macros(rs)
     wanted = table_texts(rs)
+    changed = _write(path, macro_text)
     folder = tables_dir(ws)
     for name, text in wanted.items():
         if (folder / name).exists() and not is_generated(folder / name):

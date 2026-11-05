@@ -338,6 +338,19 @@ class NumbersTests(unittest.TestCase):
         self.assert_matched('The RMSE is 0.091 and also 0.09 and 0.0912.\n', 3)
         self.assert_matched('$R^2 = 0.88$.\n')
 
+    def test_signed_results_do_not_match_the_opposite_direction(self):
+        write(self.ws.root / 'results' / 'q1.json', contract({'change': -0.35}))
+        self.assert_matched('The change is -0.35, or −35\\%.\n', 2)
+        report = self.check('The change is +0.35, or +35\\%.\n')
+        self.assertEqual((report.checked, report.matched, report.near), (2, 0, 0))
+        self.assertIn('numbers.unmatched', codes(report.issues))
+        self.assertNotIn('numbers.typed', codes(report.issues))
+        report = self.check('The change is -0.354.\n')
+        self.assertEqual((report.matched, report.near), (0, 1))
+        self.assertIn('-0.35', report.issues[0].message)
+        write(self.ws.root / 'results' / 'q1.json', contract({'change': 0.35}))
+        self.assertEqual(self.check('The change is -0.35.\n').matched, 0)
+
     def test_percent_vs_fraction(self):
         self.assert_matched('A share of 12.3\\% of the load.\n')
         self.assert_matched('A share of 12\\% of the load.\n')
@@ -970,6 +983,22 @@ class InstallHooksTests(unittest.TestCase):
             mtd.install_hooks(root, remove=True)
             self.assertEqual(json.loads(path.read_text()), {})
 
+    def test_mixed_group_keeps_custom_commands_prompts_and_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            custom = [{'type': 'command', 'command': 'my-check', 'timeout': 40},
+                      {'type': 'prompt', 'prompt': 'Review this edit'}]
+            group = {'matcher': 'Edit', 'description': 'user checks',
+                     'hooks': [custom[0], {'type': 'command', 'command': 'mathodology-workbench old'}, custom[1]]}
+            path = write(root / '.claude' / 'settings.json', json.dumps({'hooks': {'PreToolUse': [group]}}))
+            mtd.install_hooks(root)
+            first = json.loads(path.read_text())
+            self.assertEqual(first['hooks']['PreToolUse'][0], {**group, 'hooks': custom})
+            mtd.install_hooks(root)
+            self.assertEqual(json.loads(path.read_text()), first)
+            mtd.install_hooks(root, remove=True)
+            self.assertEqual(json.loads(path.read_text()), {'hooks': {'PreToolUse': [{**group, 'hooks': custom}]}})
+
     def test_command_relative_to_project_when_inside(self):
         inside = MTD.parents[4]  # the repository that contains .claude/skills/...
         command = mtd.hook_command(inside)
@@ -1413,6 +1442,168 @@ class MarkdownTests(unittest.TestCase):
         self.assertIn('@ghost2021', next(i for i in issues if i.code == 'md.undefined-cite').message)
         got, _ = self.check('See [@smith2020].\n')
         self.assertEqual(got, [('md.undefined-cite', 1)])
+
+
+class SyncProtectionTests(unittest.TestCase):
+    TABLE = {'compare': {'columns': ['model', 'score'], 'rows': [['ours', 0.5]]}}
+
+    def test_bom_and_gb18030_results_remain_readable_but_invalid_bytes_are_reported(self):
+        payload = json.dumps({'schema': results.SCHEMA, 'values': {'rmse': {'value': 0.5, 'label': '误差'}}}, ensure_ascii=False)
+        for encoding in ('utf-8-sig', 'gb18030'):
+            with self.subTest(encoding=encoding), tempfile.TemporaryDirectory() as tmp:
+                ws = make_ws(tmp, {'results/q1.json': payload.encode(encoding)})
+                rs, issues = results.load(ws)
+                self.assertTrue(rs.valid, [i.render() for i in issues])
+                self.assertEqual(rs.values['q1.rmse'].label, '误差')
+                results.sync(ws, rs)
+                before = (ws.root / 'paper' / 'results.tex').read_bytes()
+                write(ws.root / 'results' / 'q1.json', b'\xff')
+                rs, issues = results.load(ws)
+                self.assertFalse(rs.valid)
+                self.assertIn('results.json', codes(issues))
+                with self.assertRaises(results.SyncError):
+                    results.sync(ws, rs)
+                self.assertEqual((ws.root / 'paper' / 'results.tex').read_bytes(), before)
+
+    def test_scan_limit_preserves_outputs_from_valid_unvisited_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'results/z/q1.json': contract({'rmse': 0.5}, tables=self.TABLE),
+                               'paper/main.tex': DOC + END})
+            results.sync(ws, results.load(ws)[0])
+            paths = [ws.root / 'paper' / 'results.tex', ws.root / 'paper' / 'tables' / 'z-q1-compare.tex']
+            before = [p.read_bytes() for p in paths]
+            from workbench.workspace import MAX_FILES
+            for i in range(MAX_FILES):
+                write(ws.root / 'results' / 'a' / f'{i:05}.json', '{}')
+            rs, issues = results.load(ws)
+            self.assertFalse(rs.valid)
+            self.assertIn('results.scan', codes(issues))
+            self.assertEqual(len(rs.files), MAX_FILES)
+            with self.assertRaises(results.SyncError):
+                results.sync(ws, rs)
+            engine.status(ws, sync=True)
+            self.assertEqual([p.read_bytes() for p in paths], before)
+            # Exactly the limit can be scanned completely and should not remain blocked.
+            (ws.root / 'results' / 'a' / '00000.json').unlink()
+            write(ws.root / 'results' / 'z' / 'q1.json', contract({'rmse': 0.7}, tables=self.TABLE))
+            rs, issues = results.load(ws)
+            self.assertTrue(rs.valid, [i.render() for i in issues if i.severity == 'error'])
+            results.sync(ws, rs)
+            self.assertTrue(paths[1].exists())
+            self.assertIn('{mtdres@z.q1.rmse}{0.7}', paths[0].read_text())
+
+    def test_unreadable_results_directory_preserves_outputs_until_access_returns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'results/z/q1.json': contract({'rmse': 0.5}, tables=self.TABLE),
+                               'results/a/q2.json': contract({'rmse': 0.8}), 'paper/main.tex': DOC + END})
+            results.sync(ws, results.load(ws)[0])
+            paths = [ws.root / 'paper' / 'results.tex', ws.root / 'paper' / 'tables' / 'z-q1-compare.tex']
+            before = [p.read_bytes() for p in paths]
+            scandir = os.scandir
+            def denied(path):
+                if Path(path) == ws.root / 'results' / 'z':
+                    raise PermissionError('results/z denied')
+                return scandir(path)
+            with mock.patch('workbench.workspace.os.scandir', side_effect=denied):
+                rs, issues = results.load(ws)
+                self.assertFalse(rs.valid)
+                self.assertIn('results.scan', codes(issues))
+                self.assertIn('a.q2.rmse', rs.values)
+                with self.assertRaises(results.SyncError):
+                    results.sync(ws, rs)
+                engine.status(ws, sync=True)
+            self.assertEqual([p.read_bytes() for p in paths], before)
+            write(ws.root / 'results' / 'z' / 'q1.json', contract({'rmse': 0.7}, tables=self.TABLE))
+            rs, issues = results.load(ws)
+            self.assertTrue(rs.valid, [i.render() for i in issues])
+            results.sync(ws, rs)
+            self.assertTrue(paths[1].exists())
+            self.assertIn('{mtdres@z.q1.rmse}{0.7}', paths[0].read_text())
+
+    def test_imported_handwritten_results_are_preserved_by_status_cli_and_hooks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'imported'
+            (root / 'problem').mkdir(parents=True)
+            original = '\\section{Results}\nOur handwritten explanation.\n'
+            target = write(root / 'paper' / 'results.tex', original)
+            write(root / 'paper' / 'main.tex', DOC + END)
+            write(root / 'results' / 'q1.json', contract({'rmse': 0.5}, tables=self.TABLE))
+            ws = load(root)
+            report = engine.status(ws, sync=True)
+            self.assertIn('results.unmanaged-macros', codes(report['issues']))
+            self.assertEqual(target.read_text(), original)
+            for command in ('sync', 'check', 'init'):
+                extra = ('--paper-template', '--no-hooks') if command == 'init' else ()
+                code, out, err = run_cli(tmp, '--root', str(root), command, *extra)
+                self.assertEqual(code, 1, (command, out, err))
+                self.assertEqual(target.read_text(), original)
+            payload = {'session_id': 'imported', 'cwd': str(root), 'tool_name': 'Bash', 'tool_input': {}}
+            code, out, _ = run_hook(tmp, 'post-tool', payload)
+            self.assertEqual(code, 0)
+            self.assertIn('preserved', out)
+            self.assertEqual(target.read_text(), original)
+            edit = {**payload, 'tool_name': 'Edit', 'tool_input': {'file_path': str(target)}}
+            self.assertIsNone(hooks.pre_edit(edit))  # the imported chapter remains user-editable
+            self.assertFalse((root / 'paper' / 'tables').exists())
+
+    def test_invalid_results_keep_all_generated_files_and_other_files_are_still_checked(self):
+        invalid = [contract({}, tables=[]), contract({}, tables='bad'), contract({}, tables=None),
+                   contract({}, tables={'x': {'columns': ['a'], 'rows': [[1]], 'digits': ['bad']}}),
+                   contract({}, tables={'x': {'columns': ['a'], 'rows': [[1, 2]]}}),
+                   '{broken', json.dumps({'schema': 'mathodology.results/2', 'values': {}})]
+        for broken in invalid:
+            with self.subTest(broken=broken), tempfile.TemporaryDirectory() as tmp:
+                ws = make_ws(tmp, {'results/q1.json': contract({'rmse': 0.5}, tables=self.TABLE),
+                                   'paper/main.tex': DOC + END})
+                results.sync(ws, results.load(ws)[0])
+                paths = [ws.root / 'paper' / 'results.tex', ws.root / 'paper' / 'tables' / 'q1-compare.tex']
+                before = [p.read_bytes() for p in paths]
+                write(ws.root / 'results' / 'q1.json', broken)
+                write(ws.root / 'results' / 'q2.json', contract({'other': 0.8}, question='Q2'))
+                rs, issues = results.load(ws)
+                self.assertFalse(rs.valid)
+                self.assertIn('q2.other', rs.values)
+                self.assertTrue(any(i.severity == 'error' and i.file == 'results/q1.json' for i in issues))
+                with self.assertRaises(results.SyncError):
+                    results.sync(ws, rs)
+                report = engine.status(ws, sync=True)
+                self.assertGreater(report['counts']['error'], 0)
+                code, _, _ = run_cli(tmp, '--root', str(ws.root), 'sync')
+                self.assertEqual(code, 1)
+                messages = hooks._results_changed(ws, force=True)
+                self.assertTrue(any('Results contract problems' in m for m in messages))
+                self.assertEqual([p.read_bytes() for p in paths], before)
+                # Repairing the source resumes normal sync, including removal of a deleted table.
+                write(ws.root / 'results' / 'q1.json', contract({'rmse': 0.7}))
+                results.sync(ws, results.load(ws)[0])
+                self.assertFalse(paths[1].exists())
+                self.assertIn('{mtdres@q1.rmse}{0.7}', paths[0].read_text())
+
+    def test_unavailable_result_loader_does_not_sync_an_empty_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'results/q1.json': contract({'rmse': 0.5}, tables=self.TABLE),
+                               'paper/main.tex': DOC + END})
+            results.sync(ws, results.load(ws)[0])
+            before = {p: p.read_bytes() for p in (ws.root / 'paper').rglob('*.tex')}
+            with mock.patch.object(results, 'load', side_effect=RuntimeError('failed to read results')):
+                report = engine.status(ws, sync=True)
+            self.assertIn('results.unavailable', codes(report['issues']))
+            self.assertEqual({p: p.read_bytes() for p in before}, before)
+
+    def test_unreadable_result_is_reported_without_losing_valid_siblings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'results/q1.json': contract({'rmse': 0.5}),
+                               'results/q2.json': contract({'other': 0.8})})
+            read = Path.read_text
+            def unreadable(path, *args, **kwargs):
+                if path.name == 'q1.json':
+                    raise PermissionError('denied')
+                return read(path, *args, **kwargs)
+            with mock.patch.object(Path, 'read_text', unreadable):
+                rs, issues = results.load(ws)
+            self.assertFalse(rs.valid)
+            self.assertIn('q2.other', rs.values)
+            self.assertIn('results.read', codes(issues))
 
 
 if __name__ == '__main__':

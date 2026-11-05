@@ -75,8 +75,11 @@ def install_hooks(root: Path, remove: bool = False) -> Path:
     current = settings.get('hooks') or {}
     merged = {}
     for event in sorted(set(current) | set(spec)):
-        groups = [g for g in current.get(event, [])
-                  if not any(MARK in h.get('command', '') for h in g.get('hooks', []))]
+        groups = []
+        for group in current.get(event, []):
+            kept = [h for h in group.get('hooks', []) if MARK not in h.get('command', '')]
+            if kept or not group.get('hooks'):
+                groups.append({**group, 'hooks': kept})
         if not remove and event in spec:
             for group in spec[event]:
                 hooks_ = [{**h, 'command': h['command'].replace('{mtd}', command)} for h in group['hooks']]
@@ -163,9 +166,12 @@ def cmd_run(args) -> int:
         if issue.severity == 'error':
             print('[mtd] ' + issue.render(), file=sys.stderr)
     if (rs.values or results.table_texts(rs)) and ws.dir('paper').is_dir():
-        path, changed = results.sync(ws, rs)
-        if changed:
-            print(f'[mtd] refreshed {ws.rel(path)}', file=sys.stderr)
+        try:
+            path, changed = results.sync(ws, rs)
+            if changed:
+                print(f'[mtd] refreshed {ws.rel(path)}', file=sys.stderr)
+        except results.SyncError as exc:
+            print('[mtd] ' + str(exc), file=sys.stderr)
     return code
 
 
@@ -243,7 +249,11 @@ def main(argv=None) -> int:
     p.add_argument('event', choices=sorted(hooks.HANDLERS))
     p.set_defaults(func=lambda a: hooks.main(a.event))
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except results.SyncError as exc:
+        print(exc, file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':
