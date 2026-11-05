@@ -55,8 +55,9 @@ export function App() {
   useTheme()
 
   useEffect(() => {
+    const unsubscribe = useStudio.getState().subscribe()
     void useStudio.getState().init()
-    return api.on('menu:command', (command) => {
+    const offMenu = api.on('menu:command', (command) => {
       const st = useStudio.getState()
       switch (command) {
         case 'new-session':
@@ -80,6 +81,10 @@ export function App() {
           break
       }
     })
+    return () => {
+      unsubscribe()
+      offMenu()
+    }
   }, [])
 
   return (
