@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { Project } from '@shared/types'
+import type { Project, Session } from '@shared/types'
 import { ArtifactStore } from '../src/main/artifacts'
 import { isPlainId, readJson, Store, writeAtomic } from '../src/main/store'
+import { buildTranscript } from '../src/renderer/src/lib/transcript'
 
 const dirs: string[] = []
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })))
@@ -15,6 +16,89 @@ function temp(): string {
 }
 
 const project: Project = { id: 'p1', name: 'P', path: '/nowhere', contest: 'MCM', createdAt: 0, kitInstalled: false }
+const session: Session = { id: 's1', projectId: 'p1', title: '', agent: 'claude', permissionMode: 'ask', createdAt: 0, updatedAt: 0, pinned: false, archived: false, status: 'idle', usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0 } }
+
+function savedSession(status: Session['status'] = 'idle') {
+  const dir = temp()
+  const store = new Store(dir)
+  store.upsertProject(project)
+  store.upsertSession({ ...session, status })
+  store.flush()
+  return { dir, store, path: join(dir, 'events/s1.jsonl') }
+}
+
+describe('recovering interrupted event logs', () => {
+  it.each(['idle', 'running', 'waiting'] as const)('recovers an open turn even when the saved status is %s', (status) => {
+    const { dir, store } = savedSession(status)
+    const todos = [{ content: 'Calculate', status: 'in_progress' as const }]
+    store.record('s1', { kind: 'user.message', text: 'start', attachments: [] })
+    store.record('s1', { kind: 'tool.call', callId: 'run', name: 'shell', toolKind: 'shell', title: 'Run', input: {} })
+    store.record('s1', { kind: 'todo.update', items: todos })
+    store.record('s1', { kind: 'permission.request', requestId: 'approval', toolName: 'shell', title: 'Approve', input: {} })
+    store.record('s1', { kind: 'permission.request', requestId: 'question', toolName: 'ask', title: 'Choose', input: {}, questions: [{ id: 'q', question: 'Choose?', header: 'Choice', options: [] }] })
+    const recovered = new Store(dir)
+    const events = recovered.events('s1')
+    expect(recovered.session('s1')?.status).toBe('idle')
+    expect(events.slice(-3)).toMatchObject([
+      { kind: 'permission.resolved', requestId: 'approval', allow: false },
+      { kind: 'permission.resolved', requestId: 'question', allow: false },
+      { kind: 'turn.completed', ok: false, summary: 'interrupted' }
+    ])
+    expect(events.map((e) => e.seq)).toEqual(events.map((_, i) => i + 1))
+    const transcript = buildTranscript(events)
+    expect(transcript.pending).toEqual([])
+    expect(transcript.runningTool).toBeUndefined()
+    expect(transcript.todos).toEqual(todos)
+    expect(transcript.items.flatMap((item) => item.type === 'tools' ? item.tools : [])).toMatchObject([{ callId: 'run', stopped: true }])
+    const reopened = new Store(dir)
+    expect(reopened.events('s1')).toEqual(events)
+  })
+
+  it('keeps a completed turn intact when status.json was not flushed before the crash', () => {
+    const { dir, store } = savedSession('running')
+    store.record('s1', { kind: 'user.message', text: 'start', attachments: [] })
+    store.record('s1', { kind: 'turn.completed', ok: true })
+    const events = store.events('s1')
+    const recovered = new Store(dir)
+    expect(recovered.events('s1')).toEqual(events)
+    expect(recovered.session('s1')?.status).toBe('idle')
+  })
+
+  it('dismisses obsolete approval cards without adding another completion to finished history', () => {
+    const { dir, store } = savedSession()
+    store.record('s1', { kind: 'user.message', text: 'start', attachments: [] })
+    store.record('s1', { kind: 'permission.request', requestId: 'old', toolName: 'shell', title: 'Approve', input: {} })
+    store.record('s1', { kind: 'turn.completed', ok: false, summary: 'interrupted' })
+    const recovered = new Store(dir)
+    expect(buildTranscript(recovered.events('s1')).pending).toEqual([])
+    expect(recovered.events('s1').filter((e) => e.kind === 'turn.completed')).toHaveLength(1)
+  })
+
+  it('isolates a torn tail so recovery and the first new event both survive', () => {
+    const { dir, store, path } = savedSession()
+    store.record('s1', { kind: 'user.message', text: 'old', attachments: [] })
+    const previous = readFileSync(path, 'utf8')
+    const torn = '{"kind":"tool.call","callId":"partial'
+    appendFileSync(path, torn)
+    const recovered = new Store(dir)
+    recovered.record('s1', { kind: 'user.message', text: 'new', attachments: [] })
+    expect(readFileSync(path, 'utf8').startsWith(`${previous}${torn}\n`)).toBe(true)
+    expect(recovered.events('s1').map((e) => [e.kind, e.seq])).toEqual([['user.message', 1], ['turn.completed', 2], ['user.message', 3]])
+    expect(recovered.events('s1').at(-1)).toMatchObject({ text: 'new' })
+  })
+
+  it('preserves a complete final JSON record that lacks a trailing newline', () => {
+    const { dir, store, path } = savedSession()
+    store.record('s1', { kind: 'user.message', text: 'old', attachments: [] })
+    store.record('s1', { kind: 'turn.completed', ok: true })
+    const previous = readFileSync(path, 'utf8').trimEnd()
+    writeFileSync(path, previous)
+    const recovered = new Store(dir)
+    recovered.record('s1', { kind: 'notice', level: 'info', text: 'new' })
+    expect(readFileSync(path, 'utf8').startsWith(`${previous}\n`)).toBe(true)
+    expect(recovered.events('s1').map((e) => e.seq)).toEqual([1, 2, 3])
+  })
+})
 
 describe('state files', () => {
   it('keeps a file it cannot parse aside instead of starting over silently', () => {
