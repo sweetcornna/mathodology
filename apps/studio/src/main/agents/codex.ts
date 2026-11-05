@@ -106,7 +106,26 @@ export class CodexAppServerParser {
     this.sink.emit(body)
   }
 
+  /** Keep file details for approvals, including child calls that are not shown in the transcript. */
+  rememberFileChange(item: Json): void {
+    if (item.type === 'fileChange') this.items.set(String(item.id ?? ''), item)
+  }
+
   notification(method: string, p: Json): void {
+    // Approval requests can belong to a child agent, so resolve them even though its ordinary
+    // notifications do not belong in the main conversation.
+    if (method === 'serverRequest/resolved') {
+      const id = String(p.requestId ?? p.id ?? '')
+      if (this.pending.delete(id)) this.emit({ kind: 'permission.resolved', requestId: id, allow: false })
+      return
+    }
+    if (this.done) return
+    if (method === 'item/started') this.rememberFileChange((p.item ?? {}) as Json)
+    // app-server also emits events for spawned agents. A child's completion must never close
+    // the parent's connection, replace its plan, or change the turn targeted by interrupt().
+    if (this.threadId && p.threadId !== this.threadId) return
+    const eventTurnId = p.turnId ?? ((method === 'turn/started' || method === 'turn/completed') ? (p.turn as Json | undefined)?.id : undefined)
+    if (this.turnId && eventTurnId !== undefined && eventTurnId !== this.turnId) return
     switch (method) {
       case 'turn/started':
         this.turnId = String(((p.turn ?? {}) as Json).id ?? this.turnId)
@@ -147,11 +166,6 @@ export class CodexAppServerParser {
       case 'error': {
         const err = (p.error ?? {}) as Json
         this.emit({ kind: 'notice', level: p.willRetry ? 'warning' : 'error', text: String(err.message ?? 'Codex error') })
-        return
-      }
-      case 'serverRequest/resolved': {
-        const id = String(p.requestId ?? p.id ?? '')
-        if (this.pending.delete(id)) this.emit({ kind: 'permission.resolved', requestId: id, allow: false })
         return
       }
       case 'turn/completed': {
@@ -450,6 +464,14 @@ export const codexAdapter: AgentAdapter = {
     const parser = new CodexAppServerParser(sink)
     let nextId = 1
     const waiting = new Map<number, { resolve(v: Json): void; reject(e: Error): void }>()
+    const notifications: { method: string; params: Json }[] = []
+    let turnReady = false
+
+    const notify = (method: string, params: Json): void => {
+      const wasDone = parser.done
+      parser.notification(method, params)
+      if (!wasDone && parser.done && !child.stdin.destroyed) child.stdin.end()
+    }
 
     const onLine = (line: string): void => {
       const msg = parseJson(line)
@@ -461,8 +483,12 @@ export const codexAdapter: AgentAdapter = {
         return
       }
       if (msg.method) {
-        parser.notification(String(msg.method), (msg.params ?? {}) as Json)
-        if (parser.done && !child.stdin.destroyed) child.stdin.end()
+        const method = String(msg.method)
+        const params = (msg.params ?? {}) as Json
+        // A file approval may arrive before turn/start resolves; it still needs file details.
+        if (!turnReady && method === 'item/started') parser.rememberFileChange((params.item ?? {}) as Json)
+        if (turnReady || method === 'serverRequest/resolved') notify(method, params)
+        else notifications.push({ method, params })
         return
       }
       const w = waiting.get(Number(msg.id))
@@ -515,6 +541,10 @@ export const codexAdapter: AgentAdapter = {
         summary: 'detailed'
       })
       parser.turnId = String(((turn.turn ?? {}) as Json).id ?? parser.turnId)
+      // Notifications can precede the turn/start response. Bind the requested turn first so
+      // replayed or concurrent turns cannot claim its lifecycle while startup is in flight.
+      turnReady = true
+      for (const { method, params } of notifications.splice(0)) notify(method, params)
     }
     run().catch((err: Error) => {
       failure = err.message

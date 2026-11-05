@@ -8,6 +8,8 @@ export interface ToolNode {
   input: unknown
   changes?: FileChange[]
   result?: { output: string; isError: boolean }
+  /** The turn ended without a recorded result; this is not a successful result. */
+  stopped?: boolean
   children: ToolNode[]
   /** Sub-agent prose, for Task calls. */
   notes: string[]
@@ -123,6 +125,7 @@ export function buildTranscript(events: SessionEvent[]): Transcript {
   const perms = new Map<string, PermissionItem>()
   let todos: TodoItem[] = []
   let turnEdits: ToolNode[] = []
+  let turnTools: ToolNode[] = []
   let turnArtifacts = new Map<string, GeneratedFile>()
   let runningTool: ToolNode | undefined
 
@@ -158,6 +161,7 @@ export function buildTranscript(events: SessionEvent[]): Transcript {
           notes: []
         }
         tools.set(e.callId, node)
+        turnTools.push(node)
         if (e.toolKind === 'edit' || e.toolKind === 'write') turnEdits.push(node)
         runningTool = node
         const parent = e.parentCallId ? tools.get(e.parentCallId) : undefined
@@ -173,7 +177,10 @@ export function buildTranscript(events: SessionEvent[]): Transcript {
       }
       case 'tool.result': {
         const node = tools.get(e.callId)
-        if (node) node.result = { output: e.output, isError: e.isError }
+        if (node) {
+          node.result = { output: e.output, isError: e.isError }
+          delete node.stopped
+        }
         if (runningTool && runningTool.callId === e.callId) runningTool = undefined
         break
       }
@@ -200,6 +207,10 @@ export function buildTranscript(events: SessionEvent[]): Transcript {
         turnArtifacts.set(e.artifactId, { artifactId: e.artifactId, rel: e.rel, v: e.v, kind: e.artifactKind, origin: e.origin })
         break
       case 'turn.completed': {
+        for (const node of turnTools) {
+          if (!node.result) node.stopped = true
+        }
+        turnTools = []
         const files = mergeStats(turnEdits)
         if (turnArtifacts.size) {
           const stats = new Map(files.map((f) => [f.path.split(/[\\/]/).slice(-2).join('/'), f]))

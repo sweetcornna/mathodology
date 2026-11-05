@@ -132,6 +132,7 @@ function TasksTab() {
   const session = useStudio((s) => s.sessions.find((x) => x.id === sessionId))
   const { todos } = useMemo(() => buildTranscript(events), [events])
   const done = todos.filter((x) => x.status === 'completed').length
+  const running = session?.status === 'running' || session?.status === 'waiting'
 
   return (
     <div className="scroll min-h-0 flex-1 px-4 py-3">
@@ -156,18 +157,19 @@ function TasksTab() {
             <li key={i} className="flex items-start gap-2.5 py-1 text-[0.9rem]">
               {item.status === 'completed' ? (
                 <CircleCheck size={16} className="mt-0.5 shrink-0 text-success" />
-              ) : item.status === 'in_progress' ? (
+              ) : running && item.status === 'in_progress' ? (
                 <CircleDot size={16} className="mt-0.5 shrink-0 text-result" />
               ) : (
                 <Circle size={16} className="mt-0.5 shrink-0 text-fg-3" />
               )}
-              <span className={item.status === 'completed' ? 'text-fg-3 line-through decoration-fg-3/40' : item.status === 'in_progress' ? 'font-medium' : 'text-fg-2'}>
+              <span className={item.status === 'completed' ? 'text-fg-3 line-through decoration-fg-3/40' : running && item.status === 'in_progress' ? 'font-medium' : 'text-fg-2'}>
                 {item.content}
               </span>
             </li>
           ))}
         </ul>
       )}
+      {!running && done < todos.length && <p className="mt-2 text-[0.84rem] text-fg-3">{t('plan.unfinished')}</p>}
       {session && (session.usage.inputTokens > 0 || session.usage.costUsd > 0) && (
         <div className="mt-6 border-t border-line pt-4">
           <div className="mb-2 text-[0.86rem] font-medium">{t('pane.usage')}</div>

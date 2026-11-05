@@ -175,7 +175,8 @@ function ToolRow({ node }: { node: ToolNode }) {
   const lang = useLang()
   const [open, setOpen] = useState(false)
   const Icon = KIND_ICON[node.toolKind]
-  const running = !node.result
+  const running = !node.result && !node.stopped
+  const stopped = !node.result && node.stopped
   const failed = node.result?.isError
   const detail = open ? inputDetail(node) : null
   const output = node.result?.output ?? ''
@@ -200,6 +201,7 @@ function ToolRow({ node }: { node: ToolNode }) {
             </>
           )}
         </span>
+        {stopped && <span className="shrink-0 text-[0.786rem] text-fg-3">{t('tool.noResult')}</span>}
         {node.children.length > 0 && <span className="shrink-0 text-[0.786rem] text-fg-3">{t('tool.calls', { n: node.children.length })}</span>}
         {stats && <DiffStat added={stats.added} removed={stats.removed} />}
         <ChevronRight size={14} className={`shrink-0 text-fg-3 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
@@ -228,8 +230,8 @@ function ToolRow({ node }: { node: ToolNode }) {
               <Section label={node.toolKind === 'shell' ? t('tool.command') : t('tool.input')} text={detail.text} />
             ))}
           <Section
-            label={running ? t('tool.running') : failed ? t('tool.failed') : t('tool.output')}
-            text={running ? '' : output}
+            label={running ? t('tool.running') : stopped ? t('tool.noResult') : failed ? t('tool.failed') : t('tool.output')}
+            text={stopped ? t('tool.noResultDetail') : running ? '' : output}
             tone={failed ? 'error' : undefined}
           />
         </div>

@@ -68,6 +68,7 @@ interface StudioState {
   promptState: (PromptOptions & { resolve(value: string | null): void }) | null
 
   init(): Promise<void>
+  subscribe(): () => void
   refreshAgents(refresh?: boolean): Promise<void>
   saveSettings(patch: Partial<Settings>): Promise<void>
   setDialog(d: StudioState['dialog'], section?: string): void
@@ -115,6 +116,7 @@ export interface ConfirmOptions {
 }
 
 const LAST = 'studio.last'
+let initialization: Promise<void> | null = null
 
 function remember(projectId: string | null, sessionId: string | null): void {
   try {
@@ -161,29 +163,41 @@ export const useStudio = create<StudioState>((set, get) => ({
   confirmState: null,
   promptState: null,
 
-  async init() {
-    const [info, settings, projects, sessions] = await Promise.all([
-      api.call('app:info'),
-      api.call('settings:get'),
-      api.call('projects:list'),
-      api.call('sessions:list')
-    ])
-    const last = recall()
-    const project = projects.find((p) => p.id === last.projectId) ?? projects[0] ?? null
-    set({
-      info,
-      settings,
-      projects,
-      sessions,
-      activeProjectId: project?.id ?? null,
-      draft: { agent: settings.defaultAgent, model: '', effort: '', permissionMode: settings.defaultPermissionMode },
-      dialog: settings.onboarded ? null : 'onboarding',
-      ready: true
+  init() {
+    // StrictMode and Fast Refresh can rerun the App effect while these reads are still pending.
+    // Hydration belongs to the store; IPC subscriptions belong to the mounted App effect.
+    initialization ??= (async () => {
+      const [info, settings, projects, sessions] = await Promise.all([
+        api.call('app:info'),
+        api.call('settings:get'),
+        api.call('projects:list'),
+        api.call('sessions:list')
+      ])
+      const last = recall()
+      const project = projects.find((p) => p.id === last.projectId) ?? projects[0] ?? null
+      set({
+        info,
+        settings,
+        projects,
+        sessions,
+        activeProjectId: project?.id ?? null,
+        draft: { agent: settings.defaultAgent, model: '', effort: '', permissionMode: settings.defaultPermissionMode },
+        dialog: settings.onboarded ? null : 'onboarding',
+        ready: true
+      })
+      const session = sessions.find((s) => s.id === last.sessionId && s.projectId === project?.id)
+      if (session) await get().selectSession(session.id)
+      void get().loadArtifacts()
+      void get().refreshAgents()
+    })().catch((error: unknown) => {
+      initialization = null
+      throw error
     })
-    const session = sessions.find((s) => s.id === last.sessionId && s.projectId === project?.id)
-    if (session) await get().selectSession(session.id)
+    return initialization
+  },
 
-    api.on('session:event', (e) => {
+  subscribe() {
+    const offEvents = api.on('session:event', (e) => {
       set((st) => {
         if (e.kind === 'assistant.delta') {
           const blocks = { ...(st.streaming[e.sessionId] ?? {}) }
@@ -216,28 +230,33 @@ export const useStudio = create<StudioState>((set, get) => ({
         return { events, streaming, live }
       })
     })
-    api.on('session:changed', (s) => {
+    const offSessions = api.on('session:changed', (s) => {
       set((st) => ({
         sessions: st.sessions.some((x) => x.id === s.id)
           ? st.sessions.map((x) => (x.id === s.id ? s : x))
           : [...st.sessions, s]
       }))
     })
-    api.on('files:changed', ({ projectId }) => {
+    const offFiles = api.on('files:changed', ({ projectId }) => {
       if (projectId === get().activeProjectId) set((st) => ({ filesVersion: st.filesVersion + 1 }))
     })
-    api.on('review:changed', (r) => {
+    const offReviews = api.on('review:changed', (r) => {
       set((st) => {
         const list = st.reviews[r.sessionId] ?? []
         const next = list.some((x) => x.id === r.id) ? list.map((x) => (x.id === r.id ? r : x)) : [...list, r]
         return { reviews: { ...st.reviews, [r.sessionId]: next } }
       })
     })
-    api.on('artifacts:changed', ({ projectId }) => {
+    const offArtifacts = api.on('artifacts:changed', ({ projectId }) => {
       if (projectId === get().activeProjectId) void get().loadArtifacts()
     })
-    void get().loadArtifacts()
-    void get().refreshAgents()
+    return () => {
+      offEvents()
+      offSessions()
+      offFiles()
+      offReviews()
+      offArtifacts()
+    }
   },
 
   async refreshAgents(refresh) {
