@@ -41,7 +41,7 @@ export interface Phrase {
   text: string
   /** Part of the phrase shown as a mono chip (a file or tool name). */
   chip?: string
-  tone: 'normal' | 'running' | 'failed'
+  tone: 'normal' | 'running' | 'failed' | 'stopped'
 }
 
 function short(name: string): string {
@@ -65,7 +65,8 @@ export function summarize(nodes: ToolNode[], lang: Lang): Phrase[] {
     const list = byKind.get(kind)!
     const done = list.filter((n) => n.result && !n.result.isError)
     const failed = list.filter((n) => n.result?.isError)
-    const running = list.filter((n) => !n.result)
+    const running = list.filter((n) => !n.result && !n.stopped)
+    const stopped = list.filter((n) => !n.result && n.stopped)
     const v = table[kind]
     if (done.length === 1) {
       const n = done[0]
@@ -73,11 +74,11 @@ export function summarize(nodes: ToolNode[], lang: Lang): Phrase[] {
       if (kind === 'shell' && n.title && command && !command.startsWith(n.title.replace(/…$/, ''))) {
         // Claude's Bash calls carry a description; it reads better than the command.
         phrases.push({ text: n.title, tone: 'normal' })
-        continue
+      } else {
+        const chip =
+          kind === 'shell' ? n.title : ['read', 'edit', 'write', 'skill', 'mcp'].includes(kind) ? (kind === 'mcp' ? short(n.name) : n.title) : undefined
+        phrases.push({ text: chip ? (kind === 'shell' ? (lang === 'zh' ? '运行' : 'ran') : v.one('').trimEnd()) : v.one(n.title), chip, tone: 'normal' })
       }
-      const chip =
-        kind === 'shell' ? n.title : ['read', 'edit', 'write', 'skill', 'mcp'].includes(kind) ? (kind === 'mcp' ? short(n.name) : n.title) : undefined
-      phrases.push({ text: chip ? (kind === 'shell' ? (lang === 'zh' ? '运行' : 'ran') : v.one('').trimEnd()) : v.one(n.title), chip, tone: 'normal' })
     } else if (done.length > 1) {
       phrases.push({ text: v.many(done.length), tone: 'normal' })
     }
@@ -85,6 +86,15 @@ export function summarize(nodes: ToolNode[], lang: Lang): Phrase[] {
       phrases.push({
         text: lang === 'zh' ? `${failed.length} 个失败` : `${failed.length} failed`,
         tone: 'failed'
+      })
+    }
+    if (stopped.length) {
+      phrases.push({
+        text: stopped.length === 1
+          ? (lang === 'zh' ? '未记录结果' : 'Result not recorded')
+          : (lang === 'zh' ? `${stopped.length} 个调用未记录结果` : `${stopped.length} calls without recorded results`),
+        chip: stopped.length === 1 ? stopped[0].title || short(stopped[0].name) : undefined,
+        tone: 'stopped'
       })
     }
     if (running.length) {
