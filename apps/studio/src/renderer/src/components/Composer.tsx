@@ -163,11 +163,11 @@ function ApprovalCard({ perm, more }: { perm: PermissionItem; more: number }) {
   )
 }
 
-function TaskCard({ todos }: { todos: TodoItem[] }) {
+function TaskCard({ todos, running }: { todos: TodoItem[]; running: boolean }) {
   const t = useT()
   const [collapsed, setCollapsed] = useState(false)
   const done = todos.filter((x) => x.status === 'completed').length
-  const active = todos.find((x) => x.status === 'in_progress')
+  const active = running ? todos.find((x) => x.status === 'in_progress') : undefined
   return (
     <div className="card px-3 py-2">
       <button className="flex w-full items-center gap-2 text-left text-[0.929rem]" onClick={() => setCollapsed((c) => !c)}>
@@ -186,17 +186,18 @@ function TaskCard({ todos }: { todos: TodoItem[] }) {
               <span className="mt-[2px] grid h-4 w-4 shrink-0 place-items-center">
                 {item.status === 'completed' ? (
                   <CircleCheck size={15} className="text-fg-3" />
-                ) : item.status === 'in_progress' ? (
+                ) : running && item.status === 'in_progress' ? (
                   <Spinner size={13} />
                 ) : (
                   <span className="h-[13px] w-[13px] rounded-full border-[1.5px] border-dashed border-fg-4" />
                 )}
               </span>
-              <span className={item.status === 'completed' ? 'text-fg-3' : item.status === 'in_progress' ? 'text-fg' : 'text-fg-2'}>{item.content}</span>
+              <span className={item.status === 'completed' ? 'text-fg-3' : running && item.status === 'in_progress' ? 'text-fg' : 'text-fg-2'}>{item.content}</span>
             </li>
           ))}
         </ul>
       )}
+      {!running && done < todos.length && <p className="mt-1.5 text-[0.857rem] text-fg-3">{t('plan.unfinished')}</p>}
     </div>
   )
 }
@@ -270,7 +271,7 @@ function Dock({ onEdit }: { onEdit: (q: QueuedMessage) => void }) {
   if (!pending.length && !showTodos && !queue?.length) return null
   return (
     <div className="mb-2 flex flex-col gap-2">
-      {showTodos && <TaskCard todos={todos} />}
+      {showTodos && <TaskCard todos={todos} running={running} />}
       {sessionId && queue && queue.length > 0 && <QueueCard sessionId={sessionId} queue={queue} running={running} onEdit={onEdit} />}
       {pending.length > 0 && <ApprovalCard key={pending[0].requestId} perm={pending[0]} more={pending.length - 1} />}
     </div>

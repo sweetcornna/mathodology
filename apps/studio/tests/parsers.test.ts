@@ -187,6 +187,95 @@ describe('Codex app-server', () => {
     expect(p.request({ id: 9, method: 'item/tool/requestUserInput', params: {} })).toBeUndefined()
   })
 
+  it('keeps a child thread from changing the parent turn or its visible events and usage', () => {
+    const s = sink()
+    const p = new CodexAppServerParser(s)
+    p.threadId = 'parent-thread'
+    p.turnId = 'parent-turn'
+    const parent = { threadId: p.threadId, turnId: p.turnId }
+    const child = { threadId: 'child-thread', turnId: 'child-turn' }
+    p.notification('turn/plan/updated', { ...parent, plan: [{ step: 'Finish the parent task', status: 'inProgress' }] })
+    p.notification('item/agentMessage/delta', { ...parent, itemId: 'parent-message', delta: 'Parent progress' })
+    p.notification('thread/tokenUsage/updated', { ...parent, tokenUsage: { last: { inputTokens: 20, cachedInputTokens: 5, outputTokens: 3 } } })
+    const parentEvents = [...s.events]
+
+    p.notification('turn/started', { ...child, turn: { id: child.turnId } })
+    p.notification('turn/plan/updated', { ...child, plan: [{ step: 'Child task', status: 'completed' }] })
+    p.notification('item/agentMessage/delta', { ...child, itemId: 'child-message', delta: 'Child progress' })
+    p.notification('item/reasoning/summaryTextDelta', { ...child, itemId: 'child-reasoning', delta: 'Child reasoning' })
+    p.notification('item/reasoning/textDelta', { ...child, itemId: 'child-reasoning', delta: 'More child reasoning' })
+    p.notification('item/reasoning/summaryPartAdded', { ...child, itemId: 'child-reasoning' })
+    p.notification('item/started', { ...child, item: { type: 'commandExecution', id: 'child-command', command: 'python verify.py' } })
+    p.notification('item/commandExecution/outputDelta', { ...child, itemId: 'child-command', delta: 'Child output' })
+    p.notification('item/completed', { ...child, item: { type: 'commandExecution', id: 'child-command', command: 'python verify.py', status: 'completed', exitCode: 0 } })
+    p.notification('item/completed', { ...child, item: { type: 'agentMessage', id: 'child-message', text: 'Child finished' } })
+    p.notification('thread/tokenUsage/updated', { ...child, tokenUsage: { last: { inputTokens: 1000, cachedInputTokens: 500, outputTokens: 200 } } })
+    p.notification('error', { ...child, error: { message: 'Child failed' }, willRetry: false })
+    p.notification('turn/completed', { threadId: child.threadId, turn: { id: child.turnId, status: 'completed', durationMs: 346956 } })
+
+    expect(p.threadId).toBe(parent.threadId)
+    expect(p.turnId).toBe(parent.turnId)
+    expect(p.done).toBe(false)
+    expect(s.events).toEqual(parentEvents)
+    p.notification('turn/completed', { threadId: parent.threadId, turn: { id: parent.turnId, status: 'completed', durationMs: 600000 } })
+    expect(s.events.at(-1)).toMatchObject({
+      kind: 'turn.completed', ok: true, durationMs: 600000,
+      usage: { inputTokens: 15, cacheReadTokens: 5, outputTokens: 3 }
+    })
+  })
+
+  it('ignores delayed events from an older turn in the same thread', () => {
+    const s = sink()
+    const p = new CodexAppServerParser(s)
+    p.threadId = 'parent-thread'
+    p.turnId = 'current-turn'
+    p.notification('turn/started', { threadId: p.threadId, turn: { id: 'older-turn' } })
+    p.notification('item/agentMessage/delta', { threadId: p.threadId, turnId: 'older-turn', itemId: 'old-message', delta: 'Old text' })
+    p.notification('turn/completed', { threadId: p.threadId, turn: { id: 'older-turn', status: 'failed', error: { message: 'Old failure' } } })
+    expect(p.turnId).toBe('current-turn')
+    expect(p.done).toBe(false)
+    expect(s.events).toEqual([])
+  })
+
+  it('completes the matching parent turn only once', () => {
+    const s = sink()
+    const p = new CodexAppServerParser(s)
+    p.threadId = 'parent-thread'
+    p.turnId = 'parent-turn'
+    const completed = { threadId: p.threadId, turn: { id: p.turnId, status: 'completed' } }
+    p.notification('turn/completed', completed)
+    p.notification('turn/completed', completed)
+    expect(p.done).toBe(true)
+    expect(s.events).toEqual([expect.objectContaining({ kind: 'turn.completed', ok: true })])
+  })
+
+  it('still handles child approval requests and their resolution while scoped to the parent', () => {
+    const s = sink()
+    const p = new CodexAppServerParser(s)
+    p.threadId = 'parent-thread'
+    p.turnId = 'parent-turn'
+    const child = { threadId: 'child-thread', turnId: 'child-turn' }
+    expect(p.request({ id: 10, method: 'item/commandExecution/requestApproval', params: { ...child, itemId: 'child-command', command: 'python verify.py' } })).toBeNull()
+    expect(s.events.at(-1)).toMatchObject({ kind: 'permission.request', requestId: '10', title: 'python verify.py' })
+    expect(p.decision('10', true)).toEqual({ id: 10, result: { decision: 'accept' } })
+    const beforeFileChange = [...s.events]
+    p.notification('item/started', {
+      ...child, item: { type: 'fileChange', id: 'child-edit', changes: [{ path: '/test/project/results/evidence.json', kind: { type: 'add' }, diff: '+{}' }] }
+    })
+    expect(s.events).toEqual(beforeFileChange)
+    p.request({ id: 11, method: 'item/fileChange/requestApproval', params: { ...child, itemId: 'child-edit', reason: 'Update child output' } })
+    expect(s.events.at(-1)).toMatchObject({
+      kind: 'permission.request', requestId: '11', title: 'evidence.json',
+      input: { changes: [{ path: '/test/project/results/evidence.json', kind: 'add' }] }
+    })
+    p.notification('serverRequest/resolved', { ...child, requestId: 11 })
+    expect(s.events.at(-1)).toMatchObject({ kind: 'permission.resolved', requestId: '11', allow: false })
+    expect(p.pending.size).toBe(0)
+    expect(p.decision('11', true)).toBeNull()
+    expect(p.turnId).toBe('parent-turn')
+    expect(p.done).toBe(false)
+  })
+
   it('starts an app-server with plan and reasoning enabled', () => {
     const args = codexArgs(req)
     expect(args[0]).toBe('app-server')
