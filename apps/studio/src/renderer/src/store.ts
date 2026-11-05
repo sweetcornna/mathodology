@@ -82,7 +82,7 @@ interface StudioState {
   deleteSession(id: string): Promise<void>
   send(text: string, attachments: Attachment[]): Promise<void>
   interrupt(): void
-  respond(requestId: string, allow: boolean, always?: boolean): void
+  respond(requestId: string, allow: boolean, always?: boolean, answers?: Record<string, string[]>): void
   setDraft(patch: Partial<Draft>): void
   togglePane(tab?: PaneTab): void
   openPreview(rel: string): void
@@ -378,9 +378,9 @@ export const useStudio = create<StudioState>((set, get) => ({
     if (id) void api.call('sessions:interrupt', id)
   },
 
-  respond(requestId, allow, always) {
+  respond(requestId, allow, always, answers) {
     const id = get().activeSessionId
-    if (id) void api.call('sessions:respondPermission', id, requestId, allow, always)
+    if (id) void api.call('sessions:respondPermission', id, requestId, allow, always, answers)
   },
 
   setDraft(patch) {

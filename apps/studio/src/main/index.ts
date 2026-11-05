@@ -178,7 +178,7 @@ const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>
       kitInstalled: false
     }
     if (input.installKit) {
-      installKit(kitRoot, path)
+      installKit(kitRoot, path, input.contest)
       syncConnectors(path, settings.connectors, connectorLedger(project.id))
       project.kitInstalled = true
     }
@@ -189,7 +189,7 @@ const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>
   'projects:installKit': (projectId) => {
     const project = store.project(projectId)
     if (!project) throw new Error('Unknown project')
-    installKit(kitRoot, project.path)
+    installKit(kitRoot, project.path, project.contest)
     syncConnectors(project.path, settings.connectors, connectorLedger(projectId))
     const next = { ...project, kitInstalled: true }
     store.upsertProject(next)
@@ -220,8 +220,8 @@ const handlers: { [K in keyof StudioCalls]: (...args: Parameters<StudioCalls[K]>
   'sessions:events': (sessionId) => store.events(sessionId),
   'sessions:send': (input) => sessions.send(input),
   'sessions:interrupt': (sessionId) => sessions.interrupt(sessionId),
-  'sessions:respondPermission': (sessionId, requestId, allow, always) =>
-    sessions.respondPermission(sessionId, requestId, allow, always),
+  'sessions:respondPermission': (sessionId, requestId, allow, always, answers) =>
+    sessions.respondPermission(sessionId, requestId, allow, always, answers),
   'files:list': (projectId, rel) => {
     const project = store.project(projectId)
     if (!project || !existsSync(project.path)) return []

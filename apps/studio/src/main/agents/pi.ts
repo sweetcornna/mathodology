@@ -2,6 +2,7 @@ import type { ModelInfo, PermissionMode, TodoItem } from '@shared/types'
 import {
   askCli,
   classifyTool,
+  cleanAnswers,
   parseJson,
   spawnLines,
   splitArgs,
@@ -22,7 +23,12 @@ const STATE_ID = 'studio-state'
 interface PendingDialog {
   method: string
   options: string[]
+  /** The dialog is a question for the user, not an approval. */
+  question?: boolean
 }
+
+const APPROVE = /^(approve|allow|yes|accept)/i
+const DENY = /^(deny|block|reject|decline|no)\b/i
 
 function contentText(content: unknown): string {
   if (typeof content === 'string') return content
@@ -214,16 +220,38 @@ export class PiRpcParser {
       this.sink.emit({ kind: 'notice', level, text: String(msg.message ?? '') })
       return
     }
-    if (method === 'input' || method === 'editor') {
-      // Free text has no place in an approval card; the agent goes on as if dismissed.
+    if (method === 'editor') {
+      // A multi-line editor has no place in a card; the agent goes on as if dismissed.
       this.autoReply({ type: 'extension_ui_response', id, cancelled: true })
       return
     }
-    if (method !== 'select' && method !== 'confirm') return
+    if (method !== 'select' && method !== 'confirm' && method !== 'input') return
     const title = String(msg.title ?? '')
     const options = Array.isArray(msg.options) ? msg.options.map(String) : []
     // oh-my-pi asks "Allow tool: bash\nCommand: …" right after the call starts.
     const tool = /^Allow tool:\s*(\S+)/i.exec(title)?.[1]
+    // A select whose options are not approve/deny, or a text input, is a question.
+    if (method === 'input' || (method === 'select' && !tool && !options.some((o) => APPROVE.test(o) || DENY.test(o)))) {
+      const question = title || String(msg.message ?? '')
+      this.pending.set(id, { method, options, question: true })
+      this.sink.emit({
+        kind: 'permission.request',
+        requestId: id,
+        toolName: 'question',
+        title: question,
+        input: { question: title, message: msg.message, options },
+        questions: [
+          {
+            id: '0',
+            question,
+            header: title && msg.message ? String(msg.message) : undefined,
+            options: options.map((label) => ({ label })),
+            allowOther: method === 'input'
+          }
+        ]
+      })
+      return
+    }
     const call = [...this.running.entries()].reverse().find(([, c]) => !tool || c.name === tool)
     this.pending.set(id, { method, options })
     this.sink.emit({
@@ -237,15 +265,17 @@ export class PiRpcParser {
   }
 
   /** The `extension_ui_response` answering a pending dialog. */
-  reply(requestId: string, allow: boolean, always?: boolean): Json | null {
+  reply(requestId: string, allow: boolean, always?: boolean, answers?: Record<string, string[]>): Json | null {
     const d = this.pending.get(requestId)
     if (!d) return null
     this.pending.delete(requestId)
+    if (d.question) {
+      const value = allow ? cleanAnswers(answers)['0']?.[0] : undefined
+      return value === undefined ? { type: 'extension_ui_response', id: requestId, cancelled: true } : { type: 'extension_ui_response', id: requestId, value }
+    }
     if (d.method === 'confirm') return { type: 'extension_ui_response', id: requestId, confirmed: allow }
     const find = (re: RegExp): string | undefined => d.options.find((o) => re.test(o))
-    const value = allow
-      ? (always && find(/session|always/i)) || find(/^(approve|allow|yes|accept)/i) || d.options[0]
-      : find(/^(deny|block|reject|decline|no)\b/i)
+    const value = allow ? (always && find(/session|always/i)) || find(APPROVE) || d.options[0] : find(DENY)
     return value === undefined ? { type: 'extension_ui_response', id: requestId, cancelled: true } : { type: 'extension_ui_response', id: requestId, value }
   }
 
@@ -412,11 +442,16 @@ function piAdapter(flavour: PiFlavour): AgentAdapter {
           }, 5000)
           setTimeout(() => child.exitCode === null && kill('SIGKILL'), 9000)
         },
-        respondPermission(requestId, allow, always) {
-          const reply = parser.reply(requestId, allow, always)
+        respondPermission(requestId, allow, always, answers) {
+          const question = parser.pending.get(requestId)?.question
+          const reply = parser.reply(requestId, allow, always, answers)
           if (!reply) return
           send(reply)
-          sink.emit({ kind: 'permission.resolved', requestId, allow, always })
+          if (!question) sink.emit({ kind: 'permission.resolved', requestId, allow, always })
+          else {
+            const answered = typeof reply.value === 'string'
+            sink.emit({ kind: 'permission.resolved', requestId, allow: answered, ...(answered ? { answers: { '0': [String(reply.value)] } } : {}) })
+          }
         },
         done
       }

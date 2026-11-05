@@ -1,0 +1,64 @@
+% APMCM (Asia and Pacific Mathematical Contest in Modeling) structure skeleton
+% for a Mathodology workspace.
+% Format rules NOT verified: the 2026 (16th) rules notice
+% (https://www.apmcm.org/detail/2513) attaches an image-only PDF that could not be
+% read, and the charter (https://www.apmcm.org/list/regulation) has no layout rules.
+% Check the summary page, team number, page limit, language and file naming in the
+% current rules. See ../../../../references/contest-formats.md.
+\documentclass[12pt,a4paper]{article}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,graphicx}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+\graphicspath{{../figures/}}
+\input{results}
+
+\newif\ifwithtoc \withtoctrue   % official requirement unknown
+
+\newcommand{\TeamNumber}{0000}
+\newcommand{\ProblemChosen}{A}
+\newcommand{\PaperTitle}{Title}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Team \# \TeamNumber}
+\fancyhead[R]{Page \thepage}
+\fancypagestyle{plain}{\fancyhf{}\fancyhead[L]{Team \# \TeamNumber}\fancyhead[R]{Page \thepage}}
+
+\begin{document}
+
+\begin{center}
+\begin{tabular}{|c|c|}
+\hline
+\textbf{Team Number} & \textbf{Problem Chosen}\\
+\TeamNumber & \ProblemChosen\\
+\hline
+\end{tabular}
+
+\medskip
+{\Large\bfseries \PaperTitle}\par\smallskip
+{\large\bfseries Summary}
+\end{center}
+We ...
+
+\medskip
+\noindent\textbf{Keywords:} keyword one; keyword two
+\clearpage
+
+\ifwithtoc
+\tableofcontents
+\clearpage
+\fi
+
+\section{Introduction}
+\section{Assumptions and Notation}
+\section{Model Building and Solution}
+\section{Model Improvement}
+\section{Result Analysis and Testing}
+\section{Conclusion}
+
+% \bibliographystyle{plain}
+% \bibliography{references}
+
+\appendix
+\end{document}

@@ -217,15 +217,30 @@ describe('pi and oh-my-pi RPC', () => {
     expect(s.events.at(-1)).toMatchObject({ kind: 'turn.completed', ok: true })
   })
 
-  it('cancels free-text dialogs it cannot show and ignores settle signals before the run', () => {
+  it('cancels editor dialogs it cannot show and ignores settle signals before the run', () => {
     const s = sink()
     const p = new PiRpcParser(s, 'omp')
     const sent: unknown[] = []
     p.autoReply = (o) => sent.push(o)
     p.line(JSON.stringify({ type: 'session_settled' }))
     expect(p.settled).toBe(false)
-    p.line(JSON.stringify({ type: 'extension_ui_request', id: 'i1', method: 'input', title: 'Name?' }))
+    p.line(JSON.stringify({ type: 'extension_ui_request', id: 'i1', method: 'editor', title: 'Notes' }))
     expect(sent).toEqual([{ type: 'extension_ui_response', id: 'i1', cancelled: true }])
+  })
+
+  it('shows choice and text dialogs as questions and answers them', () => {
+    const s = sink()
+    const p = new PiRpcParser(s, 'omp')
+    p.line(JSON.stringify({ type: 'extension_ui_request', id: 'q1', method: 'select', title: 'Which contest?', options: ['CUMCM', 'MCM'] }))
+    expect(s.events.at(-1)).toMatchObject({
+      kind: 'permission.request',
+      requestId: 'q1',
+      questions: [{ id: '0', question: 'Which contest?', options: [{ label: 'CUMCM' }, { label: 'MCM' }], allowOther: false }]
+    })
+    expect(p.reply('q1', true, false, { '0': ['MCM'] })).toEqual({ type: 'extension_ui_response', id: 'q1', value: 'MCM' })
+    p.line(JSON.stringify({ type: 'extension_ui_request', id: 'q2', method: 'input', title: 'Team number?' }))
+    expect(s.events.at(-1)).toMatchObject({ questions: [{ question: 'Team number?', options: [], allowOther: true }] })
+    expect(p.reply('q2', false)).toEqual({ type: 'extension_ui_response', id: 'q2', cancelled: true })
   })
 
   it('reads models with their thinking levels', () => {

@@ -1,0 +1,75 @@
+% MCM/ICM solution skeleton for a Mathodology workspace.
+% Rules: COMAP MCM/ICM Contest Rules, Registration and Instructions, contest of
+% January 28 - February 1, 2027, checked 2026-11-05:
+%   https://contest.comap.com/undergraduate/contests/mcm/instructions.php
+% Not an official template; COMAP's own summary sheet is
+%   https://contest.comap.com/undergraduate/contests/mcm/flyer/MCM-ICM_Summary.tex
+% Re-read the rules of the year you enter; see ../../../../references/contest-formats.md.
+%
+% 25 pages in total: summary sheet, contents, solution, references, appendices and code.
+% The Report on Use of AI follows and is not counted. Every page carries the team
+% control number and page number at the top. No names of students, advisor or school.
+\documentclass[12pt]{article}
+\usepackage[letterpaper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,booktabs,graphicx}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+\graphicspath{{../figures/}}
+\input{results}
+
+\newcommand{\ContestYear}{2027}
+\newcommand{\TeamNumber}{0000000}
+\newcommand{\ProblemChosen}{A}
+\newcommand{\PaperTitle}{Title}
+
+% "Page n of N": N is the last counted page, marked by the SolutionLastPage label.
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Team \# \TeamNumber}
+\fancyhead[R]{Page \thepage\ of \pageref{SolutionLastPage}}
+\fancypagestyle{plain}{\fancyhf{}\fancyhead[L]{Team \# \TeamNumber}\fancyhead[R]{Page \thepage\ of \pageref{SolutionLastPage}}}
+
+\begin{document}
+
+% ---- Summary Sheet (page 1) ----
+\begin{center}
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{Problem Chosen} & \textbf{\ContestYear\ MCM/ICM} & \textbf{Team Control Number}\\
+\ProblemChosen & \textbf{Summary Sheet} & \TeamNumber\\
+\hline
+\end{tabular}
+
+\medskip
+{\Large\bfseries \PaperTitle}
+\end{center}
+% Self-contained: the question, the approach and the supported answers, citing \res{q1.key}.
+We ...
+
+\medskip
+\noindent\textbf{Keywords:} keyword one; keyword two
+\clearpage
+
+% A table of contents is encouraged and counts toward the 25 pages.
+\tableofcontents
+\clearpage
+
+\section{Introduction}
+\section{Assumptions and Notation}
+\section{Models and Results}
+% \begin{table}[htbp]\centering\caption{...}\label{tab:q1}\input{tables/q1-compare}\end{table}
+\section{Sensitivity Analysis}
+\section{Strengths and Weaknesses}
+\section{Conclusion}
+
+% \bibliographystyle{plain}
+% \bibliography{references}
+
+% Appendices and code count toward the 25 pages.
+\label{SolutionLastPage}
+
+% ---- Report on Use of AI: after the 25 pages, not counted ----
+\clearpage
+\fancyhead[R]{Report on Use of AI}
+\section*{Report on Use of AI}
+\end{document}

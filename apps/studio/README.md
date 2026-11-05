@@ -16,8 +16,10 @@ CLI's own account and limits. It is MIT-licensed like the rest of the repository
   `figures/`, `paper/`). Creating one installs the six contest skills, the eight
   specialist roles, the workflow prompts, the workbench hooks in
   `.claude/settings.json` (merged with any you have) and an `AGENTS.md` that Claude Code
-  (`CLAUDE.md`), Codex and Gemini CLI (`GEMINI.md`) all read. Existing files are
-  never overwritten.
+  (`CLAUDE.md`), Codex and Gemini CLI (`GEMINI.md`) all read. The contest you
+  pick chooses the paper skeleton in `paper/` and is recorded in
+  `.mathodology/config.json` for the format checks (华数杯 and Other leave the
+  choice to the agent). Existing files are never overwritten.
 - **Checks.** The Checks tab runs the workbench (`mtd.py status`) on the project:
   the state of the brief, experiments, results, figures and paper, and every
   issue with its file and line; clicking an issue opens the file. It can also
@@ -54,6 +56,12 @@ CLI's own account and limits. It is MIT-licensed like the rest of the repository
   interrupted or failed turn the queue pauses until you send the next one.
 - **Approvals.** File edits and commands pause in an approval card above the
   composer (Allow once, Always allow, Deny; `⌘↵`, `⌘⇧↵`, `Esc`).
+- **Questions.** When the agent asks you to choose, a question card takes the
+  place of the approval card: options with their descriptions, a field for
+  another answer, Submit (`⌘↵`) and Skip (`Esc`). It serves Claude Code's
+  `AskUserQuestion`, Codex's `request_user_input` (Studio turns it on outside
+  plan mode with `features.default_mode_request_user_input`) and oh-my-pi's
+  choice and text dialogs.
 - **Artifacts.** Every figure, table, document, code and data file the project
   produces is versioned: each change is an immutable version with a checksum,
   its bytes kept outside the project. Each version records where it came from,
@@ -222,7 +230,7 @@ ships for programs, never a screen scraper or another vendor's wrapper.
 | Agent | Protocol | Approvals | Resume |
 | --- | --- | --- | --- |
 | Claude Code | `-p` with `stream-json` input and output and partial messages; SDK control messages on stdin/stdout for permission prompts and interrupts | Per tool call | `--session-id`, then `--resume` |
-| Codex | `codex app-server` JSON-RPC: threads, turns, item notifications, plan updates and token usage | Per command and file change | `thread/resume` |
+| Codex | `codex app-server` JSON-RPC: threads, turns, item notifications, plan updates, token usage and `item/tool/requestUserInput` questions | Per command and file change | `thread/resume` |
 | Antigravity CLI | `-p=` with `--input-format stream-json` and `--output-format stream-json` (`{"event": …}` lines: init, step updates, result) | Mode only; what print mode declined is reported after the turn | `--conversation` |
 | Qoder CLI, Qoder CLI (China) | Claude Code's `stream-json` and SDK control protocol | Per tool call | `--session-id`, then `--resume` |
 | pi | `--mode rpc` (JSONL commands, session events) | None: pi has no approval step | `--session-id` |

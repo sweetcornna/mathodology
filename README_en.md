@@ -80,9 +80,11 @@ errors (undefined citations, missing figures, unknown result keys). Hooks act on
 workspace and need nothing beyond Python's standard library.
 
 ```bash
-python3 .claude/skills/mathodology-workbench/scripts/mtd.py init --paper-template
+python3 .claude/skills/mathodology-workbench/scripts/mtd.py init --paper-template   # or cumcm, mcm, stats, huawei, mathorcup, apmcm
 python3 .claude/skills/mathodology-workbench/scripts/mtd.py check --compile
 ```
+
+Give `--paper-template` a contest name to start from a CUMCM, MCM/ICM, 统计建模, 华为杯, MathorCup or APMCM skeleton; `check` then applies the verified official rules on contents, page limits and anonymity. Rules change every year and the current official notice wins; the 华为杯, MathorCup and APMCM format rules are not yet verified. See [contest paper formats](.claude/skills/mathodology-workbench/references/contest-formats.md).
 
 ## Mathodology Studio
 

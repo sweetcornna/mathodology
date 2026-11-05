@@ -320,8 +320,8 @@ export class SessionManager {
     this.turns.get(sessionId)?.interrupt()
   }
 
-  respondPermission(sessionId: string, requestId: string, allow: boolean, always?: boolean): void {
-    this.turns.get(sessionId)?.respondPermission(requestId, allow, always)
+  respondPermission(sessionId: string, requestId: string, allow: boolean, always?: boolean, answers?: Record<string, string[]>): void {
+    this.turns.get(sessionId)?.respondPermission(requestId, allow, always, answers)
   }
 
   async shutdown(): Promise<void> {

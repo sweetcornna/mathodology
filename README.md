@@ -75,9 +75,11 @@ Mathodology 让 Claude Code、Codex、Antigravity CLI 等编程 agent 按数模�
 钩子只在工作区内生效，只用 Python 标准库。
 
 ```bash
-python3 .claude/skills/mathodology-workbench/scripts/mtd.py init --paper-template
+python3 .claude/skills/mathodology-workbench/scripts/mtd.py init --paper-template   # 或 cumcm、mcm、stats、huawei、mathorcup、apmcm
 python3 .claude/skills/mathodology-workbench/scripts/mtd.py check --compile
 ```
+
+`--paper-template` 后接赛事名，可从国赛、美赛、统计建模、华为杯、MathorCup、亚太赛的论文骨架开始，`check` 会按已核实的官方规则检查目录、页数和匿名信息。规则每年会变，以当年官方通知为准；华为杯、MathorCup、亚太赛的格式规则尚未核实。详见[赛事论文格式](.claude/skills/mathodology-workbench/references/contest-formats.md)。
 
 ## Mathodology Studio
 

@@ -21,7 +21,7 @@ Run it from the workspace (or pass `--root`); the path below is relative to a
 project with the skill installed:
 
 ```bash
-python3 .claude/skills/mathodology-workbench/scripts/mtd.py init --paper-template
+python3 .claude/skills/mathodology-workbench/scripts/mtd.py init --paper-template   # or --paper-template cumcm
 python3 .claude/skills/mathodology-workbench/scripts/mtd.py brief          # after the statement is in problem/
 python3 .claude/skills/mathodology-workbench/scripts/mtd.py run --seed 1 -- python code/q1.py
 python3 .claude/skills/mathodology-workbench/scripts/mtd.py status        # every stage; --json for tools
@@ -31,6 +31,25 @@ python3 .claude/skills/mathodology-workbench/scripts/mtd.py check --compile   # 
 A workspace is a folder with `.mathodology/`, or with `problem/` and `paper/` as
 Mathodology Studio creates them. Contracts and every check are described in
 [references/contracts.md](references/contracts.md).
+
+`--paper-template NAME` starts from a contest skeleton instead of the generic
+one: `cumcm`, `mcm`, `stats`, `huawei`, `mathorcup` or `apmcm`. It also sets
+`"contest"` in `.mathodology/config.json`, so `check` adds the format rules that
+were read in that contest's official text: no table of contents for CUMCM,
+the 25-page limit for MCM/ICM, anonymity. The skeletons and checks record the
+rules as of the date in [references/contest-formats.md](references/contest-formats.md).
+The current official rules always take precedence. For 华为杯, MathorCup and APMCM
+the format rules were not verified, so the skeleton only organizes content.
+
+Choose the template from the problem statement and the user's words: the
+contest name, the year, the problem letter and the submission instructions
+usually settle it. Say which contest you chose before running `init`. Ask the
+user, with the agent's question tool when it has one, when the evidence is
+unclear or points to a contest without a skeleton (华数杯 and others take
+`generic`), and before relying on a skeleton whose rules are unverified. When
+`"contest"` is already set, for example by Mathodology Studio's new-project
+dialog, keep it unless the user says otherwise. `init` never replaces an
+existing `paper/main.tex`.
 
 ## Results contract
 

@@ -6,7 +6,7 @@ export type AgentId = string
 /** How much the agent may do without asking. Each adapter maps this to its own flags. */
 export type PermissionMode = 'ask' | 'acceptEdits' | 'plan' | 'bypass'
 
-export type ContestKind = 'MCM' | 'ICM' | 'CUMCM' | 'Huashu' | 'Other'
+export type ContestKind = 'MCM' | 'ICM' | 'CUMCM' | 'Huawei' | 'MathorCup' | 'Stats' | 'APMCM' | 'Huashu' | 'Other'
 
 export interface AgentInfo {
   id: AgentId
@@ -124,6 +124,19 @@ export interface FileChange {
   diff?: string
 }
 
+/** A question an agent puts to the user (Claude's AskUserQuestion, Codex's request_user_input). */
+export interface AgentQuestion {
+  id: string
+  question: string
+  /** A short label for the question, such as "Contest". */
+  header?: string
+  options: { label: string; description?: string }[]
+  multiSelect?: boolean
+  /** A typed answer is accepted besides the options (always, when there are none). */
+  allowOther?: boolean
+  secret?: boolean
+}
+
 /** Normalized, persisted event. Streaming deltas use `assistant.delta` and are not persisted. */
 export type SessionEventBody =
   | { kind: 'user.message'; text: string; attachments: string[] }
@@ -152,8 +165,17 @@ export type SessionEventBody =
       toolName: string
       title: string
       input: unknown
+      /** Set when the agent asks the user to choose or type an answer instead of approving a tool. */
+      questions?: AgentQuestion[]
     }
-  | { kind: 'permission.resolved'; requestId: string; allow: boolean; always?: boolean }
+  | {
+      kind: 'permission.resolved'
+      requestId: string
+      allow: boolean
+      always?: boolean
+      /** Answers by question id; absent when a question was dismissed. */
+      answers?: Record<string, string[]>
+    }
   | {
       kind: 'turn.completed'
       ok: boolean
