@@ -21,6 +21,7 @@ import type {
   SendMessageInput,
   Session,
   SessionEvent,
+  SessionPatch,
   Settings
 } from './types'
 
@@ -38,7 +39,7 @@ export interface StudioCalls {
   'sessions:create': (input: CreateSessionInput) => Session
   'sessions:update': (
     sessionId: string,
-    patch: Partial<Pick<Session, 'title' | 'pinned' | 'archived' | 'model' | 'effort' | 'permissionMode' | 'agent'>>
+    patch: SessionPatch
   ) => Session
   'sessions:delete': (sessionId: string) => void
   'sessions:events': (sessionId: string) => SessionEvent[]
@@ -58,6 +59,8 @@ export interface StudioCalls {
   'artifacts:read': (projectId: string, artifactId: string, v: number) => FilePreview
   /** Write an earlier version back to disk as the newest version. */
   'artifacts:restore': (projectId: string, artifactId: string, v: number) => Artifact | null
+  /** Start a queued item only in its owning session. A failed admission leaves it queued. */
+  'sessions:sendQueued': (sessionId: string, itemId: string) => void
   'sessions:dequeue': (sessionId: string, queuedId: string) => Session | undefined
   /** Start the connector's server and list its tools. */
   'connectors:check': (connector: Connector) => ConnectorCheck
@@ -85,7 +88,6 @@ export interface StudioCalls {
   'reviews:cancel': (reviewId: string) => void
   'reviews:setStatus': (sessionId: string, reviewId: string, findingId: string, status: FindingStatus) => Review | undefined
   'shell:openPath': (path: string) => void
-  'shell:reveal': (path: string) => void
   'shell:openExternal': (url: string) => void
   'dialog:pickFolder': (title?: string) => string | null
   'dialog:pickFiles': () => string[]
@@ -95,7 +97,6 @@ export interface StudioCalls {
 export interface StudioPushes {
   'session:event': SessionEvent
   'session:changed': Session
-  'project:changed': Project
   'files:changed': { projectId: string }
   'artifacts:changed': { projectId: string }
   'refs:progress': { projectId: string; done: number; total: number }
@@ -123,3 +124,13 @@ export type StudioApi = {
 
 export const PERMISSION_MODES: PermissionMode[] = ['ask', 'acceptEdits', 'plan', 'bypass']
 export { AGENT_IDS } from './agents'
+
+export const STUDIO_PUSH_CHANNELS = {
+  'session:event': true,
+  'session:changed': true,
+  'files:changed': true,
+  'artifacts:changed': true,
+  'refs:progress': true,
+  'review:changed': true,
+  'menu:command': true
+} satisfies Record<keyof StudioPushes, true>

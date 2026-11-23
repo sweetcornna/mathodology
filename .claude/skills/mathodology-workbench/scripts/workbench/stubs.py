@@ -4,9 +4,7 @@ from __future__ import annotations
 import ast
 
 from .report import Issue
-from .workspace import Workspace, read_text
-
-PLACEHOLDER_DOCS = ('todo', 'placeholder', 'not implemented', '待实现', '待补充', '占位')
+from .workspace import Workspace, parse_python
 
 
 def _is_noop(node: ast.stmt) -> bool:
@@ -31,7 +29,7 @@ def _stub_functions(tree: ast.Module) -> list[str]:
     return names
 
 
-def check(ws: Workspace) -> list[Issue]:
+def check(ws: Workspace, parse_script=parse_python) -> list[Issue]:
     issues: list[Issue] = []
     for sub, stage in (('code', 'experiment'), ('results', 'results'), ('figures', 'figures')):
         for path in ws.files(sub, ('',)):
@@ -44,11 +42,10 @@ def check(ws: Workspace) -> list[Issue]:
     for path in ws.files('code', ('.py',)):
         if path.name.startswith('test_') or path.name == '__init__.py' or path.stat().st_size == 0:
             continue
-        try:
-            tree = ast.parse(read_text(path))
-        except (SyntaxError, ValueError) as exc:
-            issues.append(Issue('error', 'experiment', 'stubs.syntax', f'does not parse: {getattr(exc, "msg", exc)}', ws.rel(path),
-                                getattr(exc, 'lineno', None)))
+        tree = parse_script(path)
+        if isinstance(tree, (SyntaxError, ValueError)):
+            issues.append(Issue('error', 'experiment', 'stubs.syntax', f'does not parse: {getattr(tree, "msg", tree)}', ws.rel(path),
+                                getattr(tree, 'lineno', None)))
             continue
         if all(_is_noop(s) for s in tree.body):
             issues.append(Issue('warning', 'experiment', 'stubs.placeholder-script', 'has no statements beyond pass, docstrings or ...',

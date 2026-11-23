@@ -301,3 +301,114 @@ describe('switching agents mid-turn', () => {
     expect(ADAPTERS.opencode.takesSessionId).toBeFalsy()
   })
 })
+
+describe('sending queued messages', () => {
+  it('keeps a queued item when auto-dispatch fails, then starts it in its owning session', async () => {
+    const sinks: TurnSink[] = []
+    const ends: (() => void)[] = []
+    const requests: TurnRequest[] = []
+    ADAPTERS.claude = {
+      ...ADAPTERS.claude,
+      start(req, sink) {
+        requests.push(req)
+        sinks.push(sink)
+        return { interrupt() {}, respondPermission() {}, done: new Promise<void>((r) => ends.push(r)) }
+      }
+    }
+    const { store, manager, session } = setup()
+    const source = join(temp(), 'late.csv')
+    await manager.send({ sessionId: session.id, text: 'first', attachments: [] })
+    await manager.send({ sessionId: session.id, text: 'queued', attachments: [{ name: 'late.csv', path: source }] })
+    const item = store.session(session.id)!.queue![0]
+    const other = manager.create({ projectId: session.projectId, agent: 'claude', permissionMode: 'ask' })
+    await expect(manager.sendQueued(other.id, item.id)).rejects.toThrow('Unknown queued message')
+    await expect(manager.sendQueued(session.id, item.id)).rejects.toThrow('current turn')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      sinks[0].emit({ kind: 'turn.completed', ok: true })
+      ends[0]()
+      await vi.waitFor(() => expect(store.session(session.id)?.status).toBe('error'))
+      expect(store.session(session.id)?.queue).toEqual([item])
+      expect(requests).toHaveLength(1)
+      writeFileSync(source, 'a,b')
+      await manager.sendQueued(session.id, item.id)
+      expect(store.session(session.id)?.queue).toEqual([])
+      expect(requests[1].prompt).toContain('attachments/late.csv')
+      sinks[1].emit({ kind: 'turn.completed', ok: true })
+      ends[1]()
+      await Promise.resolve()
+    } finally {
+      warn.mockRestore()
+      store.flush()
+    }
+  })
+
+  it('snapshots agent, model, effort, permission mode, environment and cwd before preparation', async () => {
+    let resolve!: (env: NodeJS.ProcessEnv) => void
+    detection.agentEnv.mockImplementationOnce(() => new Promise((r) => { resolve = r }))
+    const agent = fakeAgent()
+    const { store, manager, session, project } = setup()
+    manager.update(session.id, { model: 'model-before', effort: 'high', permissionMode: 'plan' })
+    const sending = manager.send({ sessionId: session.id, text: 'start', attachments: [] })
+    manager.update(session.id, { agent: 'codex', model: 'model-after', effort: 'low', permissionMode: 'bypass' })
+    resolve({ STUDIO_TEST_ENV: 'before' })
+    await sending
+    expect(agent.requests).toMatchObject([{
+      cwd: project.path, model: 'model-before', effort: 'high', permissionMode: 'plan', env: { STUDIO_TEST_ENV: 'before' }
+    }])
+    expect(store.session(session.id)?.agent).toBe('codex')
+    await agent.finish()
+    store.flush()
+  })
+})
+
+it('keeps queued input and rolls back staged attachments when process admission fails', async () => {
+  const agent = fakeAgent()
+  const { store, manager, session, project } = setup()
+  const source = join(temp(), 'queued.csv')
+  writeFileSync(source, 'a,b')
+  await manager.send({ sessionId: session.id, text: 'first', attachments: [] })
+  await manager.send({ sessionId: session.id, text: 'queued', attachments: [{ name: 'queued.csv', path: source }] })
+  await agent.finish()
+  const [item] = store.session(session.id)!.queue!
+  ADAPTERS.claude = {
+    ...ADAPTERS.claude,
+    start() {
+      return { admitted: Promise.reject(new Error('spawn ENOENT')), interrupt() {}, respondPermission() {}, done: Promise.resolve() }
+    }
+  }
+  await expect(manager.sendQueued(session.id, item.id)).rejects.toThrow('spawn ENOENT')
+  expect(store.session(session.id)?.queue).toEqual([item])
+  expect(store.events(session.id).filter((event) => event.kind === 'user.message')).toMatchObject([{ text: 'first' }])
+  expect(existsSync(join(project.path, 'attachments/queued.csv'))).toBe(false)
+  expect(manager.isRunning(session.id)).toBe(false)
+  store.flush()
+})
+
+it('leaves versions captured by overlapping project turns unattributed', async () => {
+  const turns: { sink: TurnSink; end(): void }[] = []
+  ADAPTERS.claude = {
+    ...ADAPTERS.claude,
+    start(_req, sink) {
+      let end!: () => void
+      const done = new Promise<void>((resolve) => { end = resolve })
+      turns.push({ sink, end })
+      return { done, interrupt() {}, respondPermission() {} }
+    }
+  }
+  const { data, project, store, manager, session } = setup()
+  const other = manager.create({ projectId: project.id, agent: 'claude', permissionMode: 'ask' })
+  await manager.send({ sessionId: session.id, text: 'first', attachments: [] })
+  await manager.send({ sessionId: other.id, text: 'second', attachments: [] })
+  writeFileSync(join(project.path, 'report.md'), 'written during concurrent turns')
+  for (const turn of turns) {
+    turn.sink.emit({ kind: 'turn.completed', ok: true })
+    turn.end()
+  }
+  await Promise.resolve()
+  const [artifact] = new ArtifactStore(join(data, 'artifacts')).list(project.id)
+  expect(artifact.versions[0]).toMatchObject({ origin: 'external' })
+  expect(artifact.versions[0].sessionId).toBeUndefined()
+  expect(store.events(session.id).some((event) => event.kind === 'artifact.version')).toBe(false)
+  store.flush()
+})

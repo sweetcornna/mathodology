@@ -23,7 +23,9 @@ import {
   Wrench
 } from 'lucide-react'
 import { api, isMac, mod, tildify } from '../lib/api'
+import { formatIpcError } from '../lib/errors'
 import { useT, type MessageKey } from '../lib/i18n'
+import { openPath } from '../lib/open'
 import { useStudio, type PaneTab } from '../store'
 import { Composer, ModePicker, type ComposerHandle } from './Composer'
 import { ModelPicker } from './ModelPicker'
@@ -82,7 +84,7 @@ function TitleMenu() {
         {t('review.start')}
       </MenuItem>
       {project && (
-        <MenuItem icon={<FolderOpen size={14} />} onSelect={() => void api.call('shell:openPath', project.path)}>
+        <MenuItem icon={<FolderOpen size={14} />} onSelect={() => openPath(project.path)}>
           {t('project.reveal')}
         </MenuItem>
       )}
@@ -149,7 +151,16 @@ function KitBanner() {
     <div className="mb-3 flex items-center gap-3 rounded-[10px] bg-surface-2 px-3 py-2 text-[0.929rem]">
       <Wrench size={14} className="shrink-0 text-fg-3" />
       <span className="flex-1 text-fg-2">{t('project.kitMissing')}</span>
-      <button className="btn btn-secondary btn-sm" onClick={async () => updateProject(await api.call('projects:installKit', project.id))}>
+      <button
+        className="btn btn-secondary btn-sm"
+        onClick={async () => {
+          try {
+            updateProject(await api.call('projects:installKit', project.id))
+          } catch (err) {
+            useStudio.getState().showToast(formatIpcError(err), 'error')
+          }
+        }}
+      >
         {t('project.installNow')}
       </button>
     </div>

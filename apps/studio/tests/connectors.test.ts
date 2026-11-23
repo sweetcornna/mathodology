@@ -213,3 +213,35 @@ describe('syncCodexToml', () => {
     expect(syncCodexToml(before, [SEARCH_CONNECTOR], [])).toBe(before)
   })
 })
+
+describe('Codex TOML source preservation', () => {
+  const config = [
+    '\uFEFF# User config', 'instructions = """', 'preserve these lines', '', '',
+    '[mcp_servers.search]', 'command = "inside a string"', '"""', '', '',
+    '[profiles.fast]', 'model = "x"  ', '# keep the final comment', ''
+  ].join('\r\n')
+
+  it('preserves unmanaged bytes even when a multiline string looks like a managed table', () => {
+    expect(syncCodexToml(config, [], [])).toBe(config)
+    const written = {}
+    const next = syncCodexToml(config, [SEARCH_CONNECTOR], [], written)
+    expect(next.startsWith(config)).toBe(true)
+    expect(next.slice(config.length)).toContain('[mcp_servers.search]\r\ncommand = "uvx"\r\n')
+    expect(syncCodexToml(next, [SEARCH_CONNECTOR], [], written)).toBe(next)
+    expect(syncCodexToml(next, [], ['search'], written)).toBe(config)
+  })
+
+  it('leaves literal multiline strings, blank lines and surrounding comments untouched on disk', () => {
+    const dir = temp()
+    const book = ledger()
+    mkdirSync(join(dir, '.codex'))
+    const path = join(dir, '.codex/config.toml')
+    const user = ["literal = '''", '', '', '[mcp_servers.search]', "'''", '', ''].join('\n')
+    writeFileSync(path, user)
+    syncConnectors(dir, [SEARCH_CONNECTOR], book)
+    const initial = readFileSync(path, 'utf8') + '\n\n# user comment\n[unmanaged]\nn = 1'
+    writeFileSync(path, initial)
+    syncConnectors(dir, [{ ...SEARCH_CONNECTOR, command: 'uv' }], book)
+    expect(readFileSync(path, 'utf8')).toBe(initial.replace('command = "uvx"', 'command = "uv"'))
+  })
+})

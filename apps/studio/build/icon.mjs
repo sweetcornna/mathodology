@@ -1,3 +1,4 @@
+import { fileURLToPath, pathToFileURL } from 'node:url'
 // Regenerates the app icon from src/shared/brandMark.ts: icon.svg, icon.png (512, for Windows, Linux and
 // the README) and icon.icns. macOS only (iconutil, sips); renders with Chrome.
 // Run from apps/studio: node --no-warnings build/icon.mjs
@@ -49,8 +50,8 @@ function render(svg, out, tmp) {
     `--user-data-dir=${join(tmp, 'chrome')}`, '--window-size=1024,1024', `--screenshot=${out}`, `file://${html}`], { stdio: 'ignore' })
 }
 
-if (import.meta.main) {
-  const here = new URL('.', import.meta.url).pathname
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  const here = fileURLToPath(new URL('.', import.meta.url))
   const tmp = mkdtempSync(join(tmpdir(), 'mathodology-icon-'))
   try {
     writeFileSync(join(here, 'icon.svg'), iconSvg(1024))

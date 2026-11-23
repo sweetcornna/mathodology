@@ -1,4 +1,6 @@
-import { appendFileSync, closeSync, existsSync, fstatSync, fsyncSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { REDACTED_ANSWER } from '@shared/types'
+import { appendFileSync, closeSync, existsSync, fstatSync, fsyncSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Project, Session, SessionEvent, SessionEventBody, Settings } from '@shared/types'
 
@@ -6,6 +8,44 @@ interface StateFile {
   version: 1
   projects: Project[]
   sessions: Session[]
+  recovery?: Record<string, RecoveryWatermark>
+}
+
+interface RecoveryState {
+  seq: number
+  openTurn: boolean
+  pending: Set<string>
+}
+interface RecoveryWatermark {
+  seq: number
+  openTurn: boolean
+  pending: string[]
+  dev: number
+  ino: number
+  size: number
+  mtime: number
+}
+
+function updateRecovery(state: RecoveryState, event: SessionEvent): void {
+  state.seq = Math.max(state.seq, event.seq)
+  if (event.kind === 'user.message' || event.kind === 'session.started') state.openTurn = true
+  if (event.kind === 'turn.completed') state.openTurn = false
+  if (event.kind === 'permission.request') state.pending.add(event.requestId)
+  if (event.kind === 'permission.resolved') state.pending.delete(event.requestId)
+}
+
+function eventLines(text: string): SessionEvent[] {
+  const events: SessionEvent[] = []
+  for (const line of text.split('\n')) {
+    if (!line) continue
+    try {
+      const event = JSON.parse(line) as SessionEvent | null
+      if (event && typeof event.kind === 'string' && Number.isSafeInteger(event.seq)) events.push(event)
+    } catch {
+      // A torn final line from a crash is skipped.
+    }
+  }
+  return events
 }
 
 /** Ids name files in the data folder (events/<id>.jsonl, reviews/<id>.json), so only plain tokens are accepted. */
@@ -13,17 +53,22 @@ export function isPlainId(id: unknown): id is string {
   return typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id)
 }
 
-export function writeAtomic(path: string, data: string): void {
-  const tmp = `${path}.${process.pid}.tmp`
+export function writeAtomic(path: string, data: string | Buffer): void {
+  const tmp = `${path}.${randomUUID()}.tmp`
   // On disk before the rename, so a crash leaves the old file or the new one, never an empty one.
-  const fd = openSync(tmp, 'w')
+  const fd = openSync(tmp, 'wx', 0o600)
   try {
-    writeFileSync(fd, data, 'utf8')
-    fsyncSync(fd)
-  } finally {
-    closeSync(fd)
+    try {
+      writeFileSync(fd, data, 'utf8')
+      fsyncSync(fd)
+    } finally {
+      closeSync(fd)
+    }
+    renameSync(tmp, path)
+  } catch (error) {
+    rmSync(tmp, { force: true })
+    throw error
   }
-  renameSync(tmp, path)
 }
 
 export function readJson<T>(path: string, fallback: T): T {
@@ -46,10 +91,28 @@ export function readJson<T>(path: string, fallback: T): T {
   }
 }
 
+type Secrets = Map<string, Set<string>>
+
+function trackSecrets<T extends SessionEventBody>(secrets: Secrets, body: T): T {
+  if (body.kind === 'permission.request') {
+    secrets.set(body.requestId, new Set(body.questions?.filter((q) => q.secret).map((q) => q.id)))
+  }
+  if (body.kind !== 'permission.resolved' || !body.answers) return body
+  const ids = secrets.get(body.requestId)
+  if (!ids?.size) return body
+  return {
+    ...body,
+    answers: Object.fromEntries(Object.entries(body.answers).map(([id, values]) => [id, ids.has(id) ? [REDACTED_ANSWER] : values]))
+  }
+}
+
 /** Projects, sessions and settings as JSON; each session's events as an append-only JSONL file. */
 export class Store {
   private state: StateFile
+  private secrets = new Map<string, Secrets>()
   private seqs = new Map<string, number>()
+  private recovery = new Map<string, RecoveryState>()
+  private recoveryDirty = new Set<string>()
   private appendReady = new Set<string>()
   private flushTimer: NodeJS.Timeout | null = null
 
@@ -58,25 +121,61 @@ export class Store {
     this.state = readJson<StateFile>(join(dir, 'state.json'), { version: 1, projects: [], sessions: [] })
     // State is debounced, but the transcript is written immediately. Recover from the event
     // history too, including a crash before the running status reached state.json.
-    let recovered = false
-    for (const s of this.state.sessions) {
-      let openTurn = false
-      const permissions = new Set<string>()
-      for (const e of this.events(s.id)) {
-        if (e.kind === 'user.message' || e.kind === 'session.started') openTurn = true
-        if (e.kind === 'turn.completed') openTurn = false
-        if (e.kind === 'permission.request') permissions.add(e.requestId)
-        if (e.kind === 'permission.resolved') permissions.delete(e.requestId)
-      }
+    let checkpointChanged = false
+    for (const session of this.state.sessions) {
+      const { recovery, reused } = this.recover(session.id)
+      this.recovery.set(session.id, recovery)
+      this.seqs.set(session.id, recovery.seq)
+      checkpointChanged ||= !reused
+      if (!reused) this.recoveryDirty.add(session.id)
+
       // Old approval cards have no live agent to receive an answer after a restart.
-      for (const requestId of permissions) this.record(s.id, { kind: 'permission.resolved', requestId, allow: false })
-      if (openTurn) this.record(s.id, { kind: 'turn.completed', ok: false, summary: 'interrupted' })
-      if (openTurn || permissions.size || s.status === 'running' || s.status === 'waiting') {
-        s.status = 'idle'
-        recovered = true
+      const { openTurn, pending } = recovery
+      const permissions = [...pending]
+      for (const requestId of permissions) this.record(session.id, { kind: 'permission.resolved', requestId, allow: false })
+      if (openTurn) this.record(session.id, { kind: 'turn.completed', ok: false, summary: 'interrupted' })
+      if (openTurn || permissions.length || session.status === 'running' || session.status === 'waiting') {
+        session.status = 'idle'
+        checkpointChanged = true
       }
     }
-    if (recovered) this.flush()
+    if (checkpointChanged) this.flush()
+  }
+
+  private recover(sessionId: string): { recovery: RecoveryState; reused: boolean } {
+    const path = this.eventsPath(sessionId)
+    const watermark = this.state.recovery?.[sessionId]
+    const st = statSync(path, { throwIfNoEntry: false })
+    const recovery: RecoveryState = { seq: 0, openTurn: false, pending: new Set() }
+    if (!st) return { recovery, reused: true }
+
+    let offset = 0
+    if (watermark && st.dev === watermark.dev && st.ino === watermark.ino &&
+        (st.size > watermark.size || st.size === watermark.size && st.mtimeMs === watermark.mtime)) {
+      recovery.seq = watermark.seq
+      recovery.openTurn = watermark.openTurn
+      recovery.pending = new Set(watermark.pending)
+      offset = watermark.size
+      if (st.size === offset) return { recovery, reused: true }
+    }
+    if (!offset) {
+      for (const event of eventLines(readFileSync(path, 'utf8'))) updateRecovery(recovery, event)
+    } else {
+      const fd = openSync(path, 'r')
+      try {
+        const tail = Buffer.alloc(st.size - offset)
+        let bytes = 0
+        while (bytes < tail.length) {
+          const size = readSync(fd, tail, bytes, tail.length - bytes, offset + bytes)
+          if (!size) break
+          bytes += size
+        }
+        for (const event of eventLines(tail.toString('utf8', 0, bytes))) updateRecovery(recovery, event)
+      } finally {
+        closeSync(fd)
+      }
+    }
+    return { recovery, reused: false }
   }
 
   get projects(): Project[] {
@@ -120,6 +219,9 @@ export class Store {
     this.state.sessions = this.state.sessions.filter((s) => s.id !== id)
     rmSync(this.eventsPath(id), { force: true })
     this.seqs.delete(id)
+    this.recovery.delete(id)
+    this.recoveryDirty.add(id)
+    this.secrets.delete(id)
     this.appendReady.delete(id)
     this.scheduleFlush()
   }
@@ -132,24 +234,13 @@ export class Store {
   events(sessionId: string): SessionEvent[] {
     const path = this.eventsPath(sessionId)
     if (!existsSync(path)) return []
-    const out: SessionEvent[] = []
-    for (const line of readFileSync(path, 'utf8').split('\n')) {
-      if (!line) continue
-      try {
-        out.push(JSON.parse(line) as SessionEvent)
-      } catch {
-        // A torn final line from a crash is skipped.
-      }
-    }
-    return out
+    const secrets: Secrets = new Map()
+    return eventLines(readFileSync(path, 'utf8')).map((event) => trackSecrets(secrets, event))
   }
 
   private nextSeq(sessionId: string): number {
     let seq = this.seqs.get(sessionId)
-    if (seq === undefined) {
-      const events = this.events(sessionId)
-      seq = events.length ? events[events.length - 1].seq : 0
-    }
+    seq ??= 0
     seq += 1
     this.seqs.set(sessionId, seq)
     return seq
@@ -184,10 +275,17 @@ export class Store {
    */
   record(sessionId: string, body: SessionEventBody): SessionEvent {
     const live = Boolean(this.session(sessionId))
-    const event = { ...body, sessionId, seq: live ? this.nextSeq(sessionId) : 0, ts: Date.now() } as SessionEvent
+    const seq = live ? this.nextSeq(sessionId) : 0
+    const secrets = this.secrets.get(sessionId) ?? new Map()
+    if (live) this.secrets.set(sessionId, secrets)
+    const event = { ...trackSecrets(secrets, body), sessionId, seq, ts: Date.now() } as SessionEvent
     if (live && body.kind !== 'assistant.delta' && body.kind !== 'tool.output' && body.kind !== 'turn.progress') {
       this.prepareAppend(sessionId)
       appendFileSync(this.eventsPath(sessionId), JSON.stringify(event) + '\n', 'utf8')
+      let recovery = this.recovery.get(sessionId)
+      if (!recovery) this.recovery.set(sessionId, (recovery = { seq: 0, openTurn: false, pending: new Set() }))
+      updateRecovery(recovery, event)
+      this.recoveryDirty.add(sessionId)
     }
     return event
   }
@@ -200,7 +298,28 @@ export class Store {
   flush(): void {
     if (this.flushTimer) clearTimeout(this.flushTimer)
     this.flushTimer = null
+    const recovery: Record<string, RecoveryWatermark> = Object.assign(Object.create(null), this.state.recovery)
+    for (const id of this.recoveryDirty) {
+      delete recovery[id]
+      const state = this.recovery.get(id)
+      if (!state?.seq) continue
+      const path = this.eventsPath(id)
+      if (!existsSync(path)) continue
+      const fd = openSync(path, 'r')
+      try {
+        const { dev, ino, size, mtimeMs: mtime } = fstatSync(fd)
+        const last = Buffer.alloc(1)
+        // Only checkpoint complete record boundaries. A torn tail is replayed and repaired.
+        if (size && readSync(fd, last, 0, 1, size - 1) === 1 && last[0] === 10) {
+          recovery[id] = { seq: state.seq, openTurn: state.openTurn, pending: [...state.pending], dev, ino, size, mtime }
+        }
+      } finally {
+        closeSync(fd)
+      }
+    }
+    this.state.recovery = recovery
     writeAtomic(join(this.dir, 'state.json'), JSON.stringify(this.state, null, 2))
+    this.recoveryDirty.clear()
   }
 
   loadSettings(defaults: Settings): Settings {

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cached_property
 import os
 import posixpath
 from pathlib import Path
@@ -11,7 +12,7 @@ import subprocess
 
 from . import markdown
 from .report import Issue
-from .results import is_generated
+from .results import Value, is_generated
 from .workspace import Workspace, read_text
 
 INPUT = re.compile(r'\\(?:input|include|subfile)\s*\{([^}]+)\}')
@@ -22,8 +23,7 @@ GRAPHIC = re.compile(r'\\includegraphics\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}')
 GRAPHICSPATH = re.compile(r'\\graphicspath\s*\{((?:\s*\{[^}]*\})+)\s*\}')
 BIBFILE = re.compile(r'\\(?:bibliography|addbibresource)\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}')
 BIBITEM = re.compile(r'\\bibitem\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}')
-BIBENTRY = re.compile(r'@(\w+)\s*\{\s*([^,\s]+)\s*,')
-RES = re.compile(r'\\res(?:ci|unit)?\s*\{([^}]+)\}')
+RES = re.compile(r'\\res(?P<field>ci|unit)?\s*\{(?P<key>[^}]+)\}')
 MD_IMAGE = re.compile(r'!\[[^\]]*\]\(([^)\s]+)')
 PLACEHOLDER = re.compile(r'\bTODO\b|\bTBD\b|\bFIXME\b|\bXXX\b|待补充|待完善|待定|此处补充|\\todo\b|\[\s*citation needed\s*\]', re.I)
 GRAPHIC_EXT = ('', '.pdf', '.png', '.jpg', '.jpeg', '.eps', '.svg')
@@ -47,6 +47,18 @@ class Paper:
     generated: list[Path] = field(default_factory=list)
     missing_inputs: list[tuple[Line, str]] = field(default_factory=list)
     cjk: bool = False
+
+    @property
+    def dependencies(self) -> list[Path]:
+        return list(dict.fromkeys(self.files + self.bib_files + self.generated))
+
+    @cached_property
+    def graphic_dirs(self) -> list[Path]:
+        if not self.main:
+            return []
+        base = self.main.parent
+        return [base] + [base / directory for line in self.lines for match in GRAPHICSPATH.finditer(line.text)
+                         for directory in re.findall(r'\{([^}]*)\}', match.group(1))]
 
 
 def strip_comment(line: str) -> str:
@@ -96,12 +108,15 @@ def load(ws: Workspace) -> Paper:
         paper.files.append(path)
         for i, raw in enumerate(read_text(path).splitlines(), 1):
             text = strip_comment(raw)
-            paper.lines.append(Line(ws.rel(path), i, text))
+            line = Line(ws.rel(path), i, text)
+            paper.lines.append(line)
             for m in INPUT.finditer(text):
                 name = m.group(1).strip()
                 for base in (main.parent, path.parent):
                     target = base / (name if name.endswith('.tex') else name + '.tex')
                     if target.resolve() == macros:
+                        if target.is_file():
+                            paper.generated.append(macros)
                         break  # the generated macro file; `sync` keeps it current
                     if target.is_file():
                         if is_generated(target):
@@ -110,7 +125,7 @@ def load(ws: Workspace) -> Paper:
                             visit(target, depth + 1)
                         break
                 else:
-                    paper.missing_inputs.append((paper.lines[-1], name))
+                    paper.missing_inputs.append((line, name))
     visit(main)
     text = '\n'.join(l.text for l in paper.lines)
     paper.cjk = bool(re.search(r'\\(?:usepackage|documentclass)\s*(?:\[[^\]]*\])?\s*\{[^}]*(?:ctex|xeCJK|fontspec)', text))
@@ -123,7 +138,7 @@ def load(ws: Workspace) -> Paper:
     if not paper.bib_files:
         paper.bib_files = ws.files('paper', ('.bib',))
     for bib in paper.bib_files:
-        paper.bib_keys |= {m.group(2) for m in BIBENTRY.finditer(read_text(bib)) if m.group(1).lower() not in {'string', 'comment', 'preamble'}}
+        paper.bib_keys |= markdown.bibtex_keys(read_text(bib))
     paper.bib_keys |= {m.group(1).strip() for m in BIBITEM.finditer(text)}
     return paper
 
@@ -132,16 +147,8 @@ def keys(group: str) -> list[str]:
     return [k.strip() for k in group.split(',') if k.strip()]
 
 
-def graphic_dirs(paper: Paper) -> list[Path]:
-    dirs = [paper.main.parent]
-    for line in paper.lines:
-        for m in GRAPHICSPATH.finditer(line.text):
-            dirs += [paper.main.parent / d for d in re.findall(r'\{([^}]*)\}', m.group(1))]
-    return dirs
-
-
 def resolve_graphic(paper: Paper, name: str, origin: Path | None = None) -> Path | None:
-    bases = graphic_dirs(paper) + ([origin.parent] if origin else [])
+    bases = paper.graphic_dirs + ([origin.parent] if origin else [])
     for base in bases:
         for ext in GRAPHIC_EXT:
             candidate = base / (name + ext)
@@ -150,7 +157,7 @@ def resolve_graphic(paper: Paper, name: str, origin: Path | None = None) -> Path
     return None
 
 
-def static_checks(ws: Workspace, paper: Paper, result_keys: set[str], only: str | None = None) -> tuple[list[Issue], set[Path]]:
+def static_checks(ws: Workspace, paper: Paper, result_values: dict[str, Value], only: str | None = None) -> tuple[list[Issue], set[Path]]:
     """Cross-reference checks. Returns issues and the set of figure files the paper uses."""
     issues: list[Issue] = []
     used: set[Path] = set()
@@ -196,10 +203,15 @@ def static_checks(ws: Workspace, paper: Paper, result_keys: set[str], only: str 
                 else:
                     issues.append(Issue('error', 'paper', 'paper.missing-figure', f'included figure `{name}` does not exist', line.file, line.line,
                                         'run the figure script or fix the path'))
-            for key in dict.fromkeys(m.group(1).strip() for m in RES.finditer(line.text)):
-                if key not in result_keys:
-                    issues.append(Issue('error', 'paper', 'numbers.unknown-key', f'\\res{{{key}}} names no value in results/*.json', line.file, line.line,
+            for field_name, key in dict.fromkeys((m['field'], m['key'].strip()) for m in RES.finditer(line.text)):
+                macro = f'\\res{field_name or ""}{{{key}}}'
+                value = result_values.get(key)
+                if value is None:
+                    issues.append(Issue('error', 'paper', 'numbers.unknown-key', f'{macro} names no value in results/*.json', line.file, line.line,
                                         'check the key or rerun the experiment that produces it'))
+                elif field_name and not getattr(value, field_name):
+                    issues.append(Issue('error', 'paper', 'numbers.missing-field', f'{macro} requires a `{field_name}` field in {value.file}',
+                                        line.file, line.line, 'supply the field in the experiment output or remove the macro'))
             if PLACEHOLDER.search(line.text):
                 issues.append(Issue('warning', 'paper', 'paper.placeholder', f'placeholder left in text: "{line.text.strip()[:80]}"', line.file, line.line))
             if re.match(r'\s*#{1,6}\s+\S', line.text) or re.search(r'\*\*[^*\n]+\*\*', line.text) or line.text.lstrip().startswith('```'):
@@ -223,7 +235,7 @@ def static_checks(ws: Workspace, paper: Paper, result_keys: set[str], only: str 
                 issues.append(Issue('warning', 'paper', 'paper.placeholder', f'placeholder left in text: "{line.text.strip()[:80]}"', line.file, line.line))
             if in_scope(line):
                 for m in re.finditer(r'\{\{\s*res:([^}\s]+)\s*\}\}', line.text):
-                    if m.group(1) not in result_keys:
+                    if m.group(1) not in result_values:
                         issues.append(Issue('error', 'paper', 'numbers.unknown-key', f'{{{{res:{m.group(1)}}}}} names no value in results/*.json', line.file, line.line))
         bib = '\n'.join(read_text(p) for p in ws.files('paper', ('.bib',)))
         issues += markdown.check(paper, bib, in_scope, only is None)
@@ -323,7 +335,7 @@ def log_checks(ws: Workspace, paper: Paper) -> list[Issue]:
     log = paper.main.with_suffix('.log')
     if not log.is_file():
         return []
-    newest = max((p.stat().st_mtime for p in paper.files if p.exists()), default=0)
+    newest = max((p.stat().st_mtime for p in paper.dependencies if p.exists()), default=0)
     if log.stat().st_mtime < newest:
         return []
     return [i for i in parse_log(read_text(log), ws.rel(log)) if i.code in {'latex.compile-error', 'latex.undefined-reference', 'latex.undefined-citation', 'latex.overfull'}]

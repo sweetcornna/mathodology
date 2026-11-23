@@ -66,7 +66,7 @@ DOI_PREFIX = re.compile(r'(?:(?:https?://)?(?:dx\.|www\.)?doi\.org/|doi:\s*|doi\
 TEXT_DOI = re.compile(r'(?<![0-9A-Za-z_.])10\.\d{4,9}/[^\s"\'`*|\\\u2013\u2014\u2018-\u201f\u2026'
                       r'\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]+')
 ARXIV_ID = r'((?:[a-z][a-z\-]*(?:\.[a-z]{2})?/\d{7})|(?:\d{4}\.\d{4,5}))(?:v\d+)?'
-TEXT_ARXIV = re.compile(r'(?:arxiv\.org/(?:abs|pdf)/|\barxiv:\s*)' + ARXIV_ID, re.I)
+TEXT_ARXIV = re.compile(r'(?:arxiv\.org/(?:abs|pdf)/|\barxiv:\s*)' + ARXIV_ID + r'(?![\dA-Za-z_-])', re.I)
 BARE_ARXIV = re.compile(ARXIV_ID + r'\Z', re.I)
 ARG_ARXIV = re.compile(r'(?:https?://)?(?:www\.)?' + TEXT_ARXIV.pattern + r'\Z', re.I)
 DOI_LIKE = re.compile(r'(?:' + DOI_PREFIX.pattern + r'|10\.)', re.I)
@@ -129,6 +129,15 @@ def _inside_url(text, start):
     return '://' in token or token.lower().endswith('doi.org/')
 
 
+def _line_lookup(text):
+    newlines = [i for i, char in enumerate(text) if char == '\n']
+
+    def line(pos):
+        return bisect.bisect_left(newlines, pos) + 1
+
+    return line
+
+
 def extract_ids(text, tex=False):
     """Return ``(kind, identifier, line)`` for each DOI or arXiv id mentioned in prose."""
     if tex:  # drop comments (not URL-encoded %28); line numbers are kept
@@ -136,11 +145,7 @@ def extract_ids(text, tex=False):
     # TeX and Markdown escapes (\_) and HTML-escaped brackets (&lt; in old SICI DOIs); lines are kept.
     text = re.sub(r'\\([_%#&])', r'\1', text)
     text = re.sub(r'&(lt|gt|amp);', lambda m: {'lt': '<', 'gt': '>', 'amp': '&'}[m.group(1).lower()], text, flags=re.I)
-    newlines = [i for i, char in enumerate(text) if char == '\n']
-
-    def line(pos):
-        return bisect.bisect_left(newlines, pos) + 1
-
+    line = _line_lookup(text)
     found, pos = [], 0
     while (match := TEXT_DOI.search(text, pos)):
         # \href{https://doi.org/...}{label}: the label is not part of the DOI.
@@ -257,11 +262,12 @@ def _fields(text, i, closer, strings):
 def parse_bib(text):
     """Return ``(entries, errors)``; an entry is ``{type, key, fields, line}``."""
     entries, errors, strings = [], [], dict(MONTHS)
+    line_at = _line_lookup(text)
     pos = 0
     while (match := ENTRY_START.search(text, pos)):
         kind, opener = match.group(1).lower(), match.group(2)
         closer = '}' if opener == '{' else ')'
-        line = text.count('\n', 0, match.start()) + 1
+        line = line_at(match.start())
         try:
             if kind in ('comment', 'preamble'):
                 pos = _balanced(text, match.end() - 1, opener, closer)
@@ -918,6 +924,9 @@ class Checker:
             if res['reason'] and res['reason'] not in reasons:
                 reasons += f"; {res['reason']}"
             add(item, 'inconclusive', f'could not verify {label} ({reasons}); this is not evidence that it is wrong')
+        elif res['state'] == 'resolves' and not res['metadata']:
+            reason = f" ({res['reason']})" if res['reason'] else ''
+            add(item, 'inconclusive', f"registered with {res['registry']}, but its record could not be read{reason}")
         for notice in item['notices']:
             ref = f" {notice['doi']}" if notice['doi'] else ''
             if notice['via'] == 'update-to' and notice['doi'] and notice['doi'].lower() != doi.lower():
@@ -957,7 +966,7 @@ class Checker:
         if doi or arxiv:
             item['arxiv'] = arxiv
             res = self._lookup(item, doi or arxiv_doi(arxiv))
-            if res and res['state'] == 'resolves':
+            if res and res['metadata']:
                 self._compare(item, fields, res)
             return finish(item)
         title = fields.get('title', '').strip()
@@ -974,13 +983,6 @@ class Checker:
 
     def _compare(self, item, fields, res):
         meta = res['metadata']
-        if not meta:
-            # Usually a rate limit or outage: the entry itself is unchecked, as in Mathodology Studio.
-            reason = f" ({res['reason']})" if res['reason'] else ''
-            add(item, 'inconclusive' if res['reason'] else 'info',
-                f"registered with {res['registry']}, but its record could not be read{reason}: "
-                'title, first author and year were not compared')
-            return
         comparison = {'title_similarity': None, 'first_author': None, 'year': None}
         item['comparison'] = comparison
         title = fields.get('title', '').strip()

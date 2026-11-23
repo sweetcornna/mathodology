@@ -29,10 +29,24 @@ function server(overrides: Partial<TurnRequest> = {}) {
   const child = { stdin, exitCode: null as number | null, signalCode: null }
   const kill = vi.fn()
   const beginStop = vi.fn()
+  const timers = new Set<ReturnType<typeof setTimeout>>()
+  const after = (ms: number, action: () => void): (() => void) => {
+    const timer = setTimeout(action, ms)
+    timers.add(timer)
+    return () => { clearTimeout(timer); timers.delete(timer) }
+  }
+  let stopping = false
+  const stop = vi.fn(() => {
+    if (stopping) return
+    stopping = true
+    after(1500, () => kill('SIGTERM'))
+    after(3500, () => kill('SIGKILL'))
+  })
+  const finish = () => { stdin.end(); stop() }
   const exited = new Promise<Exit>((resolve) => { resolveExit = resolve })
   spawnMock.mockImplementation((_binary, _args, _cwd, _env, onLine: (line: string) => void): SpawnedTurn => {
     receive = onLine
-    return { child: child as unknown as ChildProcessWithoutNullStreams, exited, kill, beginStop }
+    return { child: child as unknown as ChildProcessWithoutNullStreams, started: Promise.resolve(), exited, kill, beginStop, after, stop, finish }
   })
   const events: SessionEventBody[] = []
   const turn = acpAdapter({ id: 'test-acp', name: 'Test ACP', bins: ['test-acp'], acpArgs: [] })
@@ -52,6 +66,7 @@ function server(overrides: Partial<TurnRequest> = {}) {
     },
     async exit() {
       child.exitCode = 0
+      timers.forEach(clearTimeout)
       resolveExit({ code: 0, signal: null, stderr: '' })
       await turn.done
     }

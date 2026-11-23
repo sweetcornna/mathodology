@@ -41,8 +41,10 @@ mac:
       arch: [arm64]
     - target: zip
       arch: [arm64]
-  identity: null
-  hardenedRuntime: false
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: false
 dmg:
   title: ${productName} ${version}
 win:

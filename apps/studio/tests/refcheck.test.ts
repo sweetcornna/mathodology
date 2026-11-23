@@ -423,3 +423,13 @@ describe('bibliography files', () => {
     expect(peak).toBe(2)
   })
 })
+
+it('adds a DOI to the live entry using source offsets and preserves nested comments', () => {
+  const comment = '@comment( {a parenthesis )} @article{live, title={Ignore}} )\r\n'
+  const source = comment + '@article(live,\r\n    title = {Real}\r\n)\r\n'
+  const edited = withDoi(source, 'live', '10.1000/a')!
+  expect(edited).toBe(comment + '@article(live,\r\n    doi = {10.1000/a},\r\n    title = {Real}\r\n)\r\n')
+  expect(parseBibtex(edited)).toMatchObject([{ key: 'live', fields: { doi: '10.1000/a', title: 'Real' } }])
+  expect(() => withDoi(source, 'live', '10.1000/a}x')).toThrow('Invalid DOI')
+  expect(() => withDoi('@article{live, title={Incomplete}', 'live', '10.1000/a')).toThrow('Invalid BibTeX entry')
+})

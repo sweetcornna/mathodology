@@ -16,8 +16,9 @@ import {
   Trash2
 } from 'lucide-react'
 import type { Session } from '@shared/types'
-import { api, isMac, mod, tildify } from '../lib/api'
+import { isMac, mod, tildify } from '../lib/api'
 import { useT, type MessageKey } from '../lib/i18n'
+import { openPath } from '../lib/open'
 import { useStudio } from '../store'
 import { AgentGlyph } from './BrandIcon'
 import { Menu, MenuItem, MenuLabel, MenuSep, Spinner, Tip } from './ui'
@@ -185,7 +186,7 @@ function ProjectSwitcher() {
       </MenuItem>
       {active && (
         <>
-          <MenuItem icon={<FolderOpen size={14} />} onSelect={() => void api.call('shell:openPath', active.path)}>
+          <MenuItem icon={<FolderOpen size={14} />} onSelect={() => openPath(active.path)}>
             {t('project.reveal')}
           </MenuItem>
           <MenuItem

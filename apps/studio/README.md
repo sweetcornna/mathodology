@@ -153,28 +153,31 @@ pnpm dev
 | --- | --- |
 | `pnpm dev` | Run with hot reload |
 | `pnpm typecheck` | Type-check the main/preload and renderer projects |
-| `pnpm test` | Run the unit tests (stream parsers, models, artifacts, reviews, connectors, literature, reference checks, citation trace, humanizer and search updates, Windows CLI launching) |
-| `pnpm package` | Build an unpacked `.app` under `release/<version>/` |
-| `pnpm dist` | Build the macOS DMG and ZIP |
+| `pnpm test` | Run the unit tests (stream parsers, models, artifacts, reviews, connectors, literature, reference checks, citation trace, IPC validation, renderer store, humanizer and search updates, Windows CLI launching) |
+| `pnpm package` | Build an unpacked unsigned `.app` under `release/<version>/` |
+| `pnpm dist` | Build the macOS DMG and ZIP (signs automatically if a Developer ID identity is available) |
+| `pnpm dist:mac:signed` | Build and require Apple Developer ID signing with Hardened Runtime |
+| `pnpm dist:mac:unsigned` | Build an unsigned macOS DMG and ZIP locally |
 | `pnpm dist:win` | Build the Windows x64 installer |
 | `pnpm dist:linux` | Build the Linux .deb and AppImage for x64 and arm64 |
 
 All three build on a Mac, including Apple silicon, without Wine.
 
-Builds are unsigned for now; signing for Windows is being set up (see the code
-signing policy below). On first launch macOS asks for confirmation; open the app
-from Finder with Control-click → Open, or clear the quarantine flag on the copy
-you built yourself. Windows SmartScreen may warn about an unknown publisher:
-choose More info → Run anyway. On Ubuntu 23.10 and later, AppArmor keeps
-AppImages from using Chromium's sandbox; the .deb installs a profile that
-allows it.
+macOS release packages are signed with an Apple Developer ID Application
+certificate and Hardened Runtime enabled (`build/entitlements.mac.plist`).
+Notarization is off by default (`mac.notarize: false`); if macOS Gatekeeper
+warns on first launch after downloading from a browser, open the app from Finder
+with Control-click → Open. Windows signing is being set up (see the code signing
+policy below); if Windows SmartScreen warns about an unknown publisher, choose
+More info → Run anyway. On Ubuntu 23.10 and later, AppArmor keeps AppImages from
+using Chromium's sandbox; the .deb installs a profile that allows it.
 
 Release packages: the
 [Studio Windows workflow](../../.github/workflows/studio-windows.yml) builds the
 Windows installer on a GitHub-hosted runner when a `v*` tag is pushed, and its
-artifact is attached to the release; the macOS and Linux packages are built
-with `pnpm dist` and `pnpm dist:linux`. Pull requests that touch Studio or the
-kit run the same workflow, unsigned.
+artifact is attached to the release; the signed macOS and Linux packages are
+built with `pnpm dist:mac:signed` and `pnpm dist:linux`. Pull requests that
+touch Studio or the kit run the same workflow, unsigned.
 
 ## Code signing policy
 

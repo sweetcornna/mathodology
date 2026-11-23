@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent, SessionEventBody, TodoItem } from '@shared/types'
-import { buildTranscript, type ToolNode } from '../src/renderer/src/lib/transcript'
+import { buildTranscript, evictTranscript, fileStats, projectTranscript, type ToolNode } from '../src/renderer/src/lib/transcript'
 import { summarize } from '../src/renderer/src/lib/verbs'
 
 function events(...bodies: SessionEventBody[]): SessionEvent[] {
@@ -99,5 +99,71 @@ describe('tool summaries', () => {
       expect(phrases[2].chip).toBe('unrecorded')
       expect(phrases[2].text).toBe(lang === 'zh' ? '未记录结果' : 'Result not recorded')
     }
+  })
+
+  it('computes identical MultiEdit line counts in fileStats and turn change summaries', () => {
+    const multiEditCall: SessionEventBody = {
+      kind: 'tool.call',
+      callId: 'me1',
+      name: 'MultiEdit',
+      toolKind: 'edit',
+      title: 'model.py',
+      input: {
+        file_path: 'code/model.py',
+        edits: [
+          { old_string: 'a = 1\nb = 2\n', new_string: 'a = 10\n' },
+          { old_string: 'c = 3', new_string: 'c = 30\nd = 40\ne = 50' }
+        ]
+      }
+    }
+    const transcript = buildTranscript(events(multiEditCall, result('me1'), { kind: 'turn.completed', ok: true }))
+    const toolNode = nodes(transcript)[0]
+    const perCall = fileStats(toolNode)
+    const changesItem = transcript.items.find((i) => i.type === 'changes')
+
+    expect(perCall).toEqual([{ path: 'code/model.py', added: 4, removed: 3, created: false }])
+    expect(changesItem?.type === 'changes' ? changesItem.files : []).toEqual(perCall)
+  })
+})
+
+describe('shared memoized transcript projection', () => {
+  it('shares projection per event array and preserves completed item identity across appends', () => {
+    const base = events(
+      { kind: 'user.message', text: 'Run script', attachments: [] },
+      { kind: 'assistant.text', blockId: 'a1', text: 'Running now.' },
+      call('t1'),
+      result('t1'),
+      { kind: 'todo.update', items: [{ content: 'Step 1', status: 'completed' }] },
+      { kind: 'turn.completed', ok: true }
+    )
+    const first = projectTranscript(base, 's1')
+    // Identical event array returns exact same Transcript object (shared by Transcript/Dock/Tasks).
+    expect(projectTranscript(base, 's1')).toBe(first)
+
+    const appended: SessionEvent[] = [
+      ...base,
+      { kind: 'user.message', sessionId: 's1', seq: base.length, ts: base.length, text: 'Next turn', attachments: [] },
+      { ...call('t2'), sessionId: 's1', seq: base.length + 1, ts: base.length + 1 }
+    ]
+    const second = projectTranscript(appended, 's1')
+    expect(second).not.toBe(first)
+    // All completed historical items from turn 1 keep exact === object identity.
+    for (let i = 0; i < first.items.length; i++) {
+      expect(second.items[i]).toBe(first.items[i])
+    }
+    expect(second.todos).toBe(first.todos)
+    expect(second.pending).toBe(first.pending)
+
+    // Late tool result updates only the affected tool group and preserves other items.
+    const withLateResult = projectTranscript(
+      [...appended, { ...result('t1', true), sessionId: 's1', seq: appended.length, ts: appended.length }],
+      's1'
+    )
+    expect(withLateResult.items[0]).toBe(second.items[0]) // user message
+    expect(withLateResult.items[1]).toBe(second.items[1]) // assistant text
+    expect(withLateResult.items[2]).not.toBe(second.items[2]) // t1 group updated
+    expect(withLateResult.items[5]).toBe(second.items[5]) // next turn user message
+
+    evictTranscript('s1')
   })
 })

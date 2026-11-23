@@ -41,10 +41,12 @@ The [workbench](../.claude/skills/mathodology-workbench/SKILL.md) gives the stag
 an executable contract: `problem/questions.json` names each question's deliverables
 and metrics, experiments run through `mtd.py run`, code writes `results/*.json`,
 figure scripts read those files and the paper cites values with `\res{file.key}`.
-`mtd.py status` reports every stage and `mtd.py check --compile` lists errors before
-delivery. Claude Code's hooks run these checks automatically. When the report and
-the paper disagree, correct the paper from the results or rerun the experiment;
-never edit results to fit the text. `mtd.py init --paper-template cumcm` (or `mcm`,
+`mtd.py status` reports every stage. In contest workspaces, Claude Code's hooks
+run static checks and read a current LaTeX log at session start and Stop. They
+also check paper edits and sync changed results after shell commands. Run
+`mtd.py check --compile` manually to compile and check the paper before delivery.
+When the report and the paper disagree, correct the paper from the results or
+rerun the experiment. `mtd.py init --paper-template cumcm` (or `mcm`,
 `stats`, `huawei`, `mathorcup`, `apmcm`) starts from a contest skeleton and adds the
 verified [format checks](../.claude/skills/mathodology-workbench/references/contest-formats.md);
 the current official rules still take precedence. The agent picks the template from

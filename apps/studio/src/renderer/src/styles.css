@@ -305,13 +305,6 @@ button {
 .btn-primary:hover:not(:disabled) {
   background: var(--fill-primary-hover);
 }
-.btn-accent {
-  background: var(--accent);
-  color: var(--accent-fg);
-}
-.btn-accent:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
 .btn-secondary {
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--border), var(--shadow-sm);
@@ -532,15 +525,6 @@ select.field {
 @keyframes spin {
   to {
     transform: rotate(360deg);
-  }
-}
-@keyframes pulse-dot {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 1;
   }
 }
 @keyframes halo {

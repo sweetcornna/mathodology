@@ -1,7 +1,7 @@
 # Installation and updates
 
 Mathodology uses the standard [skills CLI](https://github.com/vercel-labs/skills).
-A full checkout contains nine skills, eight optional Claude Code roles, two
+A full checkout contains nine skills, eight optional roles for Claude Code and Codex, two
 workflow prompts, the workbench hooks (`.claude/settings.json`) and a project
 search MCP configuration. No custom updater runs.
 
@@ -46,8 +46,13 @@ python3 .claude/skills/mathodology-workbench/scripts/mtd.py install-hooks
 ```
 
 It merges only Mathodology's four hooks and keeps existing settings and hooks;
-`--remove` takes them out again. Agents that do not load Claude Code hooks, such
-as Codex, can run `mtd.py check` before handing over a draft.
+`--remove` takes them out again. The hooks run static checks and read current
+LaTeX logs. Run the appropriate command manually to compile and check the paper:
+
+```bash
+python3 .claude/skills/mathodology-workbench/scripts/mtd.py check --compile  # Claude Code
+python3 .agents/skills/mathodology-workbench/scripts/mtd.py check --compile  # Codex
+```
 
 For a deliberate global skills install, add `--global` to the selected command.
 Global scope affects other projects and is not required for project use. It does
@@ -85,11 +90,15 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dist` builds an unsigned macOS DMG; `pnpm dist:win` and `pnpm dist:linux`
-build the Windows installer and the Linux .deb and AppImage. Studio installs the
-skills, roles, workflow prompts and humanizer into each project it creates, and
-leaves existing files alone. At each launch it updates humanizer and refreshes
-free-search-mcp to the newest release. Ready-made packages are on the
+`pnpm dist:mac:signed` builds an Apple Developer ID–signed macOS DMG and ZIP
+(use `pnpm dist:mac:unsigned` locally without a signing certificate);
+`pnpm dist:win` and `pnpm dist:linux` build the Windows installer and the Linux
+.deb and AppImage. In new projects,
+Studio installs six Mathodology skills in `.claude/skills/` and `.agents/skills/`.
+They are whole-project, agent-pipeline, evidence-search, figure-presets,
+award-gates and workbench. Studio also installs both sets of roles and the
+workflow prompts, merges the Claude Code workbench hooks and sets up humanizer.
+At each launch it updates humanizer and free-search-mcp. Ready-made packages are on the
 [releases page](https://github.com/sweetcornna/mathodology/releases/latest); the
 Windows installer there is built from this repository by GitHub Actions and is
 unsigned until SignPath signing is set up. See the

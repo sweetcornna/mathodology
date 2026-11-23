@@ -2,7 +2,7 @@ import type { StudioApi } from '../shared/ipc'
 
 declare global {
   interface Window {
-    studio: StudioApi
+    readonly studio: StudioApi
   }
 }
 

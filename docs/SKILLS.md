@@ -1,6 +1,8 @@
 # Skill index
 
-Nine skills maintained in `.claude/skills/`. Load only those relevant to the task.
+The checkout maintains nine skills under `.claude/skills/`. New Studio projects
+receive the first six in the table, with a Codex copy in `.agents/skills/`.
+Load the skills relevant to the task.
 
 | Skill | Purpose |
 |---|---|
@@ -18,6 +20,7 @@ Eight optional roles cover coordination, problem analysis, modeling, computation
 evidence, writing, review and packaging. They inherit host models and available
 tools. There is no fixed three-seat judging role. The legacy names containing
 pipeline or gates remain discovery entry points for flexible prompts.
+Role definitions live in `.claude/agents/` and `.codex/agents/`.
 
 [Workflow](WORKFLOWS.md) · [Installation](INSTALL.md)
 

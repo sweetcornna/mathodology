@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { FolderOpen } from 'lucide-react'
 import type { ContestKind } from '@shared/types'
 import { api, sep, tildify } from '../lib/api'
+import { formatIpcError } from '../lib/errors'
 import { useT, type MessageKey } from '../lib/i18n'
 import { useStudio } from '../store'
 import { Modal, Segmented, Switch } from './ui'
@@ -50,7 +51,7 @@ export function NewProjectForm({
       createProject(project)
       onDone()
     } catch (err) {
-      showToast(String((err as Error).message ?? err), 'error')
+      showToast(formatIpcError(err), 'error')
     } finally {
       setBusy(false)
     }

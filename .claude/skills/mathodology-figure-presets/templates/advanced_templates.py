@@ -198,18 +198,20 @@ def exceedance_curve(samples_by_case, labels, *, value_label, threshold=None, lo
     labels = _labels(labels, len(samples_by_case), 'case label')
     fig, ax = _axes('Exceedance probability')
     for k, (samples, name) in enumerate(zip(samples_by_case, labels)):
-        values = np.sort(_vectors(samples)[0])
-        n = len(values)
-        prob = 1 - np.arange(1, n + 1) / n
-        keep = prob > 0
+        draws, = _vectors(samples)
+        n = len(draws)
+        values, counts = np.unique(draws, return_counts=True)
+        prob = (n - counts.cumsum()) / n
         label = f'{name} (n={n})'
         if threshold is not None:  # Monte Carlo uncertainty of the estimate: Wilson 95% interval
-            hits = int(np.sum(values > threshold))
+            hits = int(np.count_nonzero(draws > threshold))
             p, z = hits / n, 1.96
             mid, half = (p + z * z / (2 * n)), z * np.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
             label += (f': P(> {threshold:g}) = {hits}/{n} = {p:.3g} '
                       f'[{(mid - half) / (1 + z * z / n):.2g}, {(mid + half) / (1 + z * z / n):.2g}]')
-        ax.step(values[keep], prob[keep], where='post', c=PALETTE[k % len(PALETTE)], lw=1.6,
+        # On a log axis, keep the final x so the last positive segment reaches the maximum.
+        ax.step(values, np.where(prob > 0, prob, np.nan) if log_y else prob,
+                where='post', c=PALETTE[k % len(PALETTE)], lw=1.6,
                 label=label)
     if threshold is not None:
         ax.axvline(threshold, c='black', lw=.8, ls='--')

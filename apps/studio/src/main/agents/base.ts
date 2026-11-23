@@ -11,7 +11,10 @@ import type {
   SessionEventBody,
   ToolKind
 } from '@shared/types'
-import { killTree, launch } from './launch'
+import { launch } from './launch'
+import { supervise } from './supervisor'
+
+export { killAllAgents } from './supervisor'
 
 export interface TurnRequest {
   binary: string
@@ -44,6 +47,8 @@ export interface Turn {
   interrupt(): void
   /** `answers` (by question id) answer a request that carried `questions`. */
   respondPermission(requestId: string, allow: boolean, always?: boolean, answers?: Record<string, string[]>): void
+  /** When available, confirms that the OS admitted the process. */
+  admitted?: Promise<void>
   /** Resolves when the process has exited and the turn is closed. */
   done: Promise<void>
 }
@@ -168,22 +173,13 @@ export function toolTitle(name: string, input: unknown): string {
 
 export interface SpawnedTurn {
   child: ChildProcessWithoutNullStreams
+  started: Promise<void>
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null; stderr: string }>
-  /** Signal the CLI's whole process group: node-based CLIs re-spawn themselves as a child. */
   kill(signal: NodeJS.Signals): void
-  /** Mark cancellation before a protocol interrupt, so exiting wrappers cannot orphan work. */
   beginStop(): void
-}
-
-/** CLIs whose output is still open, so quitting can make sure none outlives Studio. */
-const running = new Set<ChildProcessWithoutNullStreams>()
-
-/**
- * SIGKILL the process group of every CLI still running (agents start scripts and servers in the
- * same group). The last step of quitting, once turns and reviews had their grace period.
- */
-export function killAllAgents(): void {
-  for (const child of running) killTree(child, 'SIGKILL')
+  after(ms: number, action: () => void): () => void
+  stop(grace?: number, force?: number, signal?: NodeJS.Signals): void
+  finish(): void
 }
 
 /** Spawn a CLI and feed each stdout line to `onLine`. stderr is kept for error reporting. */
@@ -203,47 +199,33 @@ export function spawnLines(
     windowsHide: true,
     windowsVerbatimArguments: l.verbatim
   })
-  running.add(child)
+  const supervisor = supervise(child)
+  const started = new Promise<void>((resolve, reject) => {
+    child.once('spawn', resolve)
+    child.once('error', reject)
+  })
+  // Probes and callers that only await close get their error through the normal exit path.
+  void started.catch(() => undefined)
   // A CLI that exits before reading its prompt fails the write with EPIPE; the turn just ends.
   child.stdin.on('error', () => undefined)
   const out = new LineSplitter()
   let stderr = ''
-  let closed = false
-  let stopping = false
   child.stdout.setEncoding('utf8')
   child.stderr.setEncoding('utf8')
   child.stdout.on('data', (d: string) => out.push(d).forEach(onLine))
   child.stderr.on('data', (d: string) => {
     stderr = (stderr + d).slice(-20_000)
   })
-  // During cancellation a wrapper can exit while descendants retain the pipes, or redirect
-  // them and outlive `close`. Normal completion may intentionally leave a server running.
-  child.on('exit', () => { if (stopping) killTree(child, 'SIGKILL') })
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null; stderr: string }>((resolve) => {
     child.on('error', (err) => {
       stderr += `\n${err.message}`
-      if (!child.pid) running.delete(child)
     })
     child.on('close', (code, signal) => {
-      closed = true
-      running.delete(child)
       out.flush().forEach(onLine)
       resolve({ code, signal, stderr })
     })
   })
-  const beginStop = (): void => {
-    if (closed) return
-    stopping = true
-    // taskkill needs the root PID to still exist to discover its descendants. Run it before
-    // a Windows protocol interrupt lets the root exit; POSIX groups survive their leader.
-    if (process.platform === 'win32' || child.exitCode !== null || child.signalCode !== null) killTree(child, 'SIGKILL')
-  }
-  const kill = (signal: NodeJS.Signals): void => {
-    if (closed) return
-    stopping = true
-    killTree(child, signal)
-  }
-  return { child, exited, kill, beginStop }
+  return { child, started, exited, ...supervisor }
 }
 
 /**
@@ -272,11 +254,12 @@ export function askCli<T>(
     const finish = (result: T | null): void => {
       if (settled) return
       settled = true
-      clearTimeout(timer)
+      cancelDeadline()
       spawned.kill('SIGTERM')
+      spawned.stop()
       resolve(result)
     }
-    const timer = setTimeout(() => finish(null), opts.timeoutMs ?? 15_000)
+    const cancelDeadline = spawned.after(opts.timeoutMs ?? 15_000, () => finish(null))
     void spawned.exited.then(() => finish(null))
     for (const obj of opts.first ?? []) send(obj)
   })

@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import tempfile
+import tomllib
 from urllib.parse import unquote, urlsplit
 
 ROOT_FILES = {'AGENTS.md', 'CLAUDE.md', 'README.md', 'README_en.md', 'LICENSE', '.gitignore', '.mcp.json',
@@ -19,8 +21,15 @@ ROOT_FILES = {'AGENTS.md', 'CLAUDE.md', 'README.md', 'README_en.md', 'LICENSE', 
 DOC_FILES = {f'docs/{name}{suffix}.md' for name in ['SKILLS', 'INSTALL', 'WORKFLOWS', 'BACKUP']
              for suffix in ['', '_zh']}
 PREFIXES = ('.claude/skills/', '.claude/agents/', '.claude/workflows/', '.codex/agents/', 'apps/studio/')
-IGNORED = {'.git', '.agents', '.codex', '__pycache__', 'work', '.DS_Store', 'node_modules', 'out', 'release'}
+IGNORED = {'.git', '.agents', '__pycache__', 'work', '.DS_Store'}
+STUDIO_OUTPUTS = {'node_modules', 'out', 'release'}
 NAME = re.compile(r'mathodology-[a-z0-9]+(?:-[a-z0-9]+)*\Z')
+SKILL_NAME = re.compile(r'mathodology-[a-z0-9-]+')
+
+
+def studio_output(rel):
+    return (rel.parts[:2] == ('apps', 'studio') and len(rel.parts) > 2
+            and (rel.parts[2] in STUDIO_OUTPUTS or rel.name.endswith('.tsbuildinfo')))
 
 
 def files(root):
@@ -28,12 +37,25 @@ def files(root):
         result = subprocess.run(['git', '-C', str(root), 'ls-files', '-z', '--cached',
                                  '--others', '--exclude-standard'], check=True,
                                 capture_output=True)
-        return sorted({p for raw in result.stdout.decode().split('\0')
-                       if raw and (p := root / raw).is_file()})
-    return sorted(p for p in root.rglob('*') if p.is_file()
-                  and not (set(p.relative_to(root).parts) & IGNORED)
-                  and not p.name.startswith('._')
-                  and p.suffix not in {'.pyc', '.pyo'})
+        return sorted({root / os.fsdecode(raw) for raw in result.stdout.split(b'\0') if raw})
+    paths = []
+    for directory, dirs, filenames in os.walk(root):
+        base = Path(directory)
+        if base == root / '.codex':
+            dirs[:] = [name for name in dirs if name == 'agents']
+            continue
+        for name in dirs[:]:
+            path = base / name
+            if studio_output(path.relative_to(root)):
+                paths.append(path)
+                dirs.remove(name)
+            elif name in IGNORED:
+                dirs.remove(name)
+        for name in filenames:
+            path = base / name
+            if name not in IGNORED and not name.startswith('._') and path.suffix not in {'.pyc', '.pyo'}:
+                paths.append(path)
+    return sorted(paths)
 
 
 def fields(text):
@@ -55,22 +77,28 @@ def fields(text):
 
 
 def frontmatter(path):
-    match = re.match(r'\A---\n(.*?)\n---(?:\n|$)', path.read_text(), re.S)
-    return fields(match.group(1)) if match else {}
+    text = path.read_text(encoding='utf-8')
+    match = re.match(r'\A---\n(.*?)\n---(?:\n|$)', text, re.S)
+    return (fields(match.group(1)), text[match.end():].strip()) if match else ({}, text.strip())
 
 
 def metadata(root, paths):
     errors = []
+    paths = [p for p in paths if p.is_file()]
     skills = {p.parent.name for p in paths if p.name == 'SKILL.md'}
+    claude_roles = {}
+    codex_roles = {}
     if not skills:
         errors.append('No maintained SKILL.md files found')
     for path in paths:
         is_skill = path.name == 'SKILL.md'
         is_role = path.parent == root / '.claude/agents' and path.suffix == '.md'
+        if path.parent == root / '.codex/agents' and path.suffix == '.toml':
+            codex_roles[path.stem] = path
         if not (is_skill or is_role):
             continue
         expected = path.parent.name if is_skill else path.stem
-        fm = frontmatter(path)
+        fm, body = frontmatter(path)
         if not NAME.fullmatch(expected) or fm.get('name') != expected:
             errors.append(f'{path.relative_to(root)}: invalid or mismatched name')
         description = fm.get('description', '')
@@ -78,26 +106,60 @@ def metadata(root, paths):
             errors.append(f'{path.relative_to(root)}: missing/invalid description')
         if is_skill:
             meta = path.parent / 'agents/openai.yaml'
-            data = fields(meta.read_text()) if meta.is_file() else {}
+            data = fields(meta.read_text(encoding='utf-8')) if meta.is_file() else {}
             if not all(data.get(key) for key in ['display_name', 'short_description', 'default_prompt']):
                 errors.append(f'{meta.relative_to(root)}: missing interface metadata')
             if '$' + expected not in data.get('default_prompt', ''):
                 errors.append(f'{meta.relative_to(root)}: default_prompt must invoke ${expected}')
         else:
-            for name in re.findall(r'mathodology-[a-z0-9-]+', fm.get('skills', '')):
+            role_skills = SKILL_NAME.findall(fm.get('skills', ''))
+            claude_roles[expected] = (description, role_skills, body)
+            for name in role_skills:
                 if name not in skills:
                     errors.append(f'{path.relative_to(root)}: unknown skill {name}')
+    for name in sorted(claude_roles.keys() - codex_roles.keys()):
+        errors.append(f'.codex/agents/{name}.toml: missing counterpart to Claude role')
+    for name, path in codex_roles.items():
+        rel = path.relative_to(root)
+        if name not in claude_roles:
+            errors.append(f'{rel}: missing counterpart in .claude/agents/')
+        try:
+            with path.open('rb') as handle:
+                data = tomllib.load(handle)
+        except (ValueError, OSError) as exc:
+            errors.append(f'{rel}: cannot read role TOML ({exc})')
+            continue
+        if not NAME.fullmatch(name) or data.get('name') != name:
+            errors.append(f'{rel}: invalid or mismatched name')
+        description = data.get('description')
+        if not isinstance(description, str) or not description.strip():
+            errors.append(f'{rel}: missing/invalid description')
+        prompt = data.get('developer_instructions')
+        if not isinstance(prompt, str) or not prompt.strip():
+            errors.append(f'{rel}: missing/invalid developer_instructions')
+            continue
+        preamble, _, body = prompt.strip().partition('\n\n')
+        role_skills = SKILL_NAME.findall(preamble)
+        for skill in role_skills:
+            if skill not in skills:
+                errors.append(f'{rel}: unknown skill {skill}')
+        if name in claude_roles:
+            for field, actual, expected in zip(('description', 'skills', 'instructions'),
+                                               (description, role_skills, body), claude_roles[name]):
+                if actual != expected:
+                    errors.append(f'{rel}: {field} differs from the Claude role')
     return errors
 
 
 def links(root, paths):
     errors = []
+    paths = [p for p in paths if p.is_file()]
     known = {p.parent.name for p in paths if p.name == 'SKILL.md'}
     known |= {p.stem for p in paths if p.parent in [root / '.claude/agents', root / '.claude/workflows']}
     for path in paths:
         if path.suffix != '.md':
             continue
-        text = path.read_text()
+        text = path.read_text(encoding='utf-8')
         # Exclude fenced examples; include images as well as ordinary links.
         text = re.sub(r'^```.*?^```\s*$', '', text, flags=re.M | re.S)
         for match in re.finditer(r'\[[^\]]*\]\((<[^>]+>|[^\s)]+)(?:\s+"[^"]*")?\)', text):
@@ -118,6 +180,7 @@ def links(root, paths):
 def boundary(root, paths):
     return [f'Outside skills repository boundary: {p.relative_to(root)}' for p in paths
             if p.suffix in {'.pyc', '.pyo'} or '__pycache__' in p.relative_to(root).parts
+            or studio_output(p.relative_to(root))
             or ((rel := p.relative_to(root).as_posix()) not in ROOT_FILES | DOC_FILES
                 and not rel.startswith(PREFIXES))]
 
@@ -137,10 +200,37 @@ def selftest():
         readme = root / 'README.md'
         readme.write_text('[skill](.claude/skills/mathodology-fixture/SKILL.md)\n')
         # Older macOS archives can include binary AppleDouble sidecar files.
-        (root / '.claude/agents').mkdir()
-        (root / '.claude/agents/._mathodology-fixture.md').write_bytes(b'\x00\xff')
+        roles = root / '.claude/agents'
+        roles.mkdir()
+        (roles / '._mathodology-fixture.md').write_bytes(b'\x00\xff')
+        role_body = r'Cite with \res{}.'
+        (roles / 'mathodology-fixture.md').write_text(
+            '---\nname: mathodology-fixture\ndescription: Fixture role\nskills: [mathodology-fixture]\n---\n\n'
+            + role_body + '\n')
+        codex = root / '.codex/agents/mathodology-fixture.toml'
+        codex.parent.mkdir(parents=True)
+        good_role = ('name = "mathodology-fixture"\ndescription = "Fixture role"\n'
+                     "developer_instructions = '''\nLoad the skills `mathodology-fixture`.\n\n" + role_body + "\n'''\n")
+        codex.write_text(good_role)
         for check in CHECKS.values():
             assert not check(root, files(root)), check.__name__
+        codex.write_text(good_role.replace("'''", '"""'))
+        assert any('instructions differs' in issue for issue in metadata(root, files(root)))
+        codex.write_text('name = [')
+        assert any('cannot read role TOML' in issue for issue in metadata(root, files(root)))
+        codex.unlink()
+        assert any('missing counterpart' in issue for issue in metadata(root, files(root)))
+        codex.write_text(good_role)
+        studio = root / 'apps/studio'
+        for name in STUDIO_OUTPUTS:
+            output = studio / name
+            output.mkdir(parents=True)
+            assert any(name in issue for issue in boundary(root, files(root)))
+        build_info = studio / 'source' / 'app.tsbuildinfo'
+        assert boundary(root, [build_info])  # A tracked path can be absent from the worktree.
+        build_info.parent.mkdir()
+        build_info.touch()
+        assert any('app.tsbuildinfo' in issue for issue in boundary(root, files(root)))
         bytecode = skill / '__pycache__/fixture.pyc'
         bytecode.parent.mkdir()
         bytecode.write_bytes(b'not-source')

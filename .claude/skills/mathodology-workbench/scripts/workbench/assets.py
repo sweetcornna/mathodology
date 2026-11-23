@@ -35,7 +35,8 @@ def _png(head: bytes) -> Image:
 
 
 def _jpeg(path: Path) -> Image:
-    data = path.read_bytes()[:1 << 20]
+    with path.open('rb') as handle:
+        data = handle.read(1 << 20)
     if data[:2] != b'\xff\xd8':
         return Image('jpeg', False, 'not a JPEG file (bad signature)')
     i = 2
@@ -79,7 +80,8 @@ def inspect(path: Path) -> Image:
             return _jpeg(path)
         if suffix == '.pdf':
             return _pdf(path, size)
-        head = path.read_bytes()[:4096]
+        with path.open('rb') as handle:
+            head = handle.read(4096)
         if suffix == '.svg':
             return Image('svg', b'<svg' in head or b'<?xml' in head, '' if b'<svg' in head or b'<?xml' in head else 'not an SVG file')
         if suffix == '.eps':

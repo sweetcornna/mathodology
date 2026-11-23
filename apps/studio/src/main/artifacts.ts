@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, extname, join, relative, sep } from 'node:path'
 import type { Artifact, ArtifactKind, ArtifactVersion, Project, VersionOrigin } from '@shared/types'
 import { safeJoin } from './files'
@@ -7,6 +7,8 @@ import { isPlainId, readJson, writeAtomic } from './store'
 
 /** Files larger than this are tracked by checksum only. */
 const STORE_LIMIT = 25_000_000
+const STREAM_THRESHOLD = 4_000_000
+const MAX_HASH_SIZE = 200_000_000
 const SCAN_LIMIT = 4000
 const SKIP_DIRS = new Set([
   '.git', '.claude', '.codex', '.agents', '.gemini', '.venv', 'venv', 'node_modules', '__pycache__',
@@ -45,11 +47,14 @@ export interface Captured {
   version: ArtifactVersion
 }
 
+type Fingerprint = { size: number; mtime: number; ctime?: number }
+type Candidate = { rel: string; abs: string; stat: Fingerprint }
+
 interface ProjectIndex {
   version: 1
   artifacts: Artifact[]
   /** Last observed size and mtime per path, so unchanged files are not re-hashed. */
-  seen: Record<string, { size: number; mtime: number }>
+  seen: Record<string, Fingerprint>
 }
 
 /**
@@ -58,7 +63,7 @@ interface ProjectIndex {
  * Studio is about that. Lives under the app's data folder, not in the project.
  */
 export class ArtifactStore {
-  private cache = new Map<string, ProjectIndex>()
+  private cache = new Map<string, ProjectIndex & { byPath: Map<string, Artifact> }>()
 
   constructor(private readonly dir: string) {
     mkdirSync(dir, { recursive: true })
@@ -69,10 +74,11 @@ export class ArtifactStore {
     return join(this.dir, projectId)
   }
 
-  private index(projectId: string): ProjectIndex {
+  private index(projectId: string) {
     let idx = this.cache.get(projectId)
     if (!idx) {
-      idx = readJson<ProjectIndex>(join(this.projectDir(projectId), 'index.json'), { version: 1, artifacts: [], seen: {} })
+      const data = readJson<ProjectIndex>(join(this.projectDir(projectId), 'index.json'), { version: 1, artifacts: [], seen: {} })
+      idx = { ...data, byPath: new Map(data.artifacts.map((a) => [a.rel, a])), seen: Object.assign(Object.create(null), data.seen) }
       this.cache.set(projectId, idx)
     }
     return idx
@@ -81,7 +87,8 @@ export class ArtifactStore {
   private save(projectId: string): void {
     const dir = this.projectDir(projectId)
     mkdirSync(dir, { recursive: true })
-    writeAtomic(join(dir, 'index.json'), JSON.stringify(this.index(projectId)))
+    const { version, artifacts, seen } = this.index(projectId)
+    writeAtomic(join(dir, 'index.json'), JSON.stringify({ version, artifacts, seen }))
   }
 
   list(projectId: string): Artifact[] {
@@ -125,7 +132,7 @@ export class ArtifactStore {
         const abs = join(dir, name)
         let st
         try {
-          st = statSync(abs)
+          st = lstatSync(abs)
         } catch {
           continue
         }
@@ -143,82 +150,151 @@ export class ArtifactStore {
    * named them); with 'scan' the whole project is, and files that disappeared are marked missing.
    */
   capture(project: Project, rels: string[] | 'scan', by: Attribution): Captured[] {
+    return this.captureFiles(project, rels, by)
+  }
+
+  /** The app streams larger files to avoid large synchronous reads on the main thread. */
+  captureAvailable(project: Project, rels: string[] | 'scan', by: () => Attribution): Captured[] | Promise<Captured[]> {
+    const large: Candidate[] = []
+    const found = this.captureFiles(project, rels, by(), large)
+    if (!large.length) return found
+    return this.captureLarge(project, large, by).then((rest) => [...found, ...rest])
+  }
+
+  private same(a: Fingerprint | undefined, b: Fingerprint): boolean {
+    return a?.size === b.size && a.mtime === b.mtime && a.ctime === b.ctime
+  }
+
+  private fingerprint(abs: string): Fingerprint | undefined {
+    const stat = statSync(abs)
+    return stat.isFile() ? { size: stat.size, mtime: stat.mtimeMs, ctime: stat.ctimeMs } : undefined
+  }
+
+  private captureFiles(project: Project, rels: string[] | 'scan', by: Attribution, large?: Candidate[]): Captured[] {
     const idx = this.index(project.id)
     const scan = rels === 'scan'
     const paths = scan ? this.walk(project.path) : [...new Set(rels)].filter((r) => artifactKind(r))
     const found: Captured[] = []
-    const now = Date.now()
+    const undo: (() => void)[] = []
     for (const rel of paths) {
-      let abs: string
-      let st
       try {
-        abs = safeJoin(project.path, rel)
-        st = statSync(abs)
-      } catch {
-        continue
-      }
-      if (!st.isFile()) continue
-      const prev = idx.seen[rel]
-      let artifact = idx.artifacts.find((a) => a.rel === rel)
-      if (artifact?.missing) artifact.missing = false
-      // A tool call that named the file is checked even when size and mtime look unchanged.
-      if (scan && prev && prev.size === st.size && prev.mtime === st.mtimeMs && artifact) continue
-      idx.seen[rel] = { size: st.size, mtime: st.mtimeMs }
-      if (st.size > 200_000_000) continue
-      let bytes: Buffer
-      try {
-        bytes = readFileSync(abs)
-      } catch {
-        continue
-      }
-      const sha256 = createHash('sha256').update(bytes).digest('hex')
-      const latest = artifact?.versions[artifact.versions.length - 1]
-      if (latest?.sha256 === sha256) continue
-      const stored = bytes.length <= STORE_LIMIT
-      if (stored) {
-        const blob = this.blobPath(project.id, sha256)
-        if (!existsSync(blob)) {
-          mkdirSync(dirname(blob), { recursive: true })
-          writeFileSync(blob, bytes)
+        const abs = safeJoin(project.path, rel)
+        const stat = this.fingerprint(abs)
+        if (!stat || stat.size > MAX_HASH_SIZE) continue
+        if (scan && this.same(idx.seen[rel], stat) && !idx.byPath.get(rel)?.missing) continue
+        const candidate = { rel, abs, stat }
+        if (large && stat.size > STREAM_THRESHOLD) {
+          large.push(candidate)
+          continue
         }
+        const bytes = readFileSync(abs)
+        if (bytes.length !== stat.size || !this.same(this.fingerprint(abs), stat)) continue
+        const sha256 = createHash('sha256').update(bytes).digest('hex')
+        this.commit(project.id, candidate, sha256, bytes.length <= STORE_LIMIT ? bytes : undefined, by, found, undo)
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code
+        if (code !== 'ENOENT' && code !== 'ENOTDIR') console.warn('could not capture artifact', rel, error)
       }
-      if (!artifact) {
-        artifact = { id: randomUUID(), rel, kind: artifactKind(rel)!, createdAt: now, updatedAt: now, versions: [] }
-        idx.artifacts.push(artifact)
-      }
-      const version: ArtifactVersion = {
-        v: (latest?.v ?? 0) + 1,
-        sha256,
-        size: bytes.length,
-        createdAt: now,
-        origin: by.origin,
-        sessionId: by.sessionId,
-        turnSeq: by.turnSeq,
-        callId: by.callId,
-        tool: by.tool,
-        stored,
-        restoredFrom: by.restoredFrom
-      }
-      artifact.versions.push(version)
-      artifact.updatedAt = now
-      found.push({ artifact, version })
     }
     if (scan) {
       const present = new Set(paths)
-      for (const a of idx.artifacts) {
-        if (present.has(a.rel)) continue
-        // A bounded scan may skip deep, inaccessible or excluded folders. Only an explicit
-        // missing-path error confirms deletion; permissions and transient I/O failures do not.
+      for (const artifact of idx.artifacts) {
+        if (present.has(artifact.rel)) continue
         try {
-          a.missing = !statSync(safeJoin(project.path, a.rel)).isFile()
+          this.markMissing(artifact, !statSync(safeJoin(project.path, artifact.rel)).isFile(), undo)
         } catch (error) {
           const code = (error as NodeJS.ErrnoException).code
-          if (code === 'ENOENT' || code === 'ENOTDIR') a.missing = true
+          if (code === 'ENOENT' || code === 'ENOTDIR') this.markMissing(artifact, true, undo)
         }
       }
     }
-    if (found.length || scan) this.save(project.id)
+    this.persist(project.id, undo)
     return found
+  }
+
+  private async captureLarge(project: Project, files: Candidate[], by: () => Attribution): Promise<Captured[]> {
+    const found: Captured[] = []
+    for (const file of files) {
+      const { abs, stat, rel } = file
+      try {
+        const hash = createHash('sha256')
+        const chunks: Buffer[] = []
+        let size = 0
+        if (safeJoin(project.path, rel) !== abs) continue
+        for await (const chunk of createReadStream(abs)) {
+          size += chunk.length
+          if (size > MAX_HASH_SIZE) break
+          hash.update(chunk)
+          if (stat.size <= STORE_LIMIT) chunks.push(chunk)
+        }
+        if (size !== stat.size || !this.same(this.fingerprint(safeJoin(project.path, rel)), stat)) continue
+        const undo: (() => void)[] = []
+        this.commit(project.id, file, hash.digest('hex'), chunks.length ? Buffer.concat(chunks) : undefined, by(), found, undo)
+        this.persist(project.id, undo)
+      } catch (error) {
+        console.warn('could not capture large artifact', rel, error)
+      }
+    }
+    return found
+  }
+
+  private markMissing(artifact: Artifact, missing: boolean, undo: (() => void)[]): void {
+    const previous = artifact.missing
+    if (previous === missing) return
+    artifact.missing = missing
+    undo.push(() => { artifact.missing = previous })
+  }
+
+  private commit(
+    projectId: string, { rel, stat }: Candidate, sha256: string, bytes: Buffer | undefined, by: Attribution,
+    found: Captured[], undo: (() => void)[]
+  ): void {
+    const idx = this.index(projectId)
+    const existing = idx.byPath.get(rel)
+    const latest = existing?.versions.at(-1)
+    const previous = idx.seen[rel]
+    if (latest?.sha256 !== sha256 && bytes) {
+      const blob = this.blobPath(projectId, sha256)
+      if (!existsSync(blob)) {
+        mkdirSync(dirname(blob), { recursive: true })
+        writeAtomic(blob, bytes)
+      }
+    }
+    if (!this.same(previous, stat)) {
+      idx.seen[rel] = stat
+      undo.push(() => {
+        if (previous) idx.seen[rel] = previous
+        else delete idx.seen[rel]
+      })
+    }
+
+    const now = Date.now()
+    const artifact = existing ?? { id: randomUUID(), rel, kind: artifactKind(rel)!, createdAt: now, updatedAt: now, versions: [] }
+    this.markMissing(artifact, false, undo)
+    if (latest?.sha256 === sha256) return
+    if (!existing) {
+      idx.artifacts.push(artifact)
+      idx.byPath.set(rel, artifact)
+      undo.push(() => { idx.artifacts.pop(); idx.byPath.delete(rel) })
+    }
+    const version: ArtifactVersion = {
+      ...by, v: (latest?.v ?? 0) + 1, sha256, size: stat.size, createdAt: now, stored: bytes !== undefined
+    }
+    const previousUpdate = artifact.updatedAt
+    artifact.versions.push(version)
+    artifact.updatedAt = now
+    found.push({ artifact, version })
+    undo.push(() => { artifact.versions.pop(); artifact.updatedAt = previousUpdate; found.pop() })
+  }
+
+  private persist(projectId: string, undo: (() => void)[]): void {
+    if (!undo.length) return
+    try {
+      this.save(projectId)
+    } catch (error) {
+      undo.reverse().forEach((rollback) => rollback())
+      console.warn('could not save artifact index', error)
+    }
   }
 
   /** Write an earlier version back to disk as a new version, so history only grows. */
@@ -230,7 +306,7 @@ export class ArtifactStore {
     // The bytes replace the file itself, never whatever a link there points to.
     if (lstatSync(abs, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`${artifact.rel} is a symbolic link; restore it by hand.`)
     mkdirSync(dirname(abs), { recursive: true })
-    writeFileSync(abs, bytes)
+    writeAtomic(abs, bytes)
     return this.capture(project, [artifact.rel], { origin: 'user', restoredFrom: v })[0] ?? null
   }
 }

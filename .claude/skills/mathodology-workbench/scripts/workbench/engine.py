@@ -1,9 +1,11 @@
 """Run every check over a workspace and summarise each stage."""
 from __future__ import annotations
 
+from functools import lru_cache
+
 from . import assets, brief, contest, figures, latex, numbers, results, runs, stubs
 from .report import Issue, build, stage_state
-from .workspace import Workspace, read_text, write_json
+from .workspace import Workspace, parse_python, read_text, write_json
 
 
 def guarded(stage: str, name: str, fn, *args, default=None):
@@ -20,6 +22,7 @@ def guarded(stage: str, name: str, fn, *args, default=None):
 
 def status(ws: Workspace, compile: bool = False, sync: bool = False, save: bool = True) -> dict:
     issues: list[Issue] = []
+    parse_script = lru_cache(maxsize=None)(parse_python)
 
     def run(stage, name, fn, *args, default=None):
         value, notes = guarded(stage, name, fn, *args, default=default)
@@ -37,12 +40,12 @@ def status(ws: Workspace, compile: bool = False, sync: bool = False, save: bool 
     issues += brief_issues
     run_issues, run_summary = run('experiment', 'runs', runs.check, ws, sorted(rs.files), default=([], {'runs': 0, 'failed': 0}))
     issues += run_issues
-    add('experiment', 'stubs', stubs.check, ws)
+    add('experiment', 'stubs', stubs.check, ws, parse_script)
 
     if sync and rs.valid and latex.find_main(ws)[1] == 'tex':
         run('paper', 'sync', results.sync, ws, rs)  # macros and tables first, so the checks below see current files
     paper = run('paper', 'latex', latex.load, ws, default=latex.Paper())
-    static, used = run('paper', 'latex', latex.static_checks, ws, paper, set(rs.values), default=([], set()))
+    static, used = run('paper', 'latex', latex.static_checks, ws, paper, rs.values, default=([], set()))
     issues += static
     num = run('paper', 'numbers', numbers.check, paper, rs, float(ws.config.get('near_miss_rel', 0.02)), default=numbers.NumberReport([]))
     issues += num.issues
@@ -54,7 +57,7 @@ def status(ws: Workspace, compile: bool = False, sync: bool = False, save: bool 
     add('paper', 'freshness', pdf_freshness, ws, paper, rs, used)
     add('paper', 'contest', contest.check, ws, paper)  # after compiling, so page counts are current
 
-    fig_issues, fig_summary = run('figures', 'figures', figures.check, ws, used, paper.main is not None,
+    fig_issues, fig_summary = run('figures', 'figures', figures.check, ws, used, paper.main is not None, parse_script,
                                   default=([], {'figures': 0, 'traced': 0}))
     issues += fig_issues
     add('figures', 'assets', assets.check, ws, paper, lambda name: latex.resolve_graphic(paper, name))
@@ -86,17 +89,17 @@ def status(ws: Workspace, compile: bool = False, sync: bool = False, save: bool 
 
 
 def macro_checks(ws: Workspace, paper: latex.Paper, rs: results.ResultSet) -> list[Issue]:
-    if paper.kind != 'tex' or not paper.main:
+    if paper.kind != 'tex' or not paper.main or not rs.valid:
         return []
     out = []
     tables = results.table_texts(rs)
-    stale = [p for p in paper.generated if read_text(p) != tables.get(p.name)]
+    target = results.macro_path(ws)
+    stale = [p for p in paper.generated if p != target.resolve() and read_text(p) != tables.get(p.name)]
     if stale:
         out.append(Issue('warning', 'paper', 'numbers.tables-stale', f'{len(stale)} generated table(s) differ from results/*.json: '
                          + ', '.join(ws.rel(p) for p in stale[:4]), ws.rel(stale[0]), hint='run `mtd.py sync`'))
     if not any(latex.RES.search(l.text) for l in paper.lines):
         return out
-    target = results.macro_path(ws)
     rel = ws.rel(target)
     if not target.exists():
         out.append(Issue('error', 'paper', 'numbers.macros-missing', f'the paper uses \\res but {rel} does not exist', rel, hint='run `mtd.py sync`'))
@@ -116,8 +119,9 @@ def pdf_freshness(ws: Workspace, paper: latex.Paper, rs: results.ResultSet, used
     pdf = paper.main.with_suffix('.pdf')
     if not pdf.exists():
         return []
-    inputs = list(paper.files) + [ws.root / rel for rel in rs.files] + list(used)
-    newer = [p for p in inputs if p.exists() and p.stat().st_mtime > pdf.stat().st_mtime + 1]
+    inputs = paper.dependencies + [ws.root / rel for rel in rs.files] + sorted(used)
+    pdf_mtime = pdf.stat().st_mtime
+    newer = [p for p in inputs if p.exists() and p.stat().st_mtime > pdf_mtime + 1]
     if not newer:
         return []
     names = ', '.join(ws.rel(p) for p in newer[:3])
@@ -131,6 +135,6 @@ def file_checks(ws: Workspace, rel: str) -> list[Issue]:
     paper = latex.load(ws)
     if not any(l.file == rel for l in paper.lines):
         return []
-    static, _ = latex.static_checks(ws, paper, set(rs.values), only=rel)
+    static, _ = latex.static_checks(ws, paper, rs.values, only=rel)
     num = numbers.check(paper, rs, float(ws.config.get('near_miss_rel', 0.02)), only=rel)
     return [i for i in static + num.issues if i.severity in ('error', 'warning')]

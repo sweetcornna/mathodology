@@ -277,7 +277,6 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
       let closed = false
       let prompting = false
       let failure: string | null = null
-      const stopTimers: ReturnType<typeof setTimeout>[] = []
 
       const reply = (rpcId: unknown, result: Json): void => send({ jsonrpc: '2.0', id: rpcId, result })
       const answer = (rpcId: unknown, options: AcpPermissionOption[], allow: boolean, always?: boolean): void => {
@@ -341,13 +340,13 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
         } else w.resolve((msg.result ?? {}) as Json)
       }
 
-      const { child, exited, kill, beginStop } = spawnLines(req.binary, [...spec.acpArgs, ...splitArgs(req.settings.extraArgs)], req.cwd, req.env, onLine)
+      const { child, started: admitted, exited, kill, beginStop, after, finish: closeInput, stop } = spawnLines(req.binary, [...spec.acpArgs, ...splitArgs(req.settings.extraArgs)], req.cwd, req.env, onLine)
       const send = (obj: Json): void => {
         if (!child.stdin.destroyed && child.stdin.writable) child.stdin.write(JSON.stringify(obj) + '\n')
       }
       const call = (method: string, params: Json): Promise<Json> =>
         new Promise((resolve, reject) => {
-          if (interrupted || closed) {
+          if (interrupted || closed || finished) {
             reject(new Error(interrupted ? 'interrupted' : 'exited'))
             return
           }
@@ -361,9 +360,7 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
         finished = true
         parser.close()
         sink.emit(body)
-        child.stdin.end()
-        stopTimers.push(setTimeout(() => kill('SIGTERM'), 3000))
-        stopTimers.push(setTimeout(() => kill('SIGKILL'), 7000))
+        closeInput()
       }
 
       const run = async (): Promise<void> => {
@@ -372,7 +369,7 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
           clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
           clientInfo: { name: 'mathodology-studio', title: 'Mathodology Studio', version: '0.1.0' }
         })
-        if (interrupted || closed) return
+        if (interrupted || closed || finished) return
         const caps = (init.agentCapabilities ?? {}) as Json
         const mcp = (caps.mcpCapabilities ?? {}) as Json
         const sessionCaps = (caps.sessionCapabilities ?? {}) as Json
@@ -399,7 +396,7 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
           } finally {
             parser.muted = false
           }
-          if (interrupted || closed) return
+          if (interrupted || closed || finished) return
           if (!resumed) {
             sink.emit({
               kind: 'notice',
@@ -413,7 +410,7 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
           session = await call('session/new', base)
           sessionId = String(session.sessionId ?? '')
         }
-        if (interrupted || closed) return
+        if (interrupted || closed || finished) return
         if (sessionId) sink.nativeSession(sessionId)
         const offered = modelsFrom(session)
         if (offered.length) learnedModels.set(id, offered)
@@ -436,7 +433,7 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
         }
         const effortOption = configOption(session, 'thought_level')
         if (req.effort && effortOption) await call('session/set_config_option', { sessionId, configId: effortOption.id, value: req.effort }).catch(() => undefined)
-        if (interrupted || closed) return
+        if (interrupted || closed || finished) return
 
         const current = (session.models ?? {}) as Json
         sink.emit({
@@ -450,6 +447,7 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
         // ACP has no system prompt; Studio's note leads the first message of a conversation.
         const text = req.systemAppend && !resumed ? `${req.systemAppend}\n\n---\n\n${req.prompt}` : req.prompt
         const started = Date.now()
+        cancelStartup()
         prompting = true
         const result = await call('session/prompt', { sessionId, prompt: [{ type: 'text', text }] })
         const stop = interrupted ? 'cancelled' : String(result.stopReason ?? 'end_turn')
@@ -471,6 +469,11 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
         })
       }
 
+      const cancelStartup = after(30_000, () => {
+        failure = `${name} startup timed out`
+        sink.emit({ kind: 'notice', level: 'error', text: failure })
+        finish({ kind: 'turn.completed', ok: false })
+      })
       run().catch((err: RpcError) => {
         if (finished) return
         failure = err.message
@@ -491,7 +494,6 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
 
       const done = exited.then(({ code, signal, stderr }) => {
         closed = true
-        for (const timer of stopTimers) clearTimeout(timer)
         for (const requestId of pending.keys()) sink.emit({ kind: 'permission.resolved', requestId, allow: false })
         pending.clear()
         for (const w of waiting.values()) w.reject(new Error('exited'))
@@ -527,11 +529,8 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
             child.stdin.end()
             kill('SIGTERM')
           }
-          stopTimers.push(setTimeout(() => {
-            if (!child.stdin.destroyed) child.stdin.end()
-            kill('SIGTERM')
-          }, 5000))
-          stopTimers.push(setTimeout(() => kill('SIGKILL'), 9000))
+          cancelStartup()
+          stop()
         },
         respondPermission(requestId, allow, always) {
           const p = pending.get(requestId)
@@ -540,6 +539,7 @@ export function acpAdapter(spec: { id: string; name: string; bins: string[]; acp
           answer(p.rpcId, p.options, allow, always)
           sink.emit({ kind: 'permission.resolved', requestId, allow, always })
         },
+        admitted,
         done
       }
     }

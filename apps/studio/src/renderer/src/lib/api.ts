@@ -3,7 +3,7 @@ import type { StudioApi } from '@shared/ipc'
 export const api: StudioApi = window.studio
 export const isMac = api.platform === 'darwin'
 export const mod = isMac ? '⌘' : 'Ctrl+'
-export const isWindows = api.platform === 'win32'
+const isWindows = api.platform === 'win32'
 /** The separator for paths shown to the user. */
 export const sep = isWindows ? '\\' : '/'
 

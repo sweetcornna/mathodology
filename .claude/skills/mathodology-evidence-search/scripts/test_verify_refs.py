@@ -157,6 +157,13 @@ class NormalizeTests(unittest.TestCase):
 
 
 class ExtractionTests(unittest.TestCase):
+    def test_arxiv_requires_a_complete_id(self):
+        text = ('arXiv:2301.1234567 arXiv:2301.123456v1 arXiv:hep-th/99010012\n'
+                'https://arxiv.org/pdf/2301.12345v2.pdf and arXiv:hep-th/9901001v3\n'
+                'arXiv:0704.0001.')
+        self.assertEqual(vr.extract_ids(text), [('arxiv', '2301.12345', 2), ('arxiv', 'hep-th/9901001', 2),
+                                                ('arxiv', '0704.0001', 3)])
+
     def test_markdown_dois_and_arxiv(self):
         text = ('See [Kermack](https://doi.org/10.1098/rspa.1927.0118).\n'
                 'Also doi:10.1000/XYZ.123, and (10.1016/S0140-6736(97)11096-0).\n'
@@ -197,6 +204,12 @@ class ExtractionTests(unittest.TestCase):
 
 
 class BibParserTests(unittest.TestCase):
+    def test_line_numbers_after_skipped_and_broken_entries(self):
+        text = '\n@comment{skipped\nentry}\n\n@article{missing-comma title={x}}\n\n@article(kept, title={y})'
+        entries, errors = vr.parse_bib(text)
+        self.assertEqual([(e['key'], e['line']) for e in entries], [('kept', 7)])
+        self.assertEqual([e['line'] for e in errors], [5])
+
     BIB = r'''
 @string{ proc = "Proc. R. Soc." }
 @comment{ ignored {nested} }
@@ -337,10 +350,14 @@ class ResolverTests(unittest.TestCase):
         self.assertIn('could not be read (Crossref answered HTTP 503)', messages(item))
         self.assertEqual(len(net.urls()), 4)  # Crossref tried three times (backoff), then doi.org/ra
 
-    def test_agency_without_metadata_still_resolves(self):
+    def test_doi_without_registry_metadata_is_inconclusive(self):
         routes = [CROSSREF_404, (RA, agency('mEDRA')), (CSL, (406, b''))]
-        item = checker(routes)[0].check_text('p.md', 'doi:10.3280/ecag2020-001001')[0]
-        self.assertEqual((item['state'], item['registry'], item['verdict']), ('resolves', 'medra', 'ok'))
+        doi = '10.3280/ecag2020-001001'
+        check = checker(routes)[0]
+        for item in (check.check_text('p.md', f'doi:{doi}')[0], check.check_arg(doi, doi, None)):
+            self.assertEqual((item['state'], item['registry'], item['metadata'], item['verdict']),
+                             ('resolves', 'medra', None, 'inconclusive'))
+            self.assertIn('gave no metadata', messages(item))
 
     def test_does_not_exist_is_not_found_and_fails(self):
         check, net, _ = checker([CROSSREF_404, (RA, ra_status('DOI does not exist'))])

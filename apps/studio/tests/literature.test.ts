@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -86,6 +86,17 @@ describe('BibTeX', () => {
     const other = addToBibliography(dir, 'paper/references.bib', 'melikechi2021limits', '@misc{melikechi2021limits,\n  title = {Other},\n}', { ...paper, url: 'https://example.org/q' })
     expect(other).toEqual({ key: 'melikechi2021limitsa', added: true })
     expect(readFileSync(join(dir, 'paper/references.bib'), 'utf8').match(/^@/gm)).toHaveLength(2)
+  })
+
+  it.skipIf(process.platform === 'win32')('refuses a symlinked bibliography parent', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'studio-lit-'))
+    const outside = mkdtempSync(join(tmpdir(), 'studio-lit-'))
+    dirs.push(dir, outside)
+    const target = join(outside, 'references.bib')
+    writeFileSync(target, '@misc{other,title={Keep}}\n')
+    symlinkSync(outside, join(dir, 'paper'), 'dir')
+    expect(() => addToBibliography(dir, 'paper/references.bib', 'new', '@misc{new,title={New}}', paper)).toThrow()
+    expect(readFileSync(target, 'utf8')).toBe('@misc{other,title={Keep}}\n')
   })
 
   const CROSSREF = {

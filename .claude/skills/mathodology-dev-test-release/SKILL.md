@@ -14,7 +14,8 @@ From a repository checkout, run:
 python3 .claude/skills/mathodology-dev-test-release/scripts/validate_repo.py all
 ```
 
-The standard-library checker covers skill/role metadata, local Markdown links,
+The checker requires Python 3.11 or newer. It covers skill metadata, Claude/Codex
+role parity, local Markdown links,
 known skill references and allowed repository paths (skills, roles, workflows,
 docs, `apps/studio/` and Studio's Windows workflow). Individual commands are
 `metadata`, `links`, `boundary` and `selftest`. It supports a source export without

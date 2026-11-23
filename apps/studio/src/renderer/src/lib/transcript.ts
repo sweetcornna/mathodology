@@ -234,6 +234,192 @@ export function buildTranscript(events: SessionEvent[]): Transcript {
   return { items, todos, pending, runningTool }
 }
 
+const EMPTY_TRANSCRIPT: Transcript = { items: [], todos: [], pending: [] }
+const byEventsRef = new WeakMap<SessionEvent[], Transcript>()
+const bySessionId = new Map<string, Transcript>()
+
+function strArrEq(a: string[], b: string[]): boolean {
+  return a === b || (a.length === b.length && a.every((v, i) => v === b[i]))
+}
+
+function recordStrArrEq(a?: Record<string, string[]>, b?: Record<string, string[]>): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  const keys = Object.keys(a)
+  return keys.length === Object.keys(b).length && keys.every((k) => b[k] !== undefined && strArrEq(a[k], b[k]))
+}
+
+function permEqual(a: PermissionItem, b: PermissionItem): boolean {
+  if (a === b) return true
+  if (a.requestId !== b.requestId || a.toolName !== b.toolName || a.title !== b.title || a.input !== b.input) return false
+  if (a.resolved === b.resolved) return true
+  if (!a.resolved || !b.resolved) return false
+  return (
+    a.resolved.allow === b.resolved.allow &&
+    a.resolved.always === b.resolved.always &&
+    recordStrArrEq(a.resolved.answers, b.resolved.answers)
+  )
+}
+
+function stabilizeNode(prev: ToolNode | undefined, next: ToolNode, stabilizedNodes: Map<string, ToolNode>): ToolNode {
+  if (!prev || prev.callId !== next.callId || prev.name !== next.name || prev.toolKind !== next.toolKind || prev.title !== next.title || prev.input !== next.input || prev.changes !== next.changes) {
+    const out = next.children.length
+      ? { ...next, children: next.children.map((c) => stabilizeNode(undefined, c, stabilizedNodes)) }
+      : next
+    stabilizedNodes.set(out.callId, out)
+    return out
+  }
+  const sameResult =
+    prev.result === next.result ||
+    (Boolean(prev.result && next.result) && prev.result!.isError === next.result!.isError && prev.result!.output === next.result!.output)
+  const sameNotes = strArrEq(prev.notes, next.notes)
+  let childrenSame = prev.children.length === next.children.length
+  const children = next.children.map((c, idx) => {
+    const sc = stabilizeNode(prev.children[idx], c, stabilizedNodes)
+    if (sc !== prev.children[idx]) childrenSame = false
+    return sc
+  })
+  if (sameResult && prev.stopped === next.stopped && sameNotes && childrenSame) {
+    stabilizedNodes.set(prev.callId, prev)
+    return prev
+  }
+  const out: ToolNode = {
+    ...next,
+    result: sameResult ? prev.result : next.result,
+    notes: sameNotes ? prev.notes : next.notes,
+    children: childrenSame ? prev.children : children
+  }
+  stabilizedNodes.set(out.callId, out)
+  return out
+}
+
+function fileStatsEq(a: FileStat[], b: FileStat[]): boolean {
+  return (
+    a === b ||
+    (a.length === b.length &&
+      a.every((x, i) => x.path === b[i].path && x.added === b[i].added && x.removed === b[i].removed && x.created === b[i].created))
+  )
+}
+
+function generatedEq(a: GeneratedFile[], b: GeneratedFile[]): boolean {
+  return (
+    a === b ||
+    (a.length === b.length &&
+      a.every(
+        (x, i) =>
+          x.artifactId === b[i].artifactId &&
+          x.rel === b[i].rel &&
+          x.v === b[i].v &&
+          x.kind === b[i].kind &&
+          x.origin === b[i].origin &&
+          x.added === b[i].added &&
+          x.removed === b[i].removed
+      ))
+  )
+}
+
+function stabilizeItem(prev: Item | undefined, next: Item, stabilizedNodes: Map<string, ToolNode>): Item {
+  if (!prev || prev.type !== next.type || prev.key !== next.key) {
+    if (next.type === 'tools') {
+      return { ...next, tools: next.tools.map((t) => stabilizeNode(undefined, t, stabilizedNodes)) }
+    }
+    return next
+  }
+  switch (next.type) {
+    case 'user': {
+      const p = prev as typeof next
+      return p.text === next.text && p.ts === next.ts && strArrEq(p.attachments, next.attachments) ? p : next
+    }
+    case 'text':
+    case 'thinking': {
+      const p = prev as typeof next
+      return p.text === next.text ? p : next
+    }
+    case 'notice': {
+      const p = prev as typeof next
+      return p.level === next.level && p.text === next.text && p.code === next.code && p.vars === next.vars ? p : next
+    }
+    case 'turn': {
+      const p = prev as typeof next
+      return p.ok === next.ok && p.durationMs === next.durationMs && p.summary === next.summary && p.usage === next.usage ? p : next
+    }
+    case 'changes': {
+      const p = prev as typeof next
+      return fileStatsEq(p.files, next.files) ? p : next
+    }
+    case 'generated': {
+      const p = prev as typeof next
+      return generatedEq(p.files, next.files) ? p : next
+    }
+    case 'permission': {
+      const p = prev as typeof next
+      return permEqual(p.perm, next.perm) ? p : next
+    }
+    case 'tools': {
+      const p = prev as typeof next
+      let same = p.tools.length === next.tools.length
+      const tools = next.tools.map((t, idx) => {
+        const st = stabilizeNode(p.tools[idx], t, stabilizedNodes)
+        if (st !== p.tools[idx]) same = false
+        return st
+      })
+      return same ? p : { ...next, tools }
+    }
+  }
+}
+
+function stabilizeTranscript(prev: Transcript | undefined, next: Transcript): Transcript {
+  if (!prev) return next
+  const prevByKey = new Map(prev.items.map((item) => [item.key, item]))
+  const stabilizedNodes = new Map<string, ToolNode>()
+  let itemsSame = prev.items.length === next.items.length
+  const items = next.items.map((item, i) => {
+    const out = stabilizeItem(prevByKey.get(item.key), item, stabilizedNodes)
+    if (out !== prev.items[i]) itemsSame = false
+    return out
+  })
+  const todosSame =
+    prev.todos === next.todos ||
+    (prev.todos.length === next.todos.length &&
+      prev.todos.every((x, i) => x.content === next.todos[i].content && x.status === next.todos[i].status))
+  const todos = todosSame ? prev.todos : next.todos
+  const pendingSame =
+    prev.pending === next.pending ||
+    (prev.pending.length === next.pending.length && prev.pending.every((x, i) => permEqual(x, next.pending[i])))
+  const pending = pendingSame ? prev.pending : next.pending
+  const runningTool = next.runningTool ? (stabilizedNodes.get(next.runningTool.callId) ?? next.runningTool) : undefined
+  if (itemsSame && todosSame && pendingSame && runningTool === prev.runningTool) return prev
+  return {
+    items: itemsSame ? prev.items : items,
+    todos,
+    pending,
+    runningTool
+  }
+}
+
+/**
+ * Shared memoized transcript projection across Transcript, Composer Dock, and Tasks tab.
+ * Reuses the exact Transcript object for identical event arrays and preserves completed Item
+ * and ToolNode object identities across appends so React.memo skips historical rows.
+ */
+export function projectTranscript(events: SessionEvent[], sessionId?: string): Transcript {
+  if (events.length === 0) return EMPTY_TRANSCRIPT
+  const cached = byEventsRef.get(events)
+  if (cached) return cached
+  const sid = sessionId ?? events[0]?.sessionId
+  const prev = sid ? bySessionId.get(sid) : undefined
+  const built = buildTranscript(events)
+  const projected = stabilizeTranscript(prev, built)
+  byEventsRef.set(events, projected)
+  if (sid) bySessionId.set(sid, projected)
+  return projected
+}
+
+/** Clear cached projection state when a session is deleted. */
+export function evictTranscript(sessionId: string): void {
+  bySessionId.delete(sessionId)
+}
+
 export function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`

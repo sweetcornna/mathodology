@@ -38,6 +38,13 @@ def _scalar(value, what='model'):
     return value
 
 
+def _vector(value, length, what):
+    value = np.asarray(value, dtype=float)
+    if value.shape != (length,):
+        raise ValueError(f'{what} must return shape ({length},), got {value.shape}.')
+    return value
+
+
 # E01 -> F21: vary one input at a time between its bounds, others at the baseline.
 def oat_sweep(model, base, bounds, *, n_points=11):
     base = np.asarray(base, dtype=float)
@@ -101,7 +108,7 @@ def sobol_indices(model, bounds=None, *, dists=None, n=4096, seed=0, n_boot=500,
     else:
         to_inputs = lambda u: np.column_stack([d.ppf(u[:, i]) for i, d in enumerate(dists)])
         p = len(dists)
-    run = (lambda X: np.asarray(model(X.T), dtype=float).ravel()) if vectorized else \
+    run = (lambda X: _vector(model(X.T), len(X), 'vectorized model')) if vectorized else \
         (lambda X: np.array([_scalar(model(x)) for x in X]))
     u = rng.random((n, 2 * p))
     A, B = to_inputs(u[:, :p]), to_inputs(u[:, p:])
@@ -130,10 +137,10 @@ def sobol_indices(model, bounds=None, *, dists=None, n=4096, seed=0, n_boot=500,
 def monte_carlo(model, sample_inputs, *, n=10000, seed=0, quantiles=(.05, .5, .95), vectorized=False):
     rng = np.random.default_rng(seed)
     inputs = np.asarray(sample_inputs(rng, n), dtype=float)
-    if inputs.shape[0] != n:
+    if inputs.ndim == 0 or inputs.shape[0] != n:
         raise ValueError('sample_inputs(rng, n) must return n rows of inputs.')
     if vectorized:
-        outputs = np.asarray(model(inputs), dtype=float).ravel()
+        outputs = _vector(model(inputs), n, 'vectorized model')
     else:
         outputs = np.array([_scalar(model(x)) for x in inputs])
     if not np.isfinite(outputs).all():
@@ -186,7 +193,7 @@ def rolling_origin(fit_predict, y, *, initial, horizon, step=1, X=None, future_X
     for k, t in enumerate(origins):
         past_X = None if X is None else X[:t]
         future_X = X[t:t + horizon] if X is not None and future_X_known else None
-        forecasts[k] = np.asarray(fit_predict(y[:t], past_X, future_X, horizon), dtype=float)
+        forecasts[k] = _vector(fit_predict(y[:t], past_X, future_X, horizon), horizon, 'fit_predict')
     actual = np.array([y[t:t + horizon] for t in origins])
     errors = forecasts - actual
     return {'origins': origins, 'forecasts': forecasts, 'actual': actual, 'errors': errors,
@@ -278,7 +285,7 @@ def ice_curves(predict, X, feature, *, grid=None, n_grid=25, max_rows=500, seed=
     for k, value in enumerate(grid):
         changed = sample.copy()
         changed[:, feature] = value
-        ice[:, k] = np.asarray(predict(changed), dtype=float).ravel()
+        ice[:, k] = _vector(predict(changed), len(sample), 'predict')
     return {'grid': np.asarray(grid, float), 'ice': ice, 'observed': observed}
 
 
@@ -346,11 +353,13 @@ def rank_stability(overall_score, weights, *, n=2000, concentration=200, seed=0)
         return first, tied, first + (tied + 1) / 2
 
     base = np.asarray(overall_score(weights), dtype=float)
+    if base.ndim != 1 or not base.size:
+        raise ValueError('overall_score must return a one-dimensional score per alternative.')
     counts = np.zeros((len(base), len(base)))
     draws = rng.dirichlet(concentration * weights, n)
     ranks = np.empty((n, len(base)))
     for d, w in enumerate(draws):
-        first, tied, ranks[d] = mid_ranks(overall_score(w))
+        first, tied, ranks[d] = mid_ranks(_vector(overall_score(w), len(base), 'overall_score'))
         for i in range(len(base)):  # split tied positions evenly instead of by index
             counts[i, first[i]:first[i] + tied[i]] += 1 / tied[i]
     # inverted_cdf keeps the bounds at ranks that actually occurred in the draws
@@ -372,7 +381,7 @@ def synthetic_recovery(simulate, fit, theta_true, noise_levels, seeds):
     for i, noise in enumerate(noise_levels):
         for j, seed in enumerate(seeds):
             data = simulate(theta_true, noise, np.random.default_rng(seed))
-            estimates[i, j] = np.asarray(fit(data), dtype=float)
+            estimates[i, j] = _vector(fit(data), len(theta_true), 'fit')
     scale = np.where(theta_true != 0, np.abs(theta_true), 1)  # absolute error for zero parameters
     error = (estimates - theta_true) / scale
     return {'estimates': estimates, 'relative_error': error,

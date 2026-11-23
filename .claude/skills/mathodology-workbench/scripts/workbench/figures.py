@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .report import Issue
-from .workspace import Workspace, read_text
+from .workspace import Workspace, parse_python
 
 IMAGE = ('.png', '.pdf', '.svg', '.jpg', '.jpeg', '.eps', '.tif', '.tiff')
 DATA = ('.json', '.csv', '.tsv', '.xlsx', '.xls', '.npy', '.npz', '.parquet', '.mat', '.txt', '.pkl', '.h5')
@@ -48,7 +48,7 @@ def _resolve(ws: Workspace, script: Path, literal: str, pool: dict[str, list[Pat
     return pool.get(name, [])
 
 
-def scan(ws: Workspace) -> list[Script]:
+def scan(ws: Workspace, parse_script=parse_python) -> list[Script]:
     images = ws.files('figures', IMAGE) + ws.files('paper', IMAGE) + ws.files('results', IMAGE)
     data = ws.files('results', DATA) + ws.files('problem', DATA) + ws.files('code', DATA)
     image_pool: dict[str, list[Path]] = {}
@@ -59,9 +59,8 @@ def scan(ws: Workspace) -> list[Script]:
         data_pool.setdefault(p.name, []).append(p.resolve())
     scripts = []
     for path in ws.files('figures', ('.py',)) + ws.files('code', ('.py',)):
-        try:
-            tree = ast.parse(read_text(path))
-        except (SyntaxError, ValueError):
+        tree = parse_script(path)
+        if isinstance(tree, (SyntaxError, ValueError)):
             continue
         script = Script(path.resolve())
         for literal in _literals(tree):
@@ -75,9 +74,9 @@ def scan(ws: Workspace) -> list[Script]:
     return scripts
 
 
-def check(ws: Workspace, used: set[Path], paper_present: bool) -> tuple[list[Issue], dict]:
+def check(ws: Workspace, used: set[Path], paper_present: bool, parse_script=parse_python) -> tuple[list[Issue], dict]:
     issues: list[Issue] = []
-    scripts = scan(ws)
+    scripts = scan(ws, parse_script)
     produced: dict[Path, Script] = {}
     for s in scripts:
         for out in s.outputs:

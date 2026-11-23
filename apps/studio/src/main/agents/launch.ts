@@ -1,6 +1,9 @@
-import { execFile, spawnSync, type ChildProcess, type ExecFileException, type ExecFileOptions } from 'node:child_process'
+import { spawn, type ChildProcess, type ExecFileException } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, extname, join } from 'node:path'
+import { supervise } from './supervisor'
+
+export { killTree } from './supervisor'
 
 /** How to start a CLI: the program, its arguments and whether they are already quoted for cmd.exe. */
 export interface Launch {
@@ -53,35 +56,43 @@ export function launch(binary: string, args: string[], platform: NodeJS.Platform
   return { file: process.env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], verbatim: true }
 }
 
-/** execFile for an agent CLI, with Windows shims handled and no console window. */
+/** Run a bounded CLI probe or background command with captured output. */
 export function execCli(
   binary: string,
   args: string[],
-  options: ExecFileOptions,
-  done: (err: ExecFileException | null, stdout: string, stderr: string) => void
+  options: { cwd?: string; env: NodeJS.ProcessEnv; timeout: number; maxBuffer: number },
+  done: (err: (Error & { code?: ExecFileException['code'] }) | null, stdout: string, stderr: string) => void
 ): ChildProcess {
-  const l = launch(binary, args)
-  return execFile(l.file, l.args, { ...options, encoding: 'utf8', windowsHide: true, windowsVerbatimArguments: l.verbatim }, (err, stdout, stderr) =>
-    done(err, String(stdout), String(stderr))
-  )
-}
-
-/**
- * Stop a CLI and whatever it started. On POSIX the CLI leads its own process group; Windows has no
- * groups, so taskkill walks the process tree (a shim or wrapper alone would leave the agent running).
- * It runs synchronously: on quit, Studio exits right after, and grandchildren outlive their job.
- */
-export function killTree(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (!child.pid) return
-  if (process.platform === 'win32') {
-    const r = spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true, timeout: 5000 })
-    if (r.error) child.kill(signal)
-    return
+  const { file, args: argv, verbatim } = launch(binary, args)
+  const child = spawn(file, argv, {
+    cwd: options.cwd, env: options.env, stdio: ['ignore', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32', windowsHide: true, windowsVerbatimArguments: verbatim
+  })
+  const supervisor = supervise(child)
+  let error: (Error & { code?: ExecFileException['code'] }) | null = null
+  const fail = (message: string): void => {
+    if (error) return
+    error = new Error(message)
+    supervisor.finish()
   }
-  try {
-    process.kill(-child.pid, signal)
-  } catch {
-    // ESRCH: the group is already gone, or the CLI never got one.
-    child.kill(signal)
+  supervisor.after(options.timeout, () => fail(`${binary} timed out`))
+  const collect = (stream: NodeJS.ReadableStream): (() => string) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    stream.on('data', (chunk: Buffer) => {
+      if (size > options.maxBuffer) return
+      size += chunk.length
+      if (size <= options.maxBuffer) chunks.push(chunk)
+      else fail(`${binary} exceeded the output limit`)
+    })
+    return () => Buffer.concat(chunks).toString('utf8')
   }
+  const stdout = collect(child.stdout)
+  const stderr = collect(child.stderr)
+  child.once('error', (cause) => { error = cause })
+  child.once('close', (code, signal) => {
+    if (!error && code !== 0) error = Object.assign(new Error(`${binary} exited (${signal ?? code})`), { code: code ?? undefined })
+    done(error, stdout(), stderr())
+  })
+  return child
 }

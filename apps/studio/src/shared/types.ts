@@ -83,6 +83,8 @@ export interface Session {
   queue?: QueuedMessage[]
 }
 
+export type SessionPatch = Partial<Pick<Session, 'title' | 'pinned' | 'archived' | 'model' | 'effort' | 'permissionMode' | 'agent'>>
+
 export interface QueuedMessage {
   id: string
   text: string
@@ -125,6 +127,8 @@ export interface FileChange {
 }
 
 /** A question an agent puts to the user (Claude's AskUserQuestion, Codex's request_user_input). */
+export const REDACTED_ANSWER = '[redacted]'
+
 export interface AgentQuestion {
   id: string
   question: string
@@ -173,7 +177,7 @@ export type SessionEventBody =
       requestId: string
       allow: boolean
       always?: boolean
-      /** Answers by question id; absent when a question was dismissed. */
+      /** Answers by question id. Secret answers contain only REDACTED_ANSWER. */
       answers?: Record<string, string[]>
     }
   | {

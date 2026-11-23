@@ -174,3 +174,49 @@ describe('events of deleted sessions', () => {
     store.flush()
   })
 })
+
+describe('secret answers', () => {
+  const request = {
+    kind: 'permission.request', requestId: 'question', toolName: 'ask', title: 'Answer', input: {},
+    questions: [
+      { id: 'secret', question: 'Token?', secret: true, options: [] },
+      { id: 'ordinary', question: 'Name?', options: [] }
+    ]
+  } as const
+  const body = { kind: 'permission.resolved', requestId: 'question', allow: true, answers: { secret: ['private-value'], ordinary: ['visible'] } } as const
+  const event = () => ({ ...body, answers: { secret: [...body.answers.secret], ordinary: [...body.answers.ordinary] } })
+  const questions = () => request.questions.map((q) => ({ ...q, options: [] }))
+
+  it('redacts a secret before writing or returning a permission event', () => {
+    const { store, path } = savedSession()
+    store.record('s1', { ...request, questions: questions() })
+    expect(store.record('s1', event())).toMatchObject({ answers: { secret: ['[redacted]'], ordinary: ['visible'] } })
+    expect(readFileSync(path, 'utf8')).not.toContain('private-value')
+  })
+
+  it('redacts legacy answers on replay even if request IDs are reused in a later turn', () => {
+    const { dir, store, path } = savedSession()
+    store.record('s1', { ...request, questions: questions() })
+    appendFileSync(path, JSON.stringify({ ...event(), sessionId: 's1', seq: 2, ts: 0 }) + '\n')
+    appendFileSync(path, JSON.stringify({ ...request, questions: [{ ...questions()[0], secret: false }], sessionId: 's1', seq: 3, ts: 0 }) + '\n')
+    appendFileSync(path, JSON.stringify({ ...event(), answers: { secret: ['public'] }, sessionId: 's1', seq: 4, ts: 0 }) + '\n')
+    const replayed = new Store(dir).events('s1').filter((e) => e.kind === 'permission.resolved')
+    expect(replayed.map((e) => e.answers)).toEqual([{ secret: ['[redacted]'], ordinary: ['visible'] }, { secret: ['public'] }])
+  })
+})
+
+it('resumes recovery at a saved byte offset, including permission requests after the checkpoint', () => {
+  const { dir, store, path } = savedSession()
+  store.record('s1', { kind: 'user.message', text: 'first α', attachments: [] })
+  store.record('s1', { kind: 'turn.completed', ok: true })
+  store.flush()
+  const persisted = JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8'))
+  expect(persisted.recovery.s1.size).toBe(Buffer.byteLength(readFileSync(path, 'utf8')))
+  store.record('s1', { kind: 'user.message', text: 'second', attachments: [] })
+  store.record('s1', { kind: 'permission.request', requestId: 'pending', toolName: 'tool', title: 'Choose', input: {} })
+  const restored = new Store(dir).events('s1')
+  expect(restored.slice(-2)).toMatchObject([
+    { seq: 5, kind: 'permission.resolved', requestId: 'pending', allow: false },
+    { seq: 6, kind: 'turn.completed', summary: 'interrupted' }
+  ])
+})

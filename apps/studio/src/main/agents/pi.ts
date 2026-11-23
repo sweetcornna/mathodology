@@ -51,6 +51,7 @@ function contentText(content: unknown): string {
  */
 export class PiRpcParser {
   settled = false
+  sawFrame = false
   ok = true
   aborted = false
   sessionId = ''
@@ -73,6 +74,7 @@ export class PiRpcParser {
   line(raw: string): void {
     const msg = parseJson(raw)
     if (!msg || this.settled) return
+    this.sawFrame ||= typeof msg.type === 'string'
     switch (msg.type) {
       case 'response':
         return this.response(msg)
@@ -390,16 +392,15 @@ function piAdapter(flavour: PiFlavour): AgentAdapter {
     inspect: inspectPi(flavour),
     start(req: TurnRequest, sink: TurnSink): Turn {
       const parser = new PiRpcParser(sink, id)
-      const { child, exited, kill, beginStop } = spawnLines(req.binary, piArgs(flavour, req), req.cwd, req.env, (l) => {
+      const { child, started: admitted, exited, beginStop, after, finish, stop } = spawnLines(req.binary, piArgs(flavour, req), req.cwd, req.env, (l) => {
+        const starting = !parser.sawFrame
         const was = parser.settled
         parser.line(l)
+        if (starting && parser.sawFrame) cancelStartup()
         // Settled: closing stdin asks for an orderly shutdown; a CLI that lingers is stopped.
-        if (!was && parser.settled) {
-          child.stdin.end()
-          setTimeout(() => child.exitCode === null && kill('SIGTERM'), 4000)
-          setTimeout(() => child.exitCode === null && kill('SIGKILL'), 8000)
-        }
+        if (!was && parser.settled) finish()
       })
+      const cancelStartup = after(30_000, () => finish())
       const send = (obj: Json): void => {
         if (!child.stdin.destroyed && child.stdin.writable) child.stdin.write(JSON.stringify(obj) + '\n')
       }
@@ -427,7 +428,9 @@ function piAdapter(flavour: PiFlavour): AgentAdapter {
 
       return {
         interrupt() {
+          if (interrupted) return
           interrupted = true
+          cancelStartup()
           beginStop()
           for (const requestId of [...parser.pending.keys()]) {
             const reply = parser.reply(requestId, false)
@@ -435,13 +438,7 @@ function piAdapter(flavour: PiFlavour): AgentAdapter {
             sink.emit({ kind: 'permission.resolved', requestId, allow: false })
           }
           send({ type: 'abort' })
-          setTimeout(() => {
-            if (child.exitCode === null) {
-              child.stdin.end()
-              kill('SIGTERM')
-            }
-          }, 5000)
-          setTimeout(() => child.exitCode === null && kill('SIGKILL'), 9000)
+          stop()
         },
         respondPermission(requestId, allow, always, answers) {
           const question = parser.pending.get(requestId)?.question
@@ -454,6 +451,7 @@ function piAdapter(flavour: PiFlavour): AgentAdapter {
             sink.emit({ kind: 'permission.resolved', requestId, allow: answered, ...(answered ? { answers: { '0': [String(reply.value)] } } : {}) })
           }
         },
+        admitted,
         done
       }
     }

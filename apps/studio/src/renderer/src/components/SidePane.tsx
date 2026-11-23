@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ChevronRight,
   Circle,
@@ -15,10 +15,12 @@ import {
   RefreshCw,
   X
 } from 'lucide-react'
-import type { FileEntry, FilePreview, SessionEvent } from '@shared/types'
+import type { FileEntry, FilePreview } from '@shared/types'
 import { api, fileUrl, tildify } from '../lib/api'
 import { useT } from '../lib/i18n'
-import { buildTranscript, formatTokens } from '../lib/transcript'
+import { openPath } from '../lib/open'
+import { formatTokens } from '../lib/transcript'
+import { useTranscript } from '../lib/useTranscript'
 import { useStudio, type PaneTab } from '../store'
 import { ArtifactsTab } from './Artifacts'
 import { ChecksTab } from './Checks'
@@ -26,7 +28,7 @@ import { LiteratureTab } from './Literature'
 import { formatSize, PreviewBody } from './Preview'
 import { Spinner, Tip } from './ui'
 
-const EMPTY: SessionEvent[] = []
+const REFRESH_COALESCE_MS = 80
 
 function fileIcon(name: string) {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
@@ -51,15 +53,41 @@ function TreeNode({ projectId, entry, depth }: { projectId: string; entry: FileE
       return v
     })
   const [children, setChildren] = useState<FileEntry[] | null>(null)
+  const loadedKey = useRef<string | null>(null)
   const version = useStudio((s) => s.filesVersion)
   const openPreview = useStudio((s) => s.openPreview)
   const selected = useStudio((s) => s.previewRel === entry.rel)
+  const { dir, rel, name, path, size } = entry
 
   useEffect(() => {
-    if (entry.dir && open) void api.call('files:list', projectId, entry.rel).then(setChildren)
-  }, [open, entry, projectId, version])
+    setOpenState(expanded.has(key))
+    setChildren(null)
+    loadedKey.current = null
+  }, [key])
 
-  const Icon = entry.dir ? (open ? FolderOpen : Folder) : fileIcon(entry.name)
+  useEffect(() => {
+    if (!dir || !open) return
+    let alive = true
+    const delay = loadedKey.current === key ? REFRESH_COALESCE_MS : 0
+    const timer = setTimeout(() => {
+      void api
+        .call('files:list', projectId, rel)
+        .then((list) => {
+          if (!alive) return
+          loadedKey.current = key
+          setChildren(list)
+        })
+        .catch(() => {
+          if (alive) setChildren([])
+        })
+    }, delay)
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+  }, [open, dir, rel, projectId, key, version])
+
+  const Icon = dir ? (open ? FolderOpen : Folder) : fileIcon(name)
   return (
     <>
       <button
@@ -67,14 +95,14 @@ function TreeNode({ projectId, entry, depth }: { projectId: string; entry: FileE
           selected ? 'bg-accent-soft text-fg' : 'text-fg-2 hover:bg-surface-2 hover:text-fg'
         }`}
         style={{ paddingLeft: 6 + depth * 14 }}
-        onClick={() => (entry.dir ? setOpen((o) => !o) : openPreview(entry.rel))}
-        onDoubleClick={() => !entry.dir && void api.call('shell:openPath', entry.path)}
-        title={entry.rel}
+        onClick={() => (dir ? setOpen((o) => !o) : openPreview(rel))}
+        onDoubleClick={() => !dir && openPath(path)}
+        title={rel}
       >
-        <ChevronRight size={12} className={`shrink-0 text-fg-3 transition-transform ${entry.dir ? '' : 'invisible'} ${open ? 'rotate-90' : ''}`} />
-        <Icon size={14} className={`shrink-0 ${entry.dir ? 'text-accent' : 'text-fg-3'}`} />
-        <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-        {!entry.dir && <span className="shrink-0 text-[0.74rem] text-fg-3 opacity-0 group-hover:opacity-100">{formatSize(entry.size)}</span>}
+        <ChevronRight size={12} className={`shrink-0 text-fg-3 transition-transform ${dir ? '' : 'invisible'} ${open ? 'rotate-90' : ''}`} />
+        <Icon size={14} className={`shrink-0 ${dir ? 'text-accent' : 'text-fg-3'}`} />
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+        {!dir && <span className="shrink-0 text-[0.74rem] text-fg-3 opacity-0 group-hover:opacity-100">{formatSize(size)}</span>}
       </button>
       {open && children?.map((c) => <TreeNode key={c.path} projectId={projectId} entry={c} depth={depth + 1} />)}
     </>
@@ -84,12 +112,37 @@ function TreeNode({ projectId, entry, depth }: { projectId: string; entry: FileE
 function FilesTab() {
   const t = useT()
   const project = useStudio((s) => s.projects.find((p) => p.id === s.activeProjectId))
+  const projectId = project?.id ?? null
   const version = useStudio((s) => s.filesVersion)
   const [entries, setEntries] = useState<FileEntry[] | null>(null)
+  const loadedProject = useRef<string | null>(null)
 
   useEffect(() => {
-    if (project) void api.call('files:list', project.id).then(setEntries)
-  }, [project, version])
+    if (!projectId) {
+      loadedProject.current = null
+      setEntries(null)
+      return
+    }
+    let alive = true
+    const sameProject = loadedProject.current === projectId
+    if (!sameProject) setEntries(null)
+    const timer = setTimeout(() => {
+      void api
+        .call('files:list', projectId)
+        .then((list) => {
+          if (!alive) return
+          loadedProject.current = projectId
+          setEntries(list)
+        })
+        .catch(() => {
+          if (alive) setEntries([])
+        })
+    }, sameProject ? REFRESH_COALESCE_MS : 0)
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+  }, [projectId, version])
 
   if (!project) return null
   return (
@@ -105,7 +158,7 @@ function FilesTab() {
           </button>
         </Tip>
         <Tip label={t('pane.reveal')}>
-          <button className="icon-btn-sm" onClick={() => void api.call('shell:openPath', project.path)}>
+          <button className="icon-btn-sm" onClick={() => openPath(project.path)}>
             <ExternalLink size={13} />
           </button>
         </Tip>
@@ -128,9 +181,8 @@ function FilesTab() {
 function TasksTab() {
   const t = useT()
   const sessionId = useStudio((s) => s.activeSessionId)
-  const events = useStudio((s) => (sessionId ? s.events[sessionId] ?? EMPTY : EMPTY))
   const session = useStudio((s) => s.sessions.find((x) => x.id === sessionId))
-  const { todos } = useMemo(() => buildTranscript(events), [events])
+  const { todos } = useTranscript(sessionId)
   const done = todos.filter((x) => x.status === 'completed').length
   const running = session?.status === 'running' || session?.status === 'waiting'
 
@@ -195,22 +247,36 @@ function TasksTab() {
 
 function PreviewTab() {
   const t = useT()
-  const project = useStudio((s) => s.projects.find((p) => p.id === s.activeProjectId))
+  const projectId = useStudio((s) => s.activeProjectId)
   const rel = useStudio((s) => s.previewRel)
   const version = useStudio((s) => s.filesVersion)
-  const [preview, setPreview] = useState<FilePreview | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState<{ projectId: string; rel: string; data: FilePreview } | null>(null)
+  const [error, setError] = useState<{ projectId: string; rel: string; message: string } | null>(null)
 
   useEffect(() => {
     setError(null)
-    if (!project || !rel) return setPreview(null)
+    if (!projectId || !rel) {
+      setLoaded(null)
+      return
+    }
+    let alive = true
     api
-      .call('files:preview', project.id, rel)
-      .then(setPreview)
-      .catch(() => setError(rel))
-  }, [project, rel, version])
+      .call('files:preview', projectId, rel)
+      .then((data) => {
+        if (alive) setLoaded({ projectId, rel, data })
+      })
+      .catch(() => {
+        if (alive) setError({ projectId, rel, message: rel })
+      })
+    return () => {
+      alive = false
+    }
+  }, [projectId, rel, version])
 
-  if (!rel || !project) return <div className="grid flex-1 place-items-center text-[0.88rem] text-fg-3">{t('pane.noPreview')}</div>
+  if (!rel || !projectId) return <div className="grid flex-1 place-items-center text-[0.88rem] text-fg-3">{t('pane.noPreview')}</div>
+  const preview = loaded && loaded.projectId === projectId && loaded.rel === rel ? loaded.data : null
+  const activeError = error && error.projectId === projectId && error.rel === rel ? error.message : null
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-1 border-b border-line px-3 py-2">
@@ -219,7 +285,7 @@ function PreviewTab() {
         </span>
         {preview && (
           <Tip label={t('pane.openExternal')}>
-            <button className="icon-btn-sm" onClick={() => void api.call('shell:openPath', preview.path)}>
+            <button className="icon-btn-sm" onClick={() => openPath(preview.path)}>
               <ExternalLink size={13} />
             </button>
           </Tip>
@@ -228,14 +294,14 @@ function PreviewTab() {
           <X size={13} />
         </button>
       </div>
-      {error ? (
-        <div className="p-6 text-[0.88rem] text-fg-3">{error}</div>
+      {activeError ? (
+        <div className="p-6 text-[0.88rem] text-fg-3">{activeError}</div>
       ) : !preview ? (
         <div className="grid flex-1 place-items-center text-fg-3">
           <Spinner />
         </div>
       ) : (
-        <PreviewBody preview={preview} rel={rel} pdfSrc={fileUrl(project.id, rel, version)} />
+        <PreviewBody preview={preview} rel={rel} pdfSrc={fileUrl(projectId, rel, version)} />
       )}
     </div>
   )

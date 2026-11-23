@@ -96,6 +96,7 @@ export class ClaudeStreamParser {
   private streamCounts = new Map<string, { text: number; thinking: number }>()
   readonly pending = new Map<string, PendingPermission>()
   sawResult = false
+  sawFrame = false
   /** Tokens processed so far this turn (context read + generated), summed over API calls. */
   private tokens = 0
   private callInput = 0
@@ -108,6 +109,7 @@ export class ClaudeStreamParser {
   line(raw: string): void {
     const msg = parseJson(raw)
     if (!msg) return
+    this.sawFrame ||= typeof msg.type === 'string'
     switch (msg.type) {
       case 'system':
         return this.system(msg)
@@ -406,18 +408,21 @@ export function claudeStreamAdapter(flavour: ClaudeStreamFlavour): AgentAdapter 
     inspect: (binary, env) => inspectStream(binary, flavour.inspectArgs, env),
     start(req: TurnRequest, sink: TurnSink): Turn {
       const parser = new ClaudeStreamParser(sink, id)
-      const { child, exited, kill, beginStop } = spawnLines(req.binary, flavour.args(req), req.cwd, req.env, (l) => parser.line(l))
+      const { child, started: admitted, exited, beginStop, after, finish, stop } = spawnLines(req.binary, flavour.args(req), req.cwd, req.env, (l) => parser.line(l))
       const write = (obj: unknown): void => {
-        if (!child.stdin.destroyed) child.stdin.write(JSON.stringify(obj) + '\n')
+        if (child.stdin.writable) child.stdin.write(JSON.stringify(obj) + '\n')
       }
       write({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: req.prompt }] } })
 
       let interrupted = false
+      const cancelStartup = after(30_000, () => finish())
       const original = parser.line.bind(parser)
       // Close stdin once the turn's result arrives so the CLI exits.
       parser.line = (raw: string) => {
+        const starting = !parser.sawFrame
         original(raw)
-        if (parser.sawResult && !child.stdin.destroyed) child.stdin.end()
+        if (starting && parser.sawFrame) cancelStartup()
+        if (parser.sawResult) finish()
       }
 
       const done = exited.then(({ code, signal, stderr }) => {
@@ -442,16 +447,12 @@ export function claudeStreamAdapter(flavour: ClaudeStreamFlavour): AgentAdapter 
 
       return {
         interrupt() {
+          if (interrupted) return
           interrupted = true
+          cancelStartup()
           beginStop()
           write({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } })
-          setTimeout(() => {
-            if (child.exitCode === null) {
-              child.stdin.end()
-              kill('SIGINT')
-            }
-          }, 1500)
-          setTimeout(() => child.exitCode === null && kill('SIGKILL'), 6000)
+          stop(1500, 3500, 'SIGINT')
         },
         respondPermission(requestId, allow, always, raw) {
           const p = parser.pending.get(requestId)
@@ -463,6 +464,7 @@ export function claudeStreamAdapter(flavour: ClaudeStreamFlavour): AgentAdapter 
           const answered = answers && Object.keys(answers).length > 0
           sink.emit({ kind: 'permission.resolved', requestId, allow: p.questions ? Boolean(answered) : allow, always: p.questions ? undefined : always, ...(answered ? { answers } : {}) })
         },
+        admitted,
         done
       }
     }

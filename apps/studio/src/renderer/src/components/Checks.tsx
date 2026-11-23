@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Circle, CircleCheck, CircleX, FileCode, Hammer, Info, ListChecks, RotateCcw, TriangleAlert, Wand2 } from 'lucide-react'
 import type { CheckIssue, CheckReport } from '@shared/types'
 import { api } from '../lib/api'
+import { formatIpcError } from '../lib/errors'
 import { useT, type MessageKey } from '../lib/i18n'
 import { useStudio } from '../store'
 import { Spinner } from './ui'
@@ -22,11 +23,27 @@ const SEVERITY: Record<Severity, { icon: typeof CircleX; tone: string; text: str
 }
 const SEVERITIES: Severity[] = ['error', 'warning', 'info']
 
-// Reports survive pane-tab switches for the life of the window, one per project.
-const reports = new Map<string, CheckReport>()
+interface ProjectCheckState {
+  report: CheckReport | null
+  busy: 'check' | 'compile' | null
+  error: string | null
+  reqGen: number
+}
 
-function clean(err: unknown): string {
-  return String((err as Error).message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+const EMPTY_STATE: ProjectCheckState = { report: null, busy: null, error: null, reqGen: 0 }
+
+// Reports survive pane-tab switches for the life of the window, strictly bound per project.
+const projectStates = new Map<string, ProjectCheckState>()
+const stateListeners = new Set<() => void>()
+
+function getProjectState(projectId: string | undefined): ProjectCheckState {
+  return (projectId && projectStates.get(projectId)) || EMPTY_STATE
+}
+
+function patchProjectState(projectId: string, updater: (prev: ProjectCheckState) => ProjectCheckState): void {
+  const prev = projectStates.get(projectId) ?? EMPTY_STATE
+  projectStates.set(projectId, updater(prev))
+  for (const listener of stateListeners) listener()
 }
 
 function where(issue: CheckIssue): string {
@@ -73,36 +90,53 @@ export function ChecksTab() {
   const t = useT()
   const project = useStudio((s) => s.projects.find((p) => p.id === s.activeProjectId))
   const insert = useStudio((s) => s.insertIntoComposer)
+  const updateProject = useStudio((s) => s.updateProject)
   const projectId = project?.id
-  const [report, setReportRaw] = useState<CheckReport | null>(() => (projectId ? (reports.get(projectId) ?? null) : null))
-  const [busy, setBusy] = useState<'check' | 'compile' | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [, setRevision] = useState(0)
   const [filter, setFilter] = useState<Severity | null>(null)
 
-  const run = async (compile = false): Promise<void> => {
-    if (!projectId || busy) return
-    setBusy(compile ? 'compile' : 'check')
-    setError(null)
+  useEffect(() => {
+    const onChange = (): void => setRevision((r) => r + 1)
+    stateListeners.add(onChange)
+    return () => {
+      stateListeners.delete(onChange)
+    }
+  }, [])
+
+  const run = async (targetProjectId: string, compile = false): Promise<void> => {
+    const cur = getProjectState(targetProjectId)
+    if (cur.busy) return
+    const reqGen = cur.reqGen + 1
+    patchProjectState(targetProjectId, (prev) => ({
+      ...prev,
+      busy: compile ? 'compile' : 'check',
+      error: null,
+      reqGen
+    }))
     try {
-      const next = await api.call('checks:run', projectId, { compile })
-      reports.set(projectId, next)
-      setReportRaw(next)
+      const next = await api.call('checks:run', targetProjectId, { compile })
+      patchProjectState(targetProjectId, (prev) => {
+        if (prev.reqGen !== reqGen) return prev
+        return { ...prev, report: next, error: null, busy: null }
+      })
     } catch (err) {
-      setError(clean(err))
-    } finally {
-      setBusy(null)
+      const msg = formatIpcError(err)
+      patchProjectState(targetProjectId, (prev) => {
+        if (prev.reqGen !== reqGen) return prev
+        return { ...prev, error: msg, busy: null }
+      })
     }
   }
 
   useEffect(() => {
-    const cached = projectId ? (reports.get(projectId) ?? null) : null
-    setReportRaw(cached)
     setFilter(null)
-    setError(null)
-    if (projectId && !cached) void run()
+    if (!projectId) return
+    const cur = getProjectState(projectId)
+    if (!cur.report && !cur.busy) void run(projectId)
   }, [projectId])
 
-  if (!project) return null
+  if (!project || !projectId) return null
+  const { report, busy, error } = getProjectState(projectId)
   const visible = report ? (filter ? report.issues.filter((i) => i.severity === filter) : report.issues) : []
   const actionable = report ? report.counts.error + report.counts.warning : 0
 
@@ -118,10 +152,10 @@ export function ChecksTab() {
           </span>
         ) : (
           <>
-            <button className="btn btn-ghost btn-sm h-7" onClick={() => void run(true)} title={t('checks.compileHint')}>
+            <button className="btn btn-ghost btn-sm h-7" onClick={() => void run(projectId, true)} title={t('checks.compileHint')}>
               <Hammer size={12} /> {t('checks.compile')}
             </button>
-            <button className="btn btn-secondary btn-sm h-7" onClick={() => void run()}>
+            <button className="btn btn-secondary btn-sm h-7" onClick={() => void run(projectId)}>
               {report ? <RotateCcw size={12} /> : <ListChecks size={13} />} {t(report ? 'checks.rerun' : 'checks.run')}
             </button>
           </>
@@ -133,7 +167,21 @@ export function ChecksTab() {
             {error === 'python-missing' ? t('checks.pythonMissing') : error}
             {!project.kitInstalled && (
               <div className="mt-2">
-                <button className="btn btn-secondary btn-sm h-7" onClick={() => void api.call('projects:installKit', project.id).then(() => run())}>
+                <button
+                  className="btn btn-secondary btn-sm h-7"
+                  onClick={() => {
+                    const target = project.id
+                    void api
+                      .call('projects:installKit', target)
+                      .then((updated) => {
+                        updateProject(updated)
+                        if (useStudio.getState().activeProjectId === target) void run(target)
+                      })
+                      .catch((err) => {
+                        useStudio.getState().showToast(formatIpcError(err), 'error')
+                      })
+                  }}
+                >
                   {t('checks.installKit')}
                 </button>
               </div>
@@ -183,7 +231,12 @@ export function ChecksTab() {
               {report.issues.length === 0 && <span className="text-[0.786rem] text-success">{t('checks.clean')}</span>}
               <span className="flex-1" />
               {actionable > 0 && (
-                <button className="btn btn-secondary btn-sm h-6" onClick={() => insert(fixRequest(t, report))}>
+                <button
+                  className="btn btn-secondary btn-sm h-6"
+                  onClick={() => {
+                    if (useStudio.getState().activeProjectId === projectId) insert(fixRequest(t, report))
+                  }}
+                >
                   <Wand2 size={12} /> {t('checks.askAgent')}
                 </button>
               )}

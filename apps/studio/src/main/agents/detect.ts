@@ -27,7 +27,7 @@ export function envKey(env: NodeJS.ProcessEnv, name: string): string {
   return Object.keys(env).find((k) => k.toUpperCase() === name) ?? name
 }
 
-let cachedEnv: NodeJS.ProcessEnv | null = null
+let cachedEnv: Promise<NodeJS.ProcessEnv> | undefined
 
 /** The AppImage launcher points these at its own folder; agents and their tools must not load from it. */
 export function withoutAppImage(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -47,8 +47,14 @@ export function withoutAppImage(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  * for its environment once, then add common install locations so agent CLIs, node, python and uvx
  * resolve. Windows apps inherit the full user PATH.
  */
-export async function agentEnv(): Promise<NodeJS.ProcessEnv> {
-  if (cachedEnv) return cachedEnv
+export function agentEnv(): Promise<NodeJS.ProcessEnv> {
+  return cachedEnv ??= loginEnvironment().catch((error) => {
+    cachedEnv = undefined
+    throw error
+  })
+}
+
+async function loginEnvironment(): Promise<NodeJS.ProcessEnv> {
   const base = withoutAppImage(process.env)
   const env: NodeJS.ProcessEnv = { ...base }
   if (process.platform !== 'win32') {
@@ -73,7 +79,6 @@ export async function agentEnv(): Promise<NodeJS.ProcessEnv> {
   // Electron-specific variables must not leak into node-based CLIs.
   delete env.ELECTRON_RUN_AS_NODE
   delete env.ELECTRON_NO_ATTACH_CONSOLE
-  cachedEnv = env
   return env
 }
 
@@ -168,4 +173,39 @@ export async function detectAgents(
       }
     })
   )
+}
+
+
+export class AgentDetection {
+  private generation = 0
+  private pending?: { promise: Promise<AgentInfo[]>; settled: boolean }
+
+  constructor(
+    private readonly adapters: Record<AgentId, AgentAdapter>,
+    private readonly settings: () => Settings
+  ) {}
+
+  invalidate(): void {
+    this.generation++
+    this.pending = undefined
+  }
+
+  get(refresh = false): Promise<AgentInfo[]> {
+    if (this.pending && (!refresh || !this.pending.settled)) return this.pending.promise
+    const generation = this.generation
+    const promise = detectAgents(this.adapters, structuredClone(this.settings())).then(
+      (agents) => this.generation === generation ? agents : this.get(),
+      (error) => {
+        if (this.generation !== generation) return this.get()
+        throw error
+      }
+    )
+    const entry = { promise, settled: false }
+    this.pending = entry
+    void promise.then(
+      () => { if (this.pending === entry) entry.settled = true },
+      () => { if (this.pending === entry) this.pending = undefined }
+    )
+    return promise
+  }
 }

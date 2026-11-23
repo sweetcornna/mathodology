@@ -2,7 +2,9 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { doiMatches, firstSurname, foldName, foldText, texDoi } from '@shared/biblio'
 import type { CitationTrace, DoiCheck, Project, ReviewFinding, SessionEvent } from '@shared/types'
-import { bibFiles, mapLimit, parseBibtex, plainField, resolveDoi, type BibEntry, type Fetcher } from './refcheck'
+import { bibFiles, mapLimit } from './refcheck'
+import { parseBibtex, plainField, type BibEntry } from './bibtex'
+import { resolveDoi, type Fetcher } from './registry'
 
 /** Text formats whose citations are checked when the session produced them. */
 const DOCUMENT = /\.(md|markdown|tex|qmd|rmd|typ|txt|rst)$/i

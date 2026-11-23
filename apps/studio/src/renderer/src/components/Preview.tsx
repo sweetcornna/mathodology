@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ExternalLink } from 'lucide-react'
 import type { FilePreview } from '@shared/types'
-import { api } from '../lib/api'
 import { highlight } from '../lib/highlight'
 import { useT } from '../lib/i18n'
+import { openPath } from '../lib/open'
 import { Markdown } from './Markdown'
 
 /** File extensions the code preview highlights, mapped to highlighter language names. */
@@ -26,6 +26,8 @@ const CODE_LANGS: Record<string, string> = {
   sql: 'sql'
 }
 
+const DIFF_PAGE = 500
+
 export function formatSize(n: number): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
@@ -41,23 +43,46 @@ export function DiffStat({ added, removed }: { added: number; removed: number })
 }
 
 export function DiffView({ text, className = 'max-h-80' }: { text: string; className?: string }) {
+  const t = useT()
+  const lines = useMemo(() => text.split('\n'), [text])
+  const [limit, setLimit] = useState(DIFF_PAGE)
+
+  useEffect(() => {
+    setLimit(DIFF_PAGE)
+  }, [text])
+
+  const shown = lines.length > limit ? lines.slice(0, limit) : lines
+  const remaining = lines.length - shown.length
+
   return (
-    <pre className={`selectable m-0 overflow-auto py-1.5 font-mono text-[0.786rem] leading-[1.5] ${className}`}>
-      {text.split('\n').map((line, i) => {
-        const cls = line.startsWith('+')
-          ? 'bg-[color-mix(in_srgb,var(--diff-add)_14%,transparent)] text-fg'
-          : line.startsWith('-')
-            ? 'bg-[color-mix(in_srgb,var(--diff-del)_14%,transparent)] text-fg'
-            : line.startsWith('@@')
-              ? 'text-fg-3'
-              : 'text-fg-2'
-        return (
-          <div key={i} className={`px-2.5 ${cls}`}>
-            {line || ' '}
-          </div>
-        )
-      })}
-    </pre>
+    <div className={`overflow-auto ${className}`}>
+      <pre className="selectable m-0 py-1.5 font-mono text-[0.786rem] leading-[1.5]">
+        {shown.map((line, i) => {
+          const cls = line.startsWith('+')
+            ? 'bg-[color-mix(in_srgb,var(--diff-add)_14%,transparent)] text-fg'
+            : line.startsWith('-')
+              ? 'bg-[color-mix(in_srgb,var(--diff-del)_14%,transparent)] text-fg'
+              : line.startsWith('@@')
+                ? 'text-fg-3'
+                : 'text-fg-2'
+          return (
+            <div key={i} className={`px-2.5 ${cls}`}>
+              {line || ' '}
+            </div>
+          )
+        })}
+      </pre>
+      {remaining > 0 && (
+        <div className="flex items-center gap-2 border-t border-line px-2.5 py-2 text-[0.786rem]">
+          <button className="btn btn-secondary btn-sm h-6" onClick={() => setLimit((l) => l + DIFF_PAGE)}>
+            {t('diff.linesMore', { n: Math.min(DIFF_PAGE, remaining) })}
+          </button>
+          <button className="btn btn-ghost btn-sm h-6" onClick={() => setLimit(lines.length)}>
+            {t('diff.showAll', { n: lines.length })}
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -128,7 +153,7 @@ export function PreviewBody({ preview, rel, pdfSrc }: { preview: FilePreview; re
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-[0.88rem] text-fg-3">
       {preview.kind === 'too-large' ? t('pane.tooLarge') : t('pane.binary')}
-      <button className="btn btn-secondary btn-sm" onClick={() => void api.call('shell:openPath', preview.path)}>
+      <button className="btn btn-secondary btn-sm" onClick={() => openPath(preview.path)}>
         <ExternalLink size={13} /> {t('pane.openExternal')}
       </button>
     </div>

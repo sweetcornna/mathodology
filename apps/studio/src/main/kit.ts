@@ -105,10 +105,6 @@ export function readKit(root: string): KitInfo {
   return { source: root, skills, roles, workflows }
 }
 
-export function readWorkflow(root: string, file: string): string {
-  return readFileSync(join(root, '.claude/workflows', file), 'utf8')
-}
-
 const PROJECT_AGENTS_MD = `# Contest project
 
 This folder is a mathematical-modeling contest workspace set up by Mathodology Studio.

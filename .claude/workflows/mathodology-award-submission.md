@@ -36,4 +36,3 @@ Ordinary prose and working artifacts are sufficient; no phase gates, fixed judge
 panels, scores or handoff schemas are required.
 
 For task-specific emphasis, see [contest variants](mathodology-contest-variants.md).
-For the shared Codex/Claude guide, see [workflows](../../docs/WORKFLOWS.md).

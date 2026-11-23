@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { FindingSeverity, FindingStatus, Project, Review, ReviewFinding, Session, SessionEvent, Settings } from '@shared/types'
 import type { Turn } from './agents/base'
@@ -174,6 +174,7 @@ const CUT_OFF = 'Studio closed before the review finished.'
 /** Runs and stores reviews. Each session's reviews live in one JSON file beside its events. */
 export class ReviewManager {
   private running = new Map<string, Turn>()
+  private recovered = new Set<string>()
   private cancelled = new Set<string>()
   /** Reviews in progress, from start to their last save; aborting stops the citation trace. */
   private active = new Map<string, { review: Review; abort: AbortController; done: Promise<void> }>()
@@ -187,18 +188,6 @@ export class ReviewManager {
     private readonly fetch: Fetcher
   ) {
     mkdirSync(dir, { recursive: true })
-    // A review saved as running was cut off when Studio last quit or crashed; nothing will finish it.
-    for (const name of readdirSync(dir)) {
-      if (!name.endsWith('.json')) continue
-      try {
-        const list = readJson<Review[]>(join(dir, name), [])
-        if (!Array.isArray(list) || !list.some((r) => r.status === 'running')) continue
-        const stopped = list.map((r): Review => (r.status === 'running' ? { ...r, status: 'cancelled', error: CUT_OFF, finishedAt: Date.now() } : r))
-        writeAtomic(join(dir, name), JSON.stringify(stopped))
-      } catch {
-        // left as it is; the next launch tries again
-      }
-    }
   }
 
   private path(sessionId: string): string {
@@ -206,7 +195,17 @@ export class ReviewManager {
   }
 
   list(sessionId: string): Review[] {
-    return readJson<Review[]>(this.path(sessionId), [])
+    const path = this.path(sessionId)
+    const list = readJson<Review[]>(path, [])
+    if (this.recovered.has(sessionId)) return list
+    this.recovered.add(sessionId)
+    // The first read recovers reviews interrupted by a previous launch.
+    if (!list.some((review) => review.status === 'running')) return list
+    const stopped = list.map((review): Review => review.status === 'running'
+      ? { ...review, status: 'cancelled', error: CUT_OFF, finishedAt: Date.now() }
+      : review)
+    writeAtomic(path, JSON.stringify(stopped))
+    return stopped
   }
 
   private save(review: Review): void {
@@ -218,12 +217,15 @@ export class ReviewManager {
     else list.push(review)
     // Keep the history short; the newest reviews are the ones that matter.
     writeAtomic(this.path(review.sessionId), JSON.stringify(list.slice(-10)))
+    const active = this.active.get(review.id)
+    if (active) active.review = review
     this.hooks.changed(review)
   }
 
   remove(sessionId: string): void {
     for (const { review } of this.active.values()) if (review.sessionId === sessionId) this.cancel(review.id)
     rmSync(this.path(sessionId), { force: true })
+    this.recovered.delete(sessionId)
   }
 
   setStatus(sessionId: string, reviewId: string, findingId: string, status: FindingStatus): Review | undefined {
@@ -271,7 +273,9 @@ export class ReviewManager {
     const done = this.run(review, session, project, events, settings, abort)
       .catch((err) => {
         try {
-          this.finish(review, { status: 'error', error: String((err as Error)?.message ?? err) })
+          this.finish(review, this.cancelled.has(review.id)
+            ? { status: 'cancelled' }
+            : { status: 'error', error: String((err as Error)?.message ?? err) })
         } catch {
           // nowhere left to record it
         }
@@ -302,24 +306,27 @@ export class ReviewManager {
       this.save({ ...review, status: 'cancelled', findings: citationFindings, finishedAt: Date.now() })
       return
     }
-    if (citationFindings.length) this.save({ ...review, findings: citationFindings })
+    if (traced) this.save({ ...review, findings: citationFindings })
 
     const env = envFor(await agentEnv(), agentSettings(settings, session.agent))
     // A cancel can arrive while the environment is read.
     if (this.cancelled.has(review.id)) {
-      this.save({ ...review, status: 'cancelled', findings: citationFindings, finishedAt: Date.now() })
+      this.finish(review, { status: 'cancelled' })
       return
     }
     const binary = resolveBinary(adapter, settings, env)
     if (!binary) {
-      this.save({ ...review, status: 'error', error: `${adapter.name} was not found.`, findings: citationFindings, finishedAt: Date.now() })
+      this.finish(review, { status: 'error', error: `${adapter.name} was not found.` })
       return
     }
 
     const texts: string[] = []
     let errorText = ''
     let interrupted = false
-    const turn = adapter.start(
+    let failed = false
+    const permissions: string[] = []
+    let turn: Turn | undefined
+    turn = adapter.start(
       {
         binary,
         cwd: project.path,
@@ -337,32 +344,48 @@ export class ReviewManager {
           if (body.kind === 'assistant.text' && !body.parentCallId) texts.push(body.text)
           if (body.kind === 'tool.call') {
             review.steps++
-            this.hooks.changed({ ...review, findings: citationFindings })
+            const latest = this.active.get(review.id)?.review ?? review
+            this.hooks.changed({ ...latest, steps: review.steps })
           }
           // The reviewer only reads; anything that asks for approval is refused.
-          if (body.kind === 'permission.request') turn.respondPermission(body.requestId, false)
+          if (body.kind === 'permission.request') {
+            if (turn) turn.respondPermission(body.requestId, false)
+            else permissions.push(body.requestId)
+          }
           if (body.kind === 'notice' && body.level === 'error') errorText = body.text
-          if (body.kind === 'turn.completed' && body.summary === 'interrupted') interrupted = true
+          if (body.kind === 'turn.completed') {
+            interrupted ||= body.summary === 'interrupted'
+            failed ||= !body.ok
+          }
         },
         nativeSession: () => undefined
       }
     )
     this.running.set(review.id, turn)
-    await turn.done.catch(() => undefined)
+    for (const requestId of permissions) turn.respondPermission(requestId, false)
+    await turn.done.catch((error) => {
+      failed = true
+      errorText ||= String((error as Error)?.message ?? error)
+    })
     this.running.delete(review.id)
-    const parsed = parseReview(texts.join('\n\n'))
-    const finishedAt = Date.now()
-    if (interrupted) this.save({ ...review, status: 'cancelled', findings: citationFindings, finishedAt })
-    else if (parsed) this.save({ ...review, status: 'done', summary: parsed.summary, findings: mergeFindings(citationFindings, parsed.findings), finishedAt })
-    else if (this.cancelled.has(review.id)) this.save({ ...review, status: 'cancelled', findings: citationFindings, finishedAt })
-    else
-      this.save({
-        ...review,
-        status: 'error',
-        error: errorText || clip(texts.join('\n\n'), 1500) || 'The reviewer did not return any findings.',
-        findings: citationFindings,
-        finishedAt
+    if (interrupted || this.cancelled.has(review.id)) {
+      this.finish(review, { status: 'cancelled', steps: review.steps })
+      return
+    }
+    const output = texts.join('\n\n')
+    const parsed = failed ? null : parseReview(output)
+    if (parsed) {
+      const saved = this.list(review.sessionId).find((r) => r.id === review.id)
+      this.finish(review, {
+        steps: review.steps, status: 'done', summary: parsed.summary,
+        findings: mergeFindings(saved?.findings ?? citationFindings, parsed.findings)
       })
+    } else {
+      this.finish(review, {
+        steps: review.steps, status: 'error',
+        error: errorText || (failed ? 'The reviewer turn failed.' : clip(output, 1500) || 'The reviewer did not return any findings.')
+      })
+    }
   }
 
   /** Stop every review and wait, at most SHUTDOWN_WAIT, until each has saved that it stopped. */

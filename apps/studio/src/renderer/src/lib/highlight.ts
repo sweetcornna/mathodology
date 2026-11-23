@@ -37,6 +37,10 @@ const ALIAS: Record<string, string> = {
   md: 'markdown'
 }
 
+const MAX_CACHE = 120
+const MAX_CACHEABLE_CHARS = 50_000
+const htmlCache = new Map<string, string>()
+
 let core: Promise<HighlighterCore> | null = null
 const loaded = new Set<string>()
 
@@ -59,20 +63,49 @@ function escape(s: string): string {
   return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 }
 
+function cacheKey(code: string, lang: string): string | null {
+  if (code.length > MAX_CACHEABLE_CHARS) return null
+  const key = lang.toLowerCase()
+  const name = ALIAS[key] ?? key
+  return LANGS[key] ? `${name}\0${code}` : null
+}
+
+/** Return previously highlighted HTML synchronously so finalized blocks do not flash unstyled. */
+export function getCachedHighlight(code: string, lang: string): string | null {
+  const k = cacheKey(code, lang)
+  if (!k) return null
+  const hit = htmlCache.get(k)
+  if (hit === undefined) return null
+  htmlCache.delete(k)
+  htmlCache.set(k, hit)
+  return hit
+}
+
 /** HTML for a code block, with light and dark colours as CSS variables. */
 export async function highlight(code: string, lang: string): Promise<string> {
   const key = lang.toLowerCase()
   const loader = LANGS[key]
   if (!loader) return `<pre><code>${escape(code)}</code></pre>`
+  const cached = getCachedHighlight(code, lang)
+  if (cached !== null) return cached
   const h = await highlighter()
   const name = ALIAS[key] ?? key
   if (!loaded.has(name)) {
     await h.loadLanguage((await loader()) as never)
     loaded.add(name)
   }
-  return h.codeToHtml(code, {
+  const html = h.codeToHtml(code, {
     lang: name,
     themes: { light: 'github-light', dark: 'github-dark-dimmed' },
     defaultColor: false
   })
+  const k = cacheKey(code, lang)
+  if (k) {
+    htmlCache.set(k, html)
+    if (htmlCache.size > MAX_CACHE) {
+      const oldest = htmlCache.keys().next().value
+      if (oldest !== undefined) htmlCache.delete(oldest)
+    }
+  }
+  return html
 }

@@ -1,3 +1,4 @@
+import { REDACTED_ANSWER } from '@shared/types'
 import type { AgentAccount, AgentQuestion, FileChange, ModelInfo, PermissionMode, SessionEventBody, TodoItem, Usage } from '@shared/types'
 import {
   askCli,
@@ -469,12 +470,11 @@ export const codexAdapter: AgentAdapter = {
     let turnReady = false
     let interrupted = false
     let closed = false
-    const stopTimers: ReturnType<typeof setTimeout>[] = []
 
     const notify = (method: string, params: Json): void => {
       const wasDone = parser.done
       parser.notification(method, params)
-      if (!wasDone && parser.done && !child.stdin.destroyed) child.stdin.end()
+      if (!wasDone && parser.done) finish()
     }
 
     const onLine = (line: string): void => {
@@ -509,9 +509,9 @@ export const codexAdapter: AgentAdapter = {
       else w.resolve((msg.result ?? {}) as Json)
     }
 
-    const { child, exited, kill, beginStop } = spawnLines(req.binary, codexArgs(req), req.cwd, req.env, onLine)
+    const { child, started: admitted, exited, kill, beginStop, after, finish, stop } = spawnLines(req.binary, codexArgs(req), req.cwd, req.env, onLine)
     const send = (obj: Json): void => {
-      if (!child.stdin.destroyed) child.stdin.write(JSON.stringify(obj) + '\n')
+      if (child.stdin.writable) child.stdin.write(JSON.stringify(obj) + '\n')
     }
     const call = (method: string, params: Json): Promise<Json> =>
       new Promise((resolve, reject) => {
@@ -532,7 +532,7 @@ export const codexAdapter: AgentAdapter = {
         clientInfo: { name: 'mathodology-studio', title: 'Mathodology Studio', version: '0.1.0' },
         capabilities: null
       })
-      if (interrupted || closed) return
+      if (interrupted || closed || failure) return
       send({ method: 'initialized', params: {} })
       const threadParams: Json = {
         cwd: req.cwd,
@@ -544,7 +544,7 @@ export const codexAdapter: AgentAdapter = {
       const started = req.resumeId
         ? await call('thread/resume', { ...threadParams, threadId: req.resumeId, excludeTurns: true })
         : await call('thread/start', threadParams)
-      if (interrupted || closed) return
+      if (interrupted || closed || failure) return
       const thread = (started.thread ?? {}) as Json
       parser.threadId = String(thread.id ?? req.resumeId ?? '')
       if (parser.threadId) sink.nativeSession(parser.threadId)
@@ -556,21 +556,25 @@ export const codexAdapter: AgentAdapter = {
         effort: req.effort || null,
         summary: 'detailed'
       })
-      if (interrupted || closed) return
+      if (interrupted || closed || failure) return
       parser.turnId = String(((turn.turn ?? {}) as Json).id ?? parser.turnId)
       // Notifications can precede the turn/start response. Bind the requested turn first so
       // replayed or concurrent turns cannot claim its lifecycle while startup is in flight.
+      cancelStartup()
       turnReady = true
       for (const { method, params } of notifications.splice(0)) notify(method, params)
     }
+    const cancelStartup = after(30_000, () => {
+      failure = 'Codex startup timed out'
+      finish()
+    })
     run().catch((err: Error) => {
-      failure = err.message
-      if (!child.stdin.destroyed) child.stdin.end()
+      failure ??= err.message
+      finish()
     })
 
     const done = exited.then(({ code, signal, stderr }) => {
       closed = true
-      for (const timer of stopTimers) clearTimeout(timer)
       for (const w of waiting.values()) w.reject(new Error('exited'))
       waiting.clear()
       for (const id of parser.pending.keys()) sink.emit({ kind: 'permission.resolved', requestId: id, allow: false })
@@ -591,7 +595,7 @@ export const codexAdapter: AgentAdapter = {
 
     return {
       interrupt() {
-        if (interrupted || closed) return
+        if (interrupted || closed || failure) return
         interrupted = true
         beginStop()
         for (const requestId of parser.pending.keys()) {
@@ -606,24 +610,27 @@ export const codexAdapter: AgentAdapter = {
           child.stdin.end()
           kill('SIGTERM')
         }
-        stopTimers.push(setTimeout(() => {
-          if (!child.stdin.destroyed) child.stdin.end()
-          kill('SIGTERM')
-        }, 4000))
-        stopTimers.push(setTimeout(() => kill('SIGKILL'), 8000))
+        cancelStartup()
+        stop()
       },
       respondPermission(requestId, allow, always, raw) {
-        const question = parser.pending.get(requestId)?.method === 'item/tool/requestUserInput'
+        const pending = parser.pending.get(requestId)
+        const question = pending?.method === 'item/tool/requestUserInput'
+        const secrets = new Set(question ? codexQuestions(pending.params).filter((q) => q.secret).map((q) => q.id) : [])
         const answers = question && allow ? cleanAnswers(raw) : undefined
         const reply = parser.decision(requestId, allow, always, answers)
         if (!reply) return
         send(reply)
         if (!question) sink.emit({ kind: 'permission.resolved', requestId, allow, always })
         else {
-          const answered = Boolean(answers && Object.keys(answers).length)
-          sink.emit({ kind: 'permission.resolved', requestId, allow: answered, ...(answered ? { answers } : {}) })
+          const recorded = answers && Object.fromEntries(
+            Object.entries(answers).map(([id, values]) => [id, secrets.has(id) ? [REDACTED_ANSWER] : values])
+          )
+          const answered = Boolean(recorded && Object.keys(recorded).length)
+          sink.emit({ kind: 'permission.resolved', requestId, allow: answered, ...(answered ? { answers: recorded } : {}) })
         }
       },
+      admitted,
       done
     }
   }

@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execCli } from './agents/launch'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CheckReport } from '@shared/types'
@@ -53,10 +53,10 @@ export function runChecks(
     if (i >= candidates.length) return Promise.reject(new Error('python-missing'))
     const [python, pre] = candidates[i]
     return new Promise((resolve, reject) => {
-      execFile(
+      execCli(
         python,
         [...pre, ...args],
-        { cwd: projectDir, env: { ...env, PYTHONIOENCODING: 'utf-8' }, timeout, maxBuffer: 16 << 20, windowsHide: true },
+        { cwd: projectDir, env: { ...env, PYTHONIOENCODING: 'utf-8' }, timeout, maxBuffer: 16 << 20 },
         (err, stdout, stderr) => {
           if (err && (err as NodeJS.ErrnoException).code === 'ENOENT') return resolve(attempt(i + 1))
           // The Windows Store alias for `python` exits with 9009 and prints nothing useful.

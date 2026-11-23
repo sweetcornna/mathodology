@@ -1,10 +1,12 @@
 """Locate a contest workspace and read its small amount of configuration."""
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
 import stat
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -159,8 +161,26 @@ def read_text(path: Path, *, strict: bool = False) -> str:
     return path.read_text(encoding='utf-8', errors='strict' if strict else 'replace')
 
 
-def write_json(path: Path, data) -> None:
+def parse_python(path: Path) -> ast.Module | SyntaxError | ValueError:
+    try:
+        return ast.parse(read_text(path))
+    except (SyntaxError, ValueError) as exc:
+        return exc
+
+
+def write_text_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + '.tmp')
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
-    os.replace(tmp, path)
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent,
+                                         prefix=f'.{path.name}.', suffix='.tmp', delete=False) as handle:
+            tmp = Path(handle.name)
+            handle.write(text)
+        os.replace(tmp, path)
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
+
+
+def write_json(path: Path, data) -> None:
+    write_text_atomic(path, json.dumps(data, indent=2, ensure_ascii=False) + '\n')

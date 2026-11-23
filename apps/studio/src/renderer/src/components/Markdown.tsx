@@ -1,13 +1,15 @@
-import { memo, useEffect, useState, type ComponentProps } from 'react'
+import { createContext, memo, useContext, useEffect, useMemo, useState, type ComponentProps } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
-import { Check, Copy } from 'lucide-react'
 import { api } from '../lib/api'
-import { highlight } from '../lib/highlight'
+import { getCachedHighlight, highlight } from '../lib/highlight'
 import { useT } from '../lib/i18n'
 import { useStudio } from '../store'
+import { CopyButton } from './CopyButton'
+
+const StreamingOpenCodeContext = createContext<string | null>(null)
 
 /**
  * Agents often write \( \) and \[ \] delimiters, and $$...$$ on one line; remark-math only
@@ -20,32 +22,59 @@ function normalizeMath(src: string): string {
     .replace(/\\\(([\s\S]+?)\\\)/g, (_m, body: string) => `$${body.trim()}$`)
 }
 
-function CodeBlock({ lang, code }: { lang: string; code: string }) {
+/** Return the raw body of an unclosed trailing code fence while streaming, or null if all fences are closed. */
+function trailingOpenFenceCode(src: string): string | null {
+  let fence: { char: string; len: number; lines: string[] } | null = null
+  for (const line of src.split('\n')) {
+    if (!fence) {
+      const m = /^[ ]{0,3}(`{3,}|~{3,})(.*)$/.exec(line)
+      if (!m) continue
+      const marker = m[1]
+      const info = m[2]
+      if (marker[0] === '`' && info.includes('`')) continue
+      fence = { char: marker[0], len: marker.length, lines: [] }
+    } else {
+      const close = /^[ ]{0,3}(`{3,}|~{3,})[ \t]*$/.exec(line)
+      if (close && close[1][0] === fence.char && close[1].length >= fence.len) {
+        fence = null
+      } else {
+        fence.lines.push(line)
+      }
+    }
+  }
+  return fence ? fence.lines.join('\n').replace(/\n$/, '') : null
+}
+
+const CodeBlock = memo(function CodeBlock({ lang, code }: { lang: string; code: string }) {
   const t = useT()
-  const [html, setHtml] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
+  const openFenceCode = useContext(StreamingOpenCodeContext)
+  const defer = openFenceCode !== null && code === openFenceCode
+  const [html, setHtml] = useState<string | null>(() => (defer ? null : getCachedHighlight(code, lang)))
+
   useEffect(() => {
+    if (defer) {
+      setHtml(null)
+      return
+    }
+    const cached = getCachedHighlight(code, lang)
+    if (cached !== null) {
+      setHtml(cached)
+      return
+    }
     let alive = true
-    void highlight(code, lang).then((h) => alive && setHtml(h))
+    void highlight(code, lang).then((h) => {
+      if (alive) setHtml(h)
+    })
     return () => {
       alive = false
     }
-  }, [code, lang])
+  }, [code, lang, defer])
+
   return (
     <div className="code-block group">
       <div className="code-block-bar">
         <span>{lang || 'text'}</span>
-        <button
-          className="icon-btn-sm"
-          onClick={() => {
-            void navigator.clipboard.writeText(code)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1200)
-          }}
-          aria-label={t('common.copy')}
-        >
-          {copied ? <Check size={13} /> : <Copy size={13} />}
-        </button>
+        <CopyButton text={code} label={t('common.copy')} />
       </div>
       {html ? (
         <div className="code-block-body" dangerouslySetInnerHTML={{ __html: html }} />
@@ -56,7 +85,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
       )}
     </div>
   )
-}
+})
 
 /** Paths the agent mentions in inline code become links into the project preview. */
 function InlineCode({ children }: { children?: React.ReactNode }) {
@@ -99,16 +128,20 @@ const components: ComponentProps<typeof ReactMarkdown>['components'] = {
   )
 }
 
-export const Markdown = memo(function Markdown({ text, className }: { text: string; className?: string }) {
+export const Markdown = memo(function Markdown({ text, className, streaming }: { text: string; className?: string; streaming?: boolean }) {
+  const normalized = useMemo(() => normalizeMath(text), [text])
+  const openFenceCode = useMemo(() => (streaming ? trailingOpenFenceCode(normalized) : null), [normalized, streaming])
   return (
-    <div className={`prose ${className ?? ''}`}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: 'ignore' }]]}
-        components={components}
-      >
-        {normalizeMath(text)}
-      </ReactMarkdown>
-    </div>
+    <StreamingOpenCodeContext.Provider value={openFenceCode}>
+      <div className={`prose ${className ?? ''}`}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: 'ignore' }]]}
+          components={components}
+        >
+          {normalized}
+        </ReactMarkdown>
+      </div>
+    </StreamingOpenCodeContext.Provider>
   )
 })

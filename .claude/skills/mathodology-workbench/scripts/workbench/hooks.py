@@ -118,9 +118,12 @@ def pre_edit(payload: dict) -> dict | None:
     return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny', 'permissionDecisionReason': reason}}
 
 
-def _results_stamp(ws: Workspace) -> tuple[float, Path]:
-    newest = max((p.stat().st_mtime for p in ws.files('results', ('.json',))), default=0.0)
-    return newest, ws.state / 'results.stamp'
+def _results_inventory(ws: Workspace) -> dict[str, list[int]]:
+    inventory = {}
+    for path in ws.files('results', ('.json',), strict=True):
+        stat = path.stat()
+        inventory[path.relative_to(ws.root).as_posix()] = [stat.st_mtime_ns, stat.st_size]
+    return inventory
 
 
 def post_tool(payload: dict) -> dict | None:
@@ -154,12 +157,16 @@ def post_tool(payload: dict) -> dict | None:
 
 
 def _results_changed(ws: Workspace, force: bool = False) -> list[str]:
-    newest, stamp = _results_stamp(ws)
+    stamp = ws.state / 'results.stamp'
     try:
-        seen = float(read_text(stamp) or 0)
+        inventory = _results_inventory(ws)
+    except OSError:
+        inventory = None  # let the result loader report scan or read errors
+    try:
+        seen = json.loads(read_text(stamp))
     except ValueError:
-        seen = 0.0
-    if not force and (newest == 0.0 or newest <= seen):
+        seen = None
+    if not force and inventory is not None and inventory == seen:
         return []
     rs, issues = results.load(ws)
     out = []
@@ -167,15 +174,16 @@ def _results_changed(ws: Workspace, force: bool = False) -> list[str]:
     if errors:
         out.append('Results contract problems:\n' + '\n'.join('- ' + i.render() for i in errors[:10]))
     target = results.macro_path(ws)
-    if (rs.values or results.table_texts(rs)) and (target.exists() or ws.dir('paper').is_dir()):
+    if ws.dir('paper').is_dir():
         try:
             _, changed = results.sync(ws, rs)
             if changed:
                 out.append(f'Results changed: refreshed {ws.rel(target)} ({len(rs.values)} values citable as \\res{{file.key}}).')
         except results.SyncError as exc:
             out.append(str(exc))
-    ws.state.mkdir(parents=True, exist_ok=True)
-    stamp.write_text(str(newest), encoding='utf-8')
+        else:
+            if inventory is not None:
+                write_json(stamp, inventory)
     return out
 
 

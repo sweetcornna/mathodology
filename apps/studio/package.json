@@ -1,7 +1,7 @@
 {
   "name": "mathodology-studio",
   "productName": "Mathodology Studio",
-  "version": "0.18.2",
+  "version": "0.19.0",
   "description": "Desktop workbench for mathematical-modeling contests, driving local agent CLIs (Claude Code, Codex, Antigravity CLI, Qoder CLI, pi and ACP agents) with the Mathodology skills pack.",
   "license": "MIT",
   "author": "Mathodology contributors",
@@ -15,8 +15,10 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
-    "package": "electron-vite build && electron-builder --mac --dir",
+    "package": "electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir -c.mac.identity=null",
     "dist": "electron-vite build && electron-builder --mac",
+    "dist:mac:unsigned": "electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac -c.mac.identity=null",
+    "dist:mac:signed": "electron-vite build && electron-builder --mac -c.forceCodeSigning=true",
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:linux": "electron-vite build && electron-builder --linux -c.productName=mathodology-studio"
   },

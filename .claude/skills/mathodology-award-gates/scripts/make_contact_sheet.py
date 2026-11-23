@@ -25,6 +25,8 @@ import subprocess
 import sys
 import tempfile
 
+POPPLER_TIMEOUT_S = 120
+
 
 def _require_pdftoppm():
     if shutil.which("pdftoppm") is None:
@@ -56,7 +58,10 @@ def _render_pages(pdf_path, dpi, out_dir):
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
+            timeout=POPPLER_TIMEOUT_S,
         )
+    except subprocess.TimeoutExpired:
+        sys.exit(f"make_contact_sheet: pdftoppm timed out after {POPPLER_TIMEOUT_S}s on '{pdf_path}'")
     except subprocess.CalledProcessError as exc:
         # Without this, a corrupt/encrypted PDF reports only the exit status
         # and poppler's actual diagnostic is swallowed.
@@ -114,7 +119,7 @@ def make_contact_sheet(pdf_path, out_path, dpi=60, cols=None):
         fig.tight_layout(rect=(0, 0, 1, 0.97))
         out_dir = os.path.dirname(os.path.abspath(out_path))
         os.makedirs(out_dir, exist_ok=True)
-        fig.savefig(out_path, dpi=110)
+        fig.savefig(out_path, dpi=110, format="png")
         plt.close(fig)
         return out_path
     finally:

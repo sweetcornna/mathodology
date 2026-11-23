@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CircleCheck, CircleHelp, CircleX, ExternalLink, FileText, ListChecks, PenLine, RotateCcw, TriangleAlert, Wand2 } from 'lucide-react'
 import type { RefEntryCheck, RefProblem, RefReport, RefVerdict } from '@shared/types'
 import { api } from '../lib/api'
+import { formatIpcError } from '../lib/errors'
 import { useT, type MessageKey } from '../lib/i18n'
 import { useStudio } from '../store'
 import { Spinner, Tip } from './ui'
@@ -15,11 +16,27 @@ const VERDICT: Record<RefVerdict, { icon: typeof CircleX; tone: string }> = {
 const ORDER: RefVerdict[] = ['fail', 'warn', 'inconclusive', 'ok']
 const RANK: Record<RefProblem['severity'], number> = { fail: 0, warn: 1, inconclusive: 2, info: 3 }
 
-// Reports survive pane-tab switches for the life of the window, one per project.
-const reports = new Map<string, RefReport>()
+interface ProjectRefState {
+  report: RefReport | null
+  progress: { done: number; total: number } | null
+  error: string | null
+  reqGen: number
+}
 
-function clean(err: unknown): string {
-  return String((err as Error).message ?? err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+const EMPTY_STATE: ProjectRefState = { report: null, progress: null, error: null, reqGen: 0 }
+
+// Reports survive pane-tab switches for the life of the window, strictly bound per project.
+const projectStates = new Map<string, ProjectRefState>()
+const stateListeners = new Set<() => void>()
+
+function getProjectState(projectId: string | null): ProjectRefState {
+  return (projectId && projectStates.get(projectId)) || EMPTY_STATE
+}
+
+function patchProjectState(projectId: string, updater: (prev: ProjectRefState) => ProjectRefState): void {
+  const prev = projectStates.get(projectId) ?? EMPTY_STATE
+  projectStates.set(projectId, updater(prev))
+  for (const listener of stateListeners) listener()
 }
 
 function problemText(t: ReturnType<typeof useT>, p: RefProblem): string {
@@ -30,6 +47,13 @@ function EntryRow({ entry, file, onDoi }: { entry: RefEntryCheck; file: string; 
   const t = useT()
   const openPreview = useStudio((s) => s.openPreview)
   const [busy, setBusy] = useState(false)
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+    }
+  }, [])
   const { icon: Icon, tone } = VERDICT[entry.verdict]
   const shown = entry.problems.filter((p) => p.code !== 'no_doi' || !entry.candidate).sort((a, b) => RANK[a.severity] - RANK[b.severity])
   const record = entry.check?.record ?? entry.candidate?.record
@@ -69,7 +93,9 @@ function EntryRow({ entry, file, onDoi }: { entry: RefEntryCheck; file: string; 
                 disabled={busy}
                 onClick={async () => {
                   setBusy(true)
-                  await onDoi(entry.candidate!.doi).finally(() => setBusy(false))
+                  await onDoi(entry.candidate!.doi).finally(() => {
+                    if (alive.current) setBusy(false)
+                  })
                 }}
               >
                 {busy ? <Spinner size={11} /> : <PenLine size={12} />} {t('refs.writeDoi')}
@@ -117,45 +143,70 @@ export function ReferencesView() {
   const projectId = useStudio((s) => s.activeProjectId)
   const insert = useStudio((s) => s.insertIntoComposer)
   const toast = useStudio((s) => s.showToast)
-  const [report, setReportRaw] = useState<RefReport | null>(() => (projectId ? (reports.get(projectId) ?? null) : null))
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [, setRevision] = useState(0)
   const [filter, setFilter] = useState<RefVerdict | null>(null)
 
-  const setReport = (r: RefReport): void => {
-    if (projectId) reports.set(projectId, r)
-    setReportRaw(r)
-  }
+  useEffect(() => {
+    const onChange = (): void => setRevision((r) => r + 1)
+    stateListeners.add(onChange)
+    const offProgress = api.on('refs:progress', (p) => {
+      patchProjectState(p.projectId, (prev) => (prev.progress ? { ...prev, progress: { done: p.done, total: p.total } } : prev))
+    })
+    return () => {
+      stateListeners.delete(onChange)
+      offProgress()
+    }
+  }, [])
 
   useEffect(() => {
-    setReportRaw(projectId ? (reports.get(projectId) ?? null) : null)
     setFilter(null)
-    return api.on('refs:progress', (p) => {
-      if (p.projectId === projectId) setProgress({ done: p.done, total: p.total })
-    })
   }, [projectId])
 
-  const run = async (file?: string): Promise<void> => {
-    if (!projectId || progress) return
-    setError(null)
-    setProgress({ done: 0, total: 0 })
+  const { report, progress, error } = getProjectState(projectId)
+
+  const run = async (targetProjectId: string, file?: string): Promise<void> => {
+    const cur = getProjectState(targetProjectId)
+    if (cur.progress) return
+    const reqGen = cur.reqGen + 1
+    patchProjectState(targetProjectId, (prev) => ({
+      ...prev,
+      error: null,
+      progress: { done: 0, total: 0 },
+      reqGen
+    }))
     try {
-      setReport(await api.call('refs:check', projectId, file ?? report?.file))
+      const next = await api.call('refs:check', targetProjectId, file ?? cur.report?.file)
+      patchProjectState(targetProjectId, (prev) => {
+        if (prev.reqGen !== reqGen) return prev
+        return { ...prev, report: next, error: null, progress: null }
+      })
     } catch (err) {
-      setError(clean(err))
-    } finally {
-      setProgress(null)
+      const msg = formatIpcError(err)
+      patchProjectState(targetProjectId, (prev) => {
+        if (prev.reqGen !== reqGen) return prev
+        return { ...prev, error: msg, progress: null }
+      })
     }
   }
 
-  const writeDoi = async (key: string, doi: string): Promise<void> => {
-    if (!projectId || !report) return
+  const writeDoi = async (targetProjectId: string, targetFile: string, key: string, doi: string): Promise<void> => {
     try {
-      const entry = await api.call('refs:setDoi', projectId, report.file, key, doi)
-      setReport({ ...report, entries: report.entries.map((e) => (e.key === key ? entry : e)) })
-      toast(t('refs.doiWritten', { key }), 'info')
+      const entry = await api.call('refs:setDoi', targetProjectId, targetFile, key, doi)
+      patchProjectState(targetProjectId, (prev) => {
+        if (!prev.report || prev.report.file !== targetFile) return prev
+        return {
+          ...prev,
+          report: {
+            ...prev.report,
+            entries: prev.report.entries.map((e) => (e.key === key ? entry : e))
+          }
+        }
+      })
+      if (useStudio.getState().activeProjectId === targetProjectId) {
+        toast(t('refs.doiWritten', { key }), 'info')
+      }
     } catch (err) {
-      toast(clean(err), 'error')
+      toast(formatIpcError(err), 'error')
     }
   }
 
@@ -167,7 +218,12 @@ export function ReferencesView() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2.5">
         {report && report.files.length > 1 ? (
-          <select className="h-7 max-w-[55%] rounded-[7px] bg-surface-2 px-2 text-[0.82rem]" value={report.file} onChange={(e) => void run(e.target.value)} aria-label={t('refs.file')}>
+          <select
+            className="h-7 max-w-[55%] rounded-[7px] bg-surface-2 px-2 text-[0.82rem]"
+            value={report.file}
+            onChange={(e) => projectId && void run(projectId, e.target.value)}
+            aria-label={t('refs.file')}
+          >
             {report.files.map((f) => (
               <option key={f}>{f}</option>
             ))}
@@ -185,7 +241,7 @@ export function ReferencesView() {
             <Spinner size={12} /> {progress.total ? `${progress.done}/${progress.total}` : t('refs.checking')}
           </span>
         ) : (
-          <button className="btn btn-secondary btn-sm h-7" onClick={() => void run()} disabled={!projectId}>
+          <button className="btn btn-secondary btn-sm h-7" onClick={() => projectId && void run(projectId)} disabled={!projectId}>
             {report ? <RotateCcw size={12} /> : <ListChecks size={13} />} {t(report ? 'refs.recheck' : 'refs.check')}
           </button>
         )}
@@ -218,14 +274,24 @@ export function ReferencesView() {
                 )
               })}
               <span className="flex-1" />
-              {doubtful > 0 && (
-                <button className="btn btn-secondary btn-sm h-6" onClick={() => insert(fixRequest(t, report))}>
+              {doubtful > 0 && projectId && (
+                <button
+                  className="btn btn-secondary btn-sm h-6"
+                  onClick={() => {
+                    if (useStudio.getState().activeProjectId === projectId) insert(fixRequest(t, report))
+                  }}
+                >
                   <Wand2 size={12} /> {t('refs.askAgent')}
                 </button>
               )}
             </div>
             {visible.map((e) => (
-              <EntryRow key={e.key + e.line} entry={e} file={report.file} onDoi={(doi) => writeDoi(e.key, doi)} />
+              <EntryRow
+                key={`${projectId}:${report.file}:${e.key}:${e.line}`}
+                entry={e}
+                file={report.file}
+                onDoi={(doi) => (projectId ? writeDoi(projectId, report.file, e.key, doi) : Promise.resolve())}
+              />
             ))}
             <p className="m-0 px-3 py-3 text-[0.75rem] leading-snug text-fg-4">{t('refs.note')}</p>
           </>

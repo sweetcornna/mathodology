@@ -160,12 +160,12 @@ def cmd_run(args) -> int:
         sys.exit('Give the command after --, e.g. mtd.py run -- python code/q1.py')
     code, manifest = runs.run(ws, command, args.name, args.seed, args.timeout)
     print(f'\n[mtd] run {manifest["id"]}: exit {code} in {manifest["duration_s"]}s; '
-          f'{len(manifest["outputs"])} output(s) changed: {", ".join(sorted(manifest["outputs"])[:6]) or "none"}', file=sys.stderr)
+          f'{len(manifest["outputs"])} output(s) written: {", ".join(sorted(manifest["outputs"])[:6]) or "none"}', file=sys.stderr)
     rs, issues = results.load(ws)
     for issue in issues:
         if issue.severity == 'error':
             print('[mtd] ' + issue.render(), file=sys.stderr)
-    if (rs.values or results.table_texts(rs)) and ws.dir('paper').is_dir():
+    if ws.dir('paper').is_dir():
         try:
             path, changed = results.sync(ws, rs)
             if changed:

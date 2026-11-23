@@ -1,7 +1,7 @@
 # 安装与更新
 
 使用标准 [skills CLI](https://github.com/vercel-labs/skills)。完整仓库提供 9 个技能、
-8 个可选 Claude Code 角色、2 份工作提示词、工作台钩子（`.claude/settings.json`）和项目 search MCP 配置，
+8 个可选角色（支持 Claude Code 和 Codex）、2 份工作提示词、工作台钩子（`.claude/settings.json`）和项目 search MCP 配置，
 不运行自定义更新器。
 
 ## 使用完整仓库
@@ -40,7 +40,12 @@ python3 .claude/skills/mathodology-workbench/scripts/mtd.py install-hooks
 ```
 
 它只合并 Mathodology 的四个钩子，保留已有设置和其他钩子；`--remove` 撤销。
-Codex 等不读取 Claude Code 钩子的 agent 可在交付前手动运行 `mtd.py check`。
+钩子运行静态检查并读取仍有效的 LaTeX 日志。交付前可手动编译并检查论文：
+
+```bash
+python3 .claude/skills/mathodology-workbench/scripts/mtd.py check --compile  # Claude Code
+python3 .agents/skills/mathodology-workbench/scripts/mtd.py check --compile  # Codex
+```
 
 确实需要全局安装时，为选定命令增加 `--global`。它会影响其他项目，项目使用
 无需此选项；全局安装同样不安装项目角色或 MCP 配置。
@@ -73,9 +78,11 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dist` 构建未签名的 macOS DMG，`pnpm dist:win` 和 `pnpm dist:linux` 构建 Windows
-安装包和 Linux 的 .deb、AppImage。Studio 新建项目时安装技能、角色、工作提示词
-和 humanizer，不覆盖已有文件；每次启动更新 humanizer，并把 free-search-mcp 刷新到最新版。
+`pnpm dist:mac:signed` 构建经过 Apple Developer ID 签名的 macOS DMG 与 ZIP（本地无证书时可用 `pnpm dist:mac:unsigned`），`pnpm dist:win` 和 `pnpm dist:linux` 构建 Windows
+安装包和 Linux 的 .deb、AppImage。Studio 新建项目时会在 `.claude/skills/` 和
+`.agents/skills/` 中安装 6 个 Mathodology 技能，分别是 whole-project、agent-pipeline、
+evidence-search、figure-presets、award-gates 和 workbench。它还会安装两套角色与工作提示词，
+合并 Claude Code 工作台钩子，并配置 humanizer。每次启动时会更新 humanizer 和 free-search-mcp。
 不想自己构建的话，从 [Releases](https://github.com/sweetcornna/mathodology/releases/latest)
 下载即可：Windows 安装包由 GitHub Actions 从本仓库构建，SignPath 签名正在接入，目前仍未签名。
 详见 [Studio 说明](../apps/studio/README.md)。

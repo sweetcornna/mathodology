@@ -91,7 +91,7 @@ def clean_tex(text: str) -> str:
     return text
 
 
-def mentions_in(lines: list[Line], kind: str, main_file: str | None) -> tuple[list[Mention], dict[str, int]]:
+def mentions_in(lines: list[Line], kind: str) -> tuple[list[Mention], dict[str, int]]:
     found: list[Mention] = []
     bound: dict[str, int] = {}
     # Without \begin{document} (a fragment) every line is body text.
@@ -170,12 +170,9 @@ class NumberReport:
 def check(paper: Paper, rs: ResultSet, near_rel: float = 0.02, only: str | None = None) -> NumberReport:
     if not paper.main:
         return NumberReport([])
-    main_rel = None
-    for l in paper.lines:
-        main_rel = l.file
-        break
+    main_rel = paper.lines[0].file if paper.lines else None
     lines = paper.lines if only is None else [l for l in paper.lines if l.file == only or l.file == main_rel]
-    mentions, bound = mentions_in(lines, paper.kind, main_rel)
+    mentions, bound = mentions_in(lines, paper.kind)
     if only is not None:
         mentions = [m for m in mentions if m.file == only]
     index = Index.build(rs)

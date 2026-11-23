@@ -37,7 +37,7 @@ const ZH: Record<ToolKind, Verb> = {
   other: { one: () => '使用了 1 个工具', many: (n) => `使用了 ${n} 个工具`, running: () => '正在处理' }
 }
 
-export interface Phrase {
+interface Phrase {
   text: string
   /** Part of the phrase shown as a mono chip (a file or tool name). */
   chip?: string

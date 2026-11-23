@@ -5,7 +5,10 @@
 
 # Contest working outputs and Codex local mirror (scratch, never committed)
 /work/
-/.codex/
+/.codex/*
+!/.codex/agents/
+/.codex/agents/*
+!/.codex/agents/*.toml
 
 # Env and secrets
 .env

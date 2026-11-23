@@ -24,7 +24,8 @@ git -C "$repo_root" ls-files --others --exclude-standard > "$backup_dir/untracke
   git ls-files -z --cached --others --exclude-standard |
     while IFS= read -r -d '' path; do
       case "$path" in
-        .claude/skills/*|.claude/agents/*|.claude/workflows/*|docs/*|AGENTS.md|README.md|README_en.md|LICENSE|.gitignore|.mcp.json)
+        .claude/skills/*|.claude/agents/*|.claude/workflows/*|.claude/settings.json|.codex/agents/*.toml|docs/*|AGENTS.md|CLAUDE.md|README.md|README_en.md|LICENSE|.gitignore|.mcp.json|\
+        apps/studio/README.md|apps/studio/build/icon.png|apps/studio/docs/studio-en.png|apps/studio/docs/studio-zh.png|.github/workflows/studio-windows.yml)
           if [[ -e "$path" ]]; then
             printf '%s\0' "$path"
           fi

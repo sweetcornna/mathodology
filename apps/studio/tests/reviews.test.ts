@@ -218,6 +218,38 @@ describe('ReviewManager', () => {
     ])
   })
 
+  it.each(['success', 'cancelled', 'failed'] as const)('finalizes a %s turn without losing user dispositions', async (outcome) => {
+    sessionEvents = events([{ kind: 'assistant.text', blockId: 'b', text: 'Source: 10.1000/missing.' }])
+    let finish!: () => void
+    let started!: () => void
+    const active = new Promise<void>((resolve) => { started = resolve })
+    fake.start = (_req, sink) => {
+      const done = new Promise<void>((resolve) => {
+        finish = () => {
+          sink.emit({ kind: 'turn.completed', ok: outcome !== 'failed' })
+          resolve()
+        }
+      })
+      sink.emit({ kind: 'assistant.text', blockId: 'review', text: '{"summary":"Checked","findings":[]}' })
+      started()
+      return { done, interrupt() {}, respondPermission() {} }
+    }
+    const { reviews, seen } = manager(async () => ({
+      status: 200, ok: true, text: async () => JSON.stringify([{ status: 'DOI does not exist' }])
+    }))
+    const review = await reviews.start(session.id)
+    await active
+    const finding = reviews.list(session.id).at(-1)?.findings[0]
+    expect(finding).toBeDefined()
+    reviews.setStatus(session.id, review.id, finding!.id, 'dismissed')
+    if (outcome === 'cancelled') reviews.cancel(review.id)
+    finish()
+    expect(await ended(seen)).toMatchObject({
+      status: outcome === 'success' ? 'done' : outcome === 'failed' ? 'error' : 'cancelled',
+      findings: [{ id: finding!.id, status: 'dismissed' }]
+    })
+  })
+
   it('saves on shutdown that running reviews stopped', async () => {
     let started = false
     fake.start = (_req, sink) => {

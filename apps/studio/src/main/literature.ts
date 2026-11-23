@@ -1,8 +1,10 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { normalizeDoi, sourceKind, titleSimilarity } from '@shared/biblio'
 import type { DoiCheck, LitCitation, LitGraph, LitResult, RegistryRecord } from '@shared/types'
-import { findCandidate, resolveDoi, type Fetcher } from './refcheck'
+import { findCandidate, resolveDoi, type Fetcher } from './registry'
+import { arxivId, locatedEntries } from './bibtex'
+import { editBibliography } from './bibliography'
 
 const UA = 'Mathodology (https://github.com/ymylive/mathodology)'
 
@@ -123,11 +125,6 @@ export function citeKey(author: string, year: string, title: string): string {
   return (ascii(surname).toLowerCase() || 'anon') + (year.match(/\d{4}/)?.[0] ?? '') + (word ?? '')
 }
 
-function field(bib: string, name: string): string {
-  const m = new RegExp(`\\b${name}\\s*=\\s*(?:\\{((?:[^{}]|\\{[^{}]*\\})*)\\}|"([^"]*)"|(\\d+))`, 'i').exec(bib)
-  return (m?.[1] ?? m?.[2] ?? m?.[3] ?? '').replace(/[{}]/g, '').trim()
-}
-
 function bibEscape(s: string): string {
   return s.replace(/[{}\\]/g, '').replace(/([&%$#_])/g, '\\$1')
 }
@@ -176,8 +173,12 @@ export function formatBibtex(bib: string): string {
 
 /** Give a fetched or built entry Studio's own key, so keys are predictable across sources. */
 export function rekey(bib: string, paper: LitResult): { key: string; bibtex: string } {
-  const key = citeKey(field(bib, 'author'), field(bib, 'year') || paper.date?.slice(0, 4) || '', field(bib, 'title') || paper.title)
-  const bibtex = formatBibtex(bib.trim().replace(/^@(\w+)\s*\{\s*[^,]*,/, (_, type: string) => `@${type}{${key},`))
+  const entry = locatedEntries(bib).find((candidate) => candidate.closed)
+  const { author, year, title } = entry?.fields ?? {}
+  const key = citeKey(author ?? '', year || paper.date?.slice(0, 4) || '', title || paper.title)
+  const bibtex = entry
+    ? formatBibtex(bib.slice(entry.start, entry.keyStart) + key + bib.slice(entry.keyStart + entry.key.length, entry.end))
+    : bib.trim()
   return { key, bibtex }
 }
 
@@ -190,7 +191,7 @@ export async function fetchBibtex(paper: LitResult, fetch: Fetcher): Promise<str
     try {
       const res = await fetch(url, { headers })
       const text = res.ok ? (await res.text()).trim() : ''
-      if (text.startsWith('@')) return text
+      if (locatedEntries(text).some((entry) => entry.closed)) return text
     } catch {
       // try the next source, then fall back to the registry record or the search result
     }
@@ -241,24 +242,29 @@ export function bibliographyPath(projectDir: string): string {
 
 /** Append the entry unless the bibliography already has this paper (same DOI, URL or key). */
 export function addToBibliography(projectDir: string, rel: string, key: string, bibtex: string, paper: LitResult): { key: string; added: boolean } {
-  const abs = join(projectDir, rel)
-  const text = existsSync(abs) ? readFileSync(abs, 'utf8') : ''
-  const entries = text.split(/(?=^@)/m)
-  const same = entries.find(
-    (e) =>
-      (paper.doi && field(e, 'doi').toLowerCase() === paper.doi.toLowerCase()) ||
-      (paper.arxiv && e.includes(paper.arxiv)) ||
-      e.includes(paper.url)
-  )
-  const existingKey = same?.match(/^@\w+\s*\{\s*([^,\s]+)\s*,/)?.[1]
-  if (existingKey) return { key: existingKey, added: false }
-  // Distinct papers can share a key; suffix a letter as BibTeX styles do.
-  let final = key
-  for (let i = 0; new RegExp(`^@\\w+\\s*\\{\\s*${final}\\s*,`, 'm').test(text); i++) final = key + String.fromCharCode(97 + i)
-  const entry = bibtex.replace(`{${key},`, `{${final},`)
-  mkdirSync(dirname(abs), { recursive: true })
-  writeFileSync(abs, (text.trimEnd() ? text.trimEnd() + '\n\n' : '') + entry + '\n', 'utf8')
-  return { key: final, added: true }
+  return editBibliography<{ key: string; added: boolean }>(projectDir, rel, (text) => {
+    const entries = locatedEntries(text)
+    const same = entries.find(({ fields }) =>
+      (paper.doi && fields.doi && normalizeDoi(fields.doi) === normalizeDoi(paper.doi)) ||
+      (paper.arxiv && arxivId(fields) === paper.arxiv) ||
+      (paper.url && (fields.url === paper.url || fields.howpublished === `\\url{${paper.url}}`))
+    )
+    if (same) return { result: { key: same.key, added: false } }
+    const keys = new Set(entries.map((e) => e.key))
+    let final = key
+    for (let i = 0; keys.has(final); i++) final = key + (i < 26 ? String.fromCharCode(97 + i) : String(i + 1))
+    const [entry, extra] = locatedEntries(bibtex)
+    if (!entry?.closed || extra || entry.key !== key || bibtex.slice(0, entry.start).trim() || bibtex.slice(entry.end).trim()) {
+      throw new Error('Invalid BibTeX citation')
+    }
+    const formatted = bibtex.slice(0, entry.keyStart) + final + bibtex.slice(entry.keyStart + key.length)
+    const edited = locatedEntries(formatted)
+    if (edited.length !== 1 || !edited[0].closed || edited[0].key !== final) throw new Error('Invalid BibTeX key')
+    return {
+      text: text + (text ? (text.endsWith('\n') ? '\n' : '\n\n') : '') + formatted + '\n',
+      result: { key: final, added: true }
+    }
+  })
 }
 
 /**

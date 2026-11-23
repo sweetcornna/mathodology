@@ -114,3 +114,39 @@ describe('artifact store', () => {
     expect(artifact.missing).not.toBe(true)
   })
 })
+
+it('retries the same fingerprint after a failed read and leaves the index untouched on clean scans', () => {
+  const { store, project, write } = setup()
+  write('data/value.csv', 'before')
+  const [initial] = store.capture(project, 'scan', { origin: 'external' })
+  write('data/value.csv', 'after')
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  const read = vi.spyOn(fs, 'readFileSync').mockImplementationOnce(() => { throw new Error('temporary read failure') })
+  try {
+    expect(store.capture(project, 'scan', { origin: 'turn' })).toEqual([])
+  } finally {
+    read.mockRestore()
+    warn.mockRestore()
+  }
+  expect(store.capture(project, 'scan', { origin: 'turn' })[0]?.version.v).toBe(2)
+  const rename = vi.spyOn(fs, 'renameSync')
+  try {
+    expect(store.capture(project, 'scan', { origin: 'external' })).toEqual([])
+    expect(rename).not.toHaveBeenCalled()
+    expect(initial.artifact.versions).toHaveLength(2)
+  } finally {
+    rename.mockRestore()
+  }
+})
+
+it('streams a large changed file and reuses the blob after capturing it', async () => {
+  const { store, project } = setup()
+  const bytes = Buffer.alloc(5_000_000, 'a')
+  writeFileSync(join(project.path, 'large.csv'), bytes)
+  const pending = store.captureAvailable(project, 'scan', () => ({ origin: 'external' }))
+  expect(pending).toBeInstanceOf(Promise)
+  const [result] = await pending
+  expect(result.version).toMatchObject({ size: bytes.length, stored: true })
+  expect(store.read(project.id, result.artifact.id, 1)?.equals(bytes)).toBe(true)
+  expect(store.captureAvailable(project, 'scan', () => ({ origin: 'external' }))).toEqual([])
+})

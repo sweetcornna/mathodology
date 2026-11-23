@@ -26,7 +26,12 @@ NUM_CITE = re.compile(r'(?<![\w!\]^])\[(\d+(?:\s*[-–~,，、]\s*\d+)*)\](?![(:
 SUP_CITE = re.compile(r'<sup>\s*\[?(\d+(?:\s*[-–~,，、]\s*\d+)*)\]?\s*</sup>')
 PANDOC_GROUP = re.compile(r'\[([^\[\]]*@[^\[\]]*)\]')
 PANDOC_KEY = re.compile(r'(?:^|[\s;\-])@([A-Za-z0-9_][\w:.#$%&+?<>~/\-]*[\w])')
-BIBENTRY = re.compile(r'@(\w+)\s*\{\s*([^,\s]+)\s*,')
+BIBENTRY = re.compile(r'@(\w+)\s*[{(]\s*([^,\s{}()]+)\s*,')
+
+
+def bibtex_keys(text: str) -> set[str]:
+    return {m.group(2) for m in BIBENTRY.finditer(text)
+            if m.group(1).lower() not in {'string', 'comment', 'preamble'}}
 
 
 def numbers(group: str) -> list[int]:
@@ -124,7 +129,7 @@ def check(paper, bib_text: str, in_scope, full: bool) -> list[Issue]:
                                 + ', '.join(f'[{n}]' for n in unused[:10]), ref_heading.file if ref_heading else None,
                                 ref_heading.line if ref_heading else None))
     if pandoc:
-        keys = {m.group(2) for m in BIBENTRY.finditer(bib_text) if m.group(1).lower() not in {'string', 'comment', 'preamble'}}
+        keys = bibtex_keys(bib_text)
         for line, key in {(l.file, l.line, k): (l, k) for l, k in pandoc}.values():
             if key not in keys and in_scope(line):
                 issues.append(Issue('error', 'paper', 'md.undefined-cite', f'citation @{key} is not in any .bib file in paper/', line.file, line.line,

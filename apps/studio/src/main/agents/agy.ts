@@ -205,7 +205,7 @@ export const agyAdapter: AgentAdapter = {
   start(req: TurnRequest, sink: TurnSink): Turn {
     const parser = new AgyStreamParser(sink)
     let signInNoticed = false
-    const { child, exited, kill } = spawnLines(req.binary, agyArgs(req), req.cwd, req.env, (l) => parser.line(l))
+    const { child, started: admitted, exited, kill, stop } = spawnLines(req.binary, agyArgs(req), req.cwd, req.env, (l) => parser.line(l))
     child.stderr.on('data', (d: string) => {
       if (!signInNoticed && SIGN_IN_PROMPT.test(d) && !parser.sawResult) {
         signInNoticed = true
@@ -240,11 +240,12 @@ export const agyAdapter: AgentAdapter = {
       interrupt() {
         interrupted = true
         kill('SIGINT')
-        setTimeout(() => child.exitCode === null && kill('SIGKILL'), 5000)
+        stop()
       },
       respondPermission() {
         // Print mode never pauses for approval.
       },
+      admitted,
       done
     }
   }

@@ -1,10 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import type { Connector, ConnectorCheck } from '@shared/types'
+import type { Connector } from '@shared/types'
 import { readJson, writeAtomic } from './store'
 
 export const SEARCH_CONNECTOR: Connector = {
@@ -45,7 +41,7 @@ function readJsonFile(path: string): Record<string, unknown> | null {
 function writeIfChanged(path: string, text: string): boolean {
   if (existsSync(path) && readFileSync(path, 'utf8') === text) return false
   mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, text, 'utf8')
+  writeAtomic(path, text)
   return true
 }
 
@@ -114,7 +110,7 @@ function tomlBlock(c: Connector, platform: NodeJS.Platform): string {
     lines.push(`command = ${tomlString(command)}`)
     lines.push(`args = [${args.map(tomlString).join(', ')}]`)
     if (c.env && Object.keys(c.env).length) {
-      lines.push('', `[mcp_servers.${c.id}.env]`)
+      lines.push(`[mcp_servers.${c.id}.env]`)
       for (const [k, v] of Object.entries(c.env)) lines.push(`${/^[A-Za-z0-9_-]+$/.test(k) ? k : tomlString(k)} = ${tomlString(v)}`)
     }
   }
@@ -129,6 +125,57 @@ function tomlKey(lines: string[]): string {
     .join('\n')
 }
 
+/** Locate owned table spans using TOML lexical state across physical lines. */
+function codexTables(text: string, managed: Set<string>): Map<string, { start: number; end: number }[]> {
+  const tables = new Map<string, { start: number; end: number }[]>()
+  const header = /^\s*\[\s*mcp_servers\s*\.\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))(?:\s*\.[^\]]*)?\s*\]\s*(?:#.*)?$/
+  let span: { start: number; end: number } | undefined
+  let quote = ''
+  let depth = 0
+  let offset = text.startsWith('\uFEFF') ? 1 : 0
+
+  while (offset < text.length) {
+    const lf = text.indexOf('\n', offset)
+    const end = lf === -1 ? text.length : lf + 1
+    const line = text.slice(offset, end)
+    if (!quote && !depth && /^\s*\[/.test(line)) {
+      span = undefined
+      const match = header.exec(line.trimEnd())
+      const id = match && (match[1] ?? match[2] ?? match[3])
+      if (id && managed.has(id)) {
+        span = { start: offset, end }
+        const spans = tables.get(id) ?? []
+        spans.push(span)
+        tables.set(id, spans)
+      }
+    } else if (span && (quote || depth || !/^\s*(?:#|$)/.test(line))) {
+      // Trailing whitespace and stand-alone comments belong to the surrounding document.
+      span.end = end
+    }
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i]
+      if (quote) {
+        if (quote[0] === '"' && c === '\\') i++
+        else if (line.startsWith(quote, i)) {
+          if (quote.length === 3) {
+            i += 2
+            // A multiline closing delimiter may be preceded by one or two literal quotes.
+            for (let extra = 0; extra < 2 && line[i + 1] === quote[0]; extra++) i++
+          }
+          quote = ''
+        }
+      } else if (c === '#') break
+      else if (c === '"' || c === "'") {
+        quote = line.startsWith(c.repeat(3), i) ? c.repeat(3) : c
+        i += quote.length - 1
+      } else if (c === '[' || c === '{') depth++
+      else if (c === ']' || c === '}') depth--
+    }
+    offset = end
+  }
+  return tables
+}
+
 /**
  * Replace the `[mcp_servers.<id>]` tables (and their sub-tables) Studio wrote for the managed ids
  * in a Codex config, keeping every other line as it was. `written` is updated in place.
@@ -141,42 +188,45 @@ export function syncCodexToml(
   platform: NodeJS.Platform = process.platform
 ): string {
   const managed = new Set([...connectors.map((c) => c.id), ...removed])
-  const header = /^\s*\[\s*mcp_servers\.(?:"([^"]+)"|([A-Za-z0-9_-]+))(?:\.[^\]]*)?\s*\]\s*(#.*)?$/
-  // Each line with the managed server whose table or sub-table it is in.
-  const tagged: { line: string; id?: string }[] = []
-  let id: string | undefined
-  for (const line of text.split('\n')) {
-    if (/^\s*\[/.test(line)) {
-      const m = header.exec(line)
-      id = m && managed.has(m[1] ?? m[2]) ? (m[1] ?? m[2]) : undefined
-    }
-    tagged.push({ line, id })
-  }
-  const replaced = new Set<string>()
-  const blocks: string[] = []
-  const sync = (sid: string, next?: string): void => {
-    const current = tagged.filter((t) => t.id === sid).map((t) => t.line)
+  const tables = codexTables(text, managed)
+  const edits: { start: number; end: number; value: string }[] = []
+  const additions: string[] = []
+  const newline = text.includes('\r\n') ? '\r\n' : '\n'
+
+  const sync = (id: string, next?: string): void => {
+    const spans = tables.get(id) ?? []
+    const current = tomlKey(spans.flatMap(({ start, end }) => text.slice(start, end).split('\n')))
     const key = next && tomlKey(next.split('\n'))
-    if (current.length && !ours(tomlKey(current), written[sid], key)) {
-      delete written[sid]
+    if (current && !ours(current, written[id], key)) {
+      delete written[id]
       return
     }
-    replaced.add(sid)
-    if (next && key) {
-      blocks.push(next)
-      written[sid] = key
-    } else delete written[sid]
+    if (key && next) written[id] = key
+    else delete written[id]
+    if (current === key) return
+
+    const value = next?.replaceAll('\n', newline)
+    if (!spans.length && value) additions.push(value)
+    for (const [i, span] of spans.entries()) {
+      const trailingEol = /\r?\n$/.exec(text.slice(span.start, span.end))?.[0] ?? ''
+      edits.push({ ...span, value: i === 0 && value ? value + trailingEol : '' })
+    }
   }
-  for (const r of removed) sync(r)
+  const active = new Set(connectors.map((c) => c.id))
+  for (const r of removed) if (!active.has(r)) sync(r)
   for (const c of connectors) sync(c.id, c.enabled ? tomlBlock(c, platform) : undefined)
-  const body = tagged
-    .filter((t) => !t.id || !replaced.has(t.id))
-    .map((t) => t.line)
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trimEnd()
-  const out = [body, ...blocks].filter(Boolean).join('\n\n')
-  return out ? out + '\n' : ''
+  let cursor = 0
+  let out = ''
+  for (const { start, end, value } of edits.sort((a, b) => a.start - b.start)) {
+    out += text.slice(cursor, start) + value
+    cursor = end
+  }
+  out += text.slice(cursor)
+  if (additions.length) {
+    if (out && out !== '\uFEFF' && !out.endsWith('\n')) out += newline
+    out += additions.join(newline) + newline
+  }
+  return out
 }
 
 /**
@@ -218,89 +268,4 @@ export function syncConnectors(
   return changed
 }
 
-function expandHome(v: string): string {
-  return v.startsWith('~/') ? join(homedir(), v.slice(2)) : v
-}
-
-/**
- * Studio's own MCP connections, used for the literature panel and connection checks. Servers
- * start on first use and stay up until the app quits.
- */
-export class McpPool {
-  private clients = new Map<string, { key: string; client: Promise<Client> }>()
-
-  constructor(private readonly env: () => Promise<NodeJS.ProcessEnv>) {}
-
-  private async open(c: Connector, onclose: () => void): Promise<Client> {
-    const client = new Client({ name: 'mathodology-studio', version: '1' })
-    client.onclose = onclose
-    if (c.url) {
-      await client.connect(new StreamableHTTPClientTransport(new URL(c.url)))
-      return client
-    }
-    const base = await this.env()
-    const env: Record<string, string> = {}
-    for (const [k, v] of Object.entries({ ...base, ...c.env })) if (typeof v === 'string') env[k] = expandHome(v)
-    await client.connect(new StdioClientTransport({ command: c.command ?? '', args: c.args ?? [], env, stderr: 'ignore' }))
-    return client
-  }
-
-  private get(c: Connector): Promise<Client> {
-    const key = JSON.stringify([c.command, c.args, c.env, c.url])
-    const cached = this.clients.get(c.id)
-    if (cached?.key === key) return cached.client
-    if (cached) void cached.client.then((x) => x.close()).catch(() => undefined)
-    const evict = (): void => {
-      // A replaced connector may finish closing after its replacement has connected.
-      if (this.clients.get(c.id)?.client === client) this.clients.delete(c.id)
-    }
-    // Install the cache entry before connect can invoke onclose, including failed handshakes.
-    const client = Promise.resolve().then(() => this.open(c, evict))
-    this.clients.set(c.id, { key, client })
-    // Failed starts and later disconnections are both retried on the next user operation.
-    void client.catch(evict)
-    return client
-  }
-
-  async check(c: Connector): Promise<ConnectorCheck> {
-    try {
-      const client = await withTimeout(this.get(c), 60_000)
-      const { tools } = await withTimeout(client.listTools(), 20_000)
-      return { ok: true, tools: tools.map((t) => t.name) }
-    } catch (err) {
-      return { ok: false, tools: [], error: (err as Error).message }
-    }
-  }
-
-  /** Call a tool and return its text content, joined. */
-  async callText(c: Connector, tool: string, args: Record<string, unknown>, timeoutMs = 90_000): Promise<string> {
-    const client = await withTimeout(this.get(c), 60_000)
-    const result = await withTimeout(client.callTool({ name: tool, arguments: args }), timeoutMs)
-    const content = (result.content ?? []) as { type: string; text?: string }[]
-    const text = content.filter((x) => x.type === 'text').map((x) => x.text ?? '').join('\n')
-    if (result.isError) throw new Error(text || `${tool} failed`)
-    return text
-  }
-
-  async close(): Promise<void> {
-    const all = [...this.clients.values()]
-    this.clients.clear()
-    await Promise.allSettled(all.map((x) => x.client.then((c) => c.close())))
-  }
-}
-
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Timed out after ${Math.round(ms / 1000)}s`)), ms)
-    p.then(
-      (v) => {
-        clearTimeout(timer)
-        resolve(v)
-      },
-      (e) => {
-        clearTimeout(timer)
-        reject(e)
-      }
-    )
-  })
-}
+export { McpPool } from './mcp'

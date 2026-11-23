@@ -1,6 +1,8 @@
 """Recorded experiment runs: what ran, on which inputs, and which results it wrote."""
 from __future__ import annotations
 
+from datetime import datetime
+from functools import lru_cache
 import json
 import os
 from pathlib import Path
@@ -19,16 +21,26 @@ CODE = ('.py', '.m', '.r', '.jl', '.ipynb', '.cpp', '.cc', '.c', '.h', '.java', 
 MAX_FILES = 3000
 
 
-def snapshot(ws: Workspace, subs: tuple[str, ...], suffixes: tuple[str, ...] | None = None) -> dict[str, str]:
-    out: dict[str, str] = {}
+def snapshot(ws: Workspace, subs: tuple[str, ...], suffixes: tuple[str, ...] | None = None) -> dict[str, tuple[str, os.stat_result]]:
+    out = {}
     for sub in subs:
         for path in ws.files(sub, suffixes or ('',)):
             if len(out) >= MAX_FILES:
                 return out
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
             digest = sha256(path)
             if digest:
-                out[ws.rel(path)] = digest
+                out[ws.rel(path)] = (digest, stat)
     return out
+
+
+def _output_state(record: tuple[str, os.stat_result]) -> tuple[str, int, int, int]:
+    """Include file metadata so a same-byte rewrite still has a producer."""
+    digest, stat = record
+    return digest, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_ino
 
 
 def _git(ws: Workspace) -> dict | None:
@@ -59,11 +71,14 @@ def run(ws: Workspace, command: list[str], name: str | None = None, seed: int | 
     run_id = time.strftime('%Y%m%d-%H%M%S', time.localtime(started)) + f'-{label}'
     folder = ws.dir('runs') / run_id
     n = 1
-    while folder.exists():
-        n += 1
-        folder = ws.dir('runs') / f'{run_id}-{n}'
+    while True:
+        try:
+            folder.mkdir(parents=True)
+            break
+        except FileExistsError:
+            n += 1
+            folder = ws.dir('runs') / f'{run_id}-{n}'
     run_id = folder.name
-    folder.mkdir(parents=True)
     inputs = snapshot(ws, ('code',), CODE)
     inputs.update(snapshot(ws, ('problem',)))
     before = snapshot(ws, ('results', 'figures'))
@@ -93,20 +108,21 @@ def run(ws: Workspace, command: list[str], name: str | None = None, seed: int | 
             for t in threads:
                 t.join(timeout=5)
     after = snapshot(ws, ('results', 'figures'))
-    outputs = {rel: digest for rel, digest in after.items() if before.get(rel) != digest}
+    outputs = {rel: record[0] for rel, record in after.items()
+               if rel not in before or _output_state(before[rel]) != _output_state(record)}
     finished = time.time()
     manifest = {
         'schema': 'mathodology.run/1',
         'id': run_id,
         'command': command,
         'seed': seed,
-        'started': time.strftime('%Y-%m-%dT%H:%M:%S%z', time.localtime(started)),
+        'started': datetime.fromtimestamp(started).astimezone().isoformat(timespec='microseconds'),
         'duration_s': round(finished - started, 3),
         'exit_code': exit_code,
         'python': sys.version.split()[0],
         'platform': platform.platform(),
         'git': _git(ws),
-        'inputs': inputs,
+        'inputs': {rel: digest for rel, (digest, _) in inputs.items()},
         'outputs': outputs,
         'logs': {'stdout': ws.rel(folder / 'stdout.log'), 'stderr': ws.rel(folder / 'stderr.log')},
     }
@@ -126,7 +142,16 @@ def manifests(ws: Workspace) -> list[dict]:
             continue
         if isinstance(data, dict) and data.get('schema') == 'mathodology.run/1':
             out.append(data)
-    return sorted(out, key=lambda m: (m.get('started', ''), m.get('id', '')))
+
+    def order(manifest):
+        try:
+            timestamp = re.sub(r'([+-]\d{2})(\d{2})$', r'\1:\2', manifest['started'])
+            started = datetime.fromisoformat(timestamp).timestamp()
+        except (KeyError, TypeError, ValueError):
+            started = 0
+        return started, manifest.get('id', '')
+
+    return sorted(out, key=order)
 
 
 def check(ws: Workspace, result_files: list[str]) -> tuple[list[Issue], dict]:
@@ -142,23 +167,39 @@ def check(ws: Workspace, result_files: list[str]) -> tuple[list[Issue], dict]:
     if failed:
         issues.append(Issue('info', 'experiment', 'runs.failed', f'{len(failed)} recorded run(s) failed, latest {failed[-1]["id"]} (exit {failed[-1]["exit_code"]})',
                             failed[-1]['logs']['stderr'], hint='report failed attempts that matter for the conclusions'))
+    wanted = set(result_files)
+    latest = {}
+    matching = {}
+    drift_by_run = {}
+
+    @lru_cache(maxsize=None)
+    def current_digest(rel: str) -> str | None:
+        return sha256(ws.root / rel)
+
+    for manifest in runs:
+        for rel, digest in manifest.get('outputs', {}).items():
+            if rel in wanted:
+                latest[rel] = manifest
+                if current_digest(rel) == digest:
+                    matching[rel] = manifest
     for rel in result_files:
-        producers = [m for m in runs if rel in m.get('outputs', {})]
-        if not producers:
+        if rel not in latest:
             issues.append(Issue('info', 'results', 'runs.unrecorded', 'not written by any recorded run', rel))
             continue
-        current = sha256(ws.root / rel)
-        matching = [m for m in producers if m['outputs'][rel] == current]
-        if not matching:
-            issues.append(Issue('warning', 'results', 'runs.modified', f'changed after its last recorded run {producers[-1]["id"]}', rel,
+        if rel not in matching:
+            issues.append(Issue('warning', 'results', 'runs.modified', f'changed after its last recorded run {latest[rel]["id"]}', rel,
                                 hint='results come from code; rerun the experiment instead of editing numbers'))
             continue
-        last = matching[-1]
+        last = matching[rel]
+        run_id = last['id']
         if last.get('exit_code') != 0:
-            issues.append(Issue('warning', 'results', 'runs.from-failed', f'written by run {last["id"]}, which failed (exit {last["exit_code"]})', rel))
-        changed = sorted(p for p, digest in last.get('inputs', {}).items()
-                         if p.startswith('code/') and sha256(ws.root / p) not in (digest,))
-        if changed:
-            issues.append(Issue('warning', 'results', 'runs.stale-code', f'code changed since run {last["id"]} produced it: {", ".join(changed[:4])}', rel,
-                                hint='rerun the experiment so results match the code'))
+            issues.append(Issue('warning', 'results', 'runs.from-failed', f'written by run {run_id}, which failed (exit {last["exit_code"]})', rel))
+        if run_id not in drift_by_run:
+            drift_by_run[run_id] = sorted(p for p, digest in last.get('inputs', {}).items()
+                                          if p.startswith(('code/', 'problem/')) and current_digest(p) != digest)
+        for folder, label, code in (('code/', 'code', 'runs.stale-code'), ('problem/', 'problem inputs', 'runs.stale-inputs')):
+            changed = [p for p in drift_by_run[run_id] if p.startswith(folder)]
+            if changed:
+                issues.append(Issue('warning', 'results', code, f'{label} changed since run {run_id} produced it: {", ".join(changed[:4])}', rel,
+                                    hint='rerun the experiment with the current inputs'))
     return issues, summary

@@ -14,15 +14,15 @@ field are still indexed for the number checks but are not validated.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 import json
 import math
-import os
 from pathlib import Path
 import re
 
 from .report import Issue
-from .workspace import FileScanError, Workspace, read_text
+from .workspace import FileScanError, Workspace, read_text, write_text_atomic
 
 SCHEMA = 'mathodology.results/1'
 VALUE_KEYS = {'value', 'unit', 'ci', 'digits', 'display', 'label', 'note', 'se', 'n'}
@@ -106,7 +106,7 @@ def _leaves(obj, path: str, out: list[tuple[float, str]], in_table: bool = False
             _leaves(v, f'{path}[{i}]', out, in_table)
 
 
-def _values(obj, prefix: str, rel: str, out: dict[str, Value], issues: list[Issue], file_issue) -> None:
+def _values(obj, prefix: str, rel: str, file_issue) -> Iterator[Value]:
     if not isinstance(obj, dict):
         file_issue('error', 'results.values-type', f'`{prefix}` must be an object of named values')
         return
@@ -141,10 +141,10 @@ def _values(obj, prefix: str, rel: str, out: dict[str, Value], issues: list[Issu
             unknown = set(item) - VALUE_KEYS
             if unknown:
                 file_issue('info', 'results.fields', f'`{key}` has extra fields {sorted(unknown)}; they are kept but not used')
-            out[key] = Value(key, v, rel, str(item.get('unit') or ''), tuple(ci) if ci else None, digits,
-                             item.get('display'), str(item.get('label') or ''))
+            yield Value(key, v, rel, str(item.get('unit') or ''), tuple(ci) if ci else None, digits,
+                        item.get('display'), str(item.get('label') or ''))
         elif isinstance(item, dict):
-            _values(item, key, rel, out, issues, file_issue)
+            yield from _values(item, key, rel, file_issue)
         elif isinstance(item, list):
             file_issue('info', 'results.list', f'`{key}` is a list; put series in `tables` or a data file, values hold scalars')
         else:
@@ -154,6 +154,13 @@ def _values(obj, prefix: str, rel: str, out: dict[str, Value], issues: list[Issu
 def load(ws: Workspace) -> tuple[ResultSet, list[Issue]]:
     rs = ResultSet()
     issues: list[Issue] = []
+    table_sources: dict[str, tuple[str, str]] = {}
+
+    def duplicate(code: str, message: str, first: tuple[str, str], second: tuple[str, str]) -> None:
+        for (rel, location), (other, other_location) in ((first, second), (second, first)):
+            issues.append(Issue('error', 'results', code,
+                                f'{message} at {location} also declared in {other} at {other_location}', rel))
+
     try:
         paths = ws.files('results', ('.json',), strict=True)
     except OSError as exc:
@@ -188,7 +195,13 @@ def load(ws: Workspace) -> tuple[ResultSet, list[Issue]]:
         if 'values' not in data:
             file_issue('error', 'results.values', 'contract file has no `values` object')
         else:
-            _values(data['values'], stem(rel), rel, rs.values, issues, file_issue)
+            prefix = stem(rel)
+            for value in _values(data['values'], prefix, rel, file_issue):
+                previous = rs.values.setdefault(value.key, value)
+                if previous is not value:
+                    duplicate('results.duplicate-key', f'macro key `{value.key}`',
+                              (previous.file, 'values.' + value.key[len(stem(previous.file)) + 1:]),
+                              (rel, 'values.' + value.key[len(prefix) + 1:]))
             if not data['values'] and not data.get('tables'):
                 file_issue('warning', 'results.empty', 'contract file has no values and no tables; did the experiment finish?')
         q = data.get('question')
@@ -199,6 +212,11 @@ def load(ws: Workspace) -> tuple[ResultSet, list[Issue]]:
             file_issue('error', 'results.tables-type', '`tables` must be an object of named tables')
             continue
         for name, table in tables.items():
+            filename = table_filename(rel, name)
+            source = (rel, f'tables.{name}')
+            previous = table_sources.setdefault(filename, source)
+            if previous != source:
+                duplicate('results.duplicate-table', f'generated table `{filename}`', previous, source)
             if not (isinstance(table, dict) and isinstance(table.get('columns'), list) and table['columns']
                     and isinstance(table.get('rows'), list)):
                 file_issue('error', 'results.table', f'table `{name}` needs `columns` and `rows` lists')
@@ -266,6 +284,11 @@ def tables_dir(ws: Workspace) -> Path:
     return ws.dir('paper') / 'tables'
 
 
+def table_filename(rel: str, name: str) -> str:
+    safe = re.sub(r'[^A-Za-z0-9_-]+', '-', f'{stem(rel)}-{name}'.replace('.', '-')).strip('-')
+    return f'{safe}.tex'
+
+
 def is_generated(path: Path) -> bool:
     try:
         with path.open(encoding='utf-8') as handle:
@@ -314,18 +337,14 @@ def table_texts(rs: ResultSet) -> dict[str, str]:
         for name, table in data['tables'].items():
             text = table_tex(rel, str(name), table) if isinstance(table, dict) else None
             if text:
-                safe = re.sub(r'[^A-Za-z0-9_-]+', '-', f'{stem(rel)}-{name}'.replace('.', '-')).strip('-')
-                out[f'{safe}.tex'] = text
+                out[table_filename(rel, name)] = text
     return out
 
 
 def _write(path: Path, text: str) -> bool:
     if path.exists() and read_text(path) == text:
         return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
-    tmp.write_text(text, encoding='utf-8')
-    os.replace(tmp, path)  # hooks may run concurrently for parallel tool calls
+    write_text_atomic(path, text)
     return True
 
 
@@ -355,6 +374,6 @@ def sync(ws: Workspace, rs: ResultSet) -> tuple[Path, bool]:
     if folder.is_dir():
         for old in folder.glob('*.tex'):
             if old.name not in wanted and is_generated(old):
-                old.unlink()
+                old.unlink(missing_ok=True)
                 changed = True
     return path, changed

@@ -19,7 +19,14 @@ on:
     tags: ['v*']
   # Pull requests build the installer unsigned, to check the Windows build.
   pull_request:
-    paths: ['apps/studio/**', '.claude/skills/**', '.claude/agents/**', '.github/workflows/studio-windows.yml']
+    paths:
+      - 'apps/studio/**'
+      - '.claude/skills/**'
+      - '.claude/agents/**'
+      - '.claude/workflows/**'
+      - '.codex/agents/**'
+      - 'LICENSE'
+      - '.github/workflows/studio-windows.yml'
 
 permissions:
   actions: read
@@ -48,6 +55,8 @@ jobs:
           cache: pnpm
           cache-dependency-path: apps/studio/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - name: Typecheck and test Studio
+        run: pnpm typecheck && pnpm test
 
       - id: meta
         run: |

@@ -7,6 +7,7 @@ No network, no third-party packages, and no LaTeX run: the compile path is teste
 from __future__ import annotations
 
 import contextlib
+from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 import math
@@ -16,6 +17,7 @@ import subprocess
 import struct
 import sys
 import tempfile
+from threading import Barrier
 import time
 import unittest
 from unittest import mock
@@ -86,7 +88,7 @@ def codes(issues):
 def paper_issues(ws, rs=None):
     rs = rs or results.load(ws)[0]
     paper = latex.load(ws)
-    return latex.static_checks(ws, paper, set(rs.values))
+    return latex.static_checks(ws, paper, rs.values)
 
 
 def number_report(ws, tex_body=None, md=None):
@@ -458,7 +460,7 @@ class LatexTests(unittest.TestCase):
             ws = make_ws(tmp, {
                 'paper/main.tex': main,
                 'paper/sections/intro.tex': '\\label{sec:a}\n\\begin{equation}\\label{eq:1}\\end{equation}\nTODO write this\n## heading\n',
-                'paper/refs.bib': '@article{good, title={G}}\n@book{unused1, title={U}}\n@string{x = "y"}\n',
+                'paper/refs.bib': '@article(good, title={G})\n@book{unused1, title={U}}\n@string{x = "y"}\n',
                 'figures/fig1.png': 'png',
                 'results/q1.json': contract({'rmse': 0.1}),
             })
@@ -486,11 +488,26 @@ class LatexTests(unittest.TestCase):
             self.assertIn('paper.placeholder', codes(issues))
             self.assertIn('latex.markdown-residue', codes(issues))
 
-            scoped, _ = latex.static_checks(ws, paper, {'q1.rmse'}, only='paper/sections/intro.tex')
+            values = results.load(ws)[0].values
+            scoped, _ = latex.static_checks(ws, paper, values, only='paper/sections/intro.tex')
             self.assertEqual(sorted(set(codes(scoped))), ['latex.markdown-residue', 'paper.placeholder'])
-            scoped, _ = latex.static_checks(ws, paper, {'q1.rmse'}, only='paper/main.tex')
+            scoped, _ = latex.static_checks(ws, paper, values, only='paper/main.tex')
             self.assertIn('latex.duplicate-label', codes(scoped))
             self.assertNotIn('latex.unused-bib', codes(scoped))  # whole-paper note only
+
+    def test_result_macros_check_the_requested_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'paper/main.tex': DOC + r'\res{q1.loss} \resci{q1.loss} \resunit{q1.loss}' + '\n'
+                               + r'\resci{q1.width} \resunit{q1.width} \resunit{q1.nope}' + '\n' + END,
+                               'results/q1.json': contract({'loss': 0.1, 'width': {'value': 0, 'ci': [0, 0], 'unit': 'm'}})})
+            issues, _ = paper_issues(ws)
+            missing = [i for i in issues if i.code == 'numbers.missing-field']
+            self.assertEqual(len(missing), 2)
+            self.assertIn(r'\resci{q1.loss}', missing[0].message)
+            self.assertIn(r'\resunit{q1.loss}', missing[1].message)
+            self.assertTrue(all(i.severity == 'error' for i in missing))
+            self.assertEqual(codes(issues).count('numbers.unknown-key'), 1)
+            self.assertEqual(codes(engine.file_checks(ws, 'paper/main.tex')), codes(issues))
 
     def test_graphicspath_needed_and_main_detection(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -654,6 +671,47 @@ class EngineTests(unittest.TestCase):
             self.assertIn('results/q1.json', stale[0]['message'])
             self.assertEqual(self.stage(report, 'paper')['state'], 'warning')
 
+    def test_pdf_and_log_freshness_include_bibliography_and_generated_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'paper/main.tex': DOC + '\\input{tables/q1-t}\n\\bibliography{refs}\n' + END,
+                               'paper/main.pdf': PDF, 'paper/main.log': '! Outdated error\n',
+                               'paper/refs.bib': '@article{x, title={A}}',
+                               'results/q1.json': contract({'v': 1}, tables={'t': {'columns': ['v'], 'rows': [[1]]}})})
+            results.sync(ws, results.load(ws)[0])
+            dependencies = ['paper/refs.bib', 'paper/tables/q1-t.tex', 'paper/results.tex']
+            for rel in ('paper/main.tex', 'results/q1.json', *dependencies):
+                age(ws.root / rel, 120)
+            for rel in ('paper/main.pdf', 'paper/main.log'):
+                age(ws.root / rel, 60)
+            self.assertIn('latex.compile-error', codes(engine.status(ws)['issues']))
+            for rel in dependencies:
+                with self.subTest(rel=rel):
+                    age(ws.root / rel, 0)
+                    issues = engine.status(ws)['issues']
+                    self.assertNotIn('latex.compile-error', codes(issues))
+                    self.assertIn(rel, next(i['message'] for i in issues if i['code'] == 'paper.stale-pdf'))
+                    age(ws.root / rel, 120)
+
+    def test_concurrent_status_calls_publish_complete_reports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp)
+            target = ws.state / 'report.json'
+            replace = os.replace
+            ready = Barrier(2, timeout=5)
+            sources = []
+
+            def publish(source, destination):
+                if destination == target:
+                    sources.append(source)
+                    ready.wait()
+                return replace(source, destination)
+
+            with mock.patch('workbench.workspace.os.replace', side_effect=publish), ThreadPoolExecutor(2) as pool:
+                reports = list(pool.map(engine.status, [ws, ws]))
+            self.assertEqual(len(set(sources)), 2)
+            self.assertIn(json.loads(target.read_text()), reports)
+            self.assertFalse(any(source.exists() for source in sources))
+
     def test_file_checks_scoped_to_one_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             ws = make_ws(tmp, {'paper/main.tex': DOC + '\\ref{a}\n\\input{sec}\n' + END,
@@ -704,10 +762,10 @@ class RunsTests(unittest.TestCase):
             issues, summary = runs.check(ws, ['results/q1.json'])
             self.assertEqual((issues, summary), ([], {'runs': 1, 'failed': 0}))
 
-            # A rerun lists only the files whose content changed (the figure is identical).
+            # A rerun lists the files it rewrote, even when the figure bytes match.
             _, again = self.run_quiet(ws, [sys.executable, 'code/q1.py'], seed=42, name='same')
             self.assertNotEqual(again['id'], manifest['id'])
-            self.assertEqual(sorted(again['outputs']), ['results/q1.json'])  # the run id inside changed
+            self.assertEqual(sorted(again['outputs']), ['figures/f1.png', 'results/q1.json'])
             self.assertTrue(again['id'].endswith('-same'))
 
             # Hand edit of the results file.
@@ -721,6 +779,29 @@ class RunsTests(unittest.TestCase):
             issues, _ = runs.check(ws, ['results/q1.json', 'results/other.json'])
             self.assertEqual(codes(issues), ['runs.stale-code', 'runs.unrecorded'])
             self.assertIn('code/q1.py', issues[0].message)
+
+    def test_problem_input_drift_and_identical_results_refresh_provenance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            first, second = 'results/a.json', 'results/b.json'
+            data = contract({'v': 1})
+            first_only = 'from pathlib import Path\n' + f'Path({first!r}).write_text({data!r})\n'
+            script = first_only + f'Path({second!r}).write_text({data!r})\n'
+            ws = make_ws(tmp, {'code/q1.py': script, 'problem/input.txt': 'original'})
+            cmd = [sys.executable, 'code/q1.py']
+            _, initial = self.run_quiet(ws, cmd, name='z-first')
+            input_path = ws.root / 'problem/input.txt'
+            input_path.unlink()
+            with mock.patch.object(runs, 'sha256', wraps=runs.sha256) as digest:
+                issues, _ = runs.check(ws, [first, second])
+            self.assertEqual(codes(issues), ['runs.stale-inputs', 'runs.stale-inputs'])
+            self.assertTrue(all('problem/input.txt' in i.message for i in issues))
+            self.assertEqual(digest.call_args_list.count(mock.call(input_path)), 1)
+            write(input_path, 'updated')
+            write(ws.root / 'code/q1.py', first_only)
+            _, rerun = self.run_quiet(ws, cmd, name='a-second')
+            self.assertEqual(rerun['outputs'], {first: initial['outputs'][first]})
+            issues, _ = runs.check(ws, [first, second])
+            self.assertEqual([(i.code, i.file) for i in issues], [('runs.stale-code', second), ('runs.stale-inputs', second)])
 
     def test_exit_code_propagates_and_failed_runs_are_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -749,11 +830,21 @@ class RunsTests(unittest.TestCase):
             code, out, err = run_cli(tmp, '--root', str(ws.root), 'run', '--seed', '7', '--', sys.executable, 'code/q1.py')
             self.assertEqual(code, 0, err)
             self.assertIn('done', out)
-            self.assertIn('2 output(s) changed', err)
+            self.assertIn('2 output(s) written', err)
             self.assertIn('{mtdres@q1.seed}{7}', (ws.root / 'paper' / 'results.tex').read_text())
             env_code = subprocess.run([sys.executable, str(MTD), '--root', str(ws.root), 'run', '--', sys.executable, 'code/q1.py'],
                                       capture_output=True, text=True, env={**hook_env(tmp), 'EXIT_WITH': '5'}).returncode
             self.assertEqual(env_code, 5)
+
+    def test_cli_run_syncs_when_the_last_result_is_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = make_ws(tmp, {'results/q1.json': contract({'v': 1}, tables={'t': {'columns': ['v'], 'rows': [[1]]}})})
+            macros, _ = results.sync(ws, results.load(ws)[0])
+            code, _, err = run_cli(tmp, '--root', str(ws.root), 'run', '--', sys.executable, '-c',
+                                   "from pathlib import Path; Path('results/q1.json').unlink()")
+            self.assertEqual(code, 0, err)
+            self.assertNotIn('mtdres@q1.v', macros.read_text())
+            self.assertFalse((ws.root / 'paper/tables/q1-t.tex').exists())
 
 
 class FiguresTests(unittest.TestCase):
@@ -874,6 +965,35 @@ class HookTests(unittest.TestCase):
         elsewhere.mkdir()
         reply = self.hook('post-tool', {**bash, 'session_id': 's3', 'cwd': str(elsewhere)}, cwd=elsewhere)
         self.assertIn('refreshed', reply['hookSpecificOutput']['additionalContext'])
+
+    def test_post_tool_syncs_older_file_changes_and_last_deletion(self):
+        bash = {'session_id': 's2', 'cwd': str(self.root), 'tool_name': 'Bash', 'tool_input': {}}
+        newer = self.root / 'results/q1.json'
+        table = {'t': {'columns': ['x'], 'rows': [[1]]}}
+        older = write(self.root / 'results/q2.json', contract({'v': 1}, tables=table))
+        age(older, 120)
+        self.assertIsNotNone(self.hook('post-tool', bash))
+        macros = self.root / 'paper/results.tex'
+        generated = self.root / 'paper/tables/q2-t.tex'
+        self.assertTrue(generated.exists())
+        self.assertIn('mtdres@q2.v}{1}', macros.read_text())
+        old_stat = older.stat()
+        write(older, contract({'v': 200}, tables=table))
+        os.utime(older, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
+        self.assertIsNotNone(self.hook('post-tool', bash))
+        self.assertIn('mtdres@q2.v}{200}', macros.read_text())
+        write(older, contract({'v': 300}, tables=table))
+        age(older, 180)
+        self.assertIsNotNone(self.hook('post-tool', bash))
+        self.assertIn('mtdres@q2.v}{300}', macros.read_text())
+        older.unlink()
+        self.assertIsNotNone(self.hook('post-tool', bash))
+        self.assertNotIn('mtdres@q2.v', macros.read_text())
+        self.assertFalse(generated.exists())
+        newer.unlink()
+        self.assertIsNotNone(self.hook('post-tool', bash))
+        self.assertNotIn('mtdres@q1.rmse', macros.read_text())
+        self.assertIsNone(self.hook('post-tool', bash))
 
     def test_post_tool_results_write_syncs(self):
         write(self.root / 'results' / 'q1.json', contract({'rmse': 0.33}))
@@ -1436,7 +1556,7 @@ class MarkdownTests(unittest.TestCase):
         self.assertEqual(got, [('md.no-references', 1)])
 
     def test_pandoc_citations(self):
-        bib = '@article{smith2020, title={X}}\n@book{li2019, title={Y}}\n'
+        bib = '@article(smith2020, title={X})\n@book{li2019, title={Y}}\n'
         got, issues = self.check('See [@smith2020; @li2019, p. 3] and [-@ghost2021]. Mail me at a@b.com.\n', bib)
         self.assertEqual(got, [('md.undefined-cite', 1)])
         self.assertIn('@ghost2021', next(i for i in issues if i.code == 'md.undefined-cite').message)
@@ -1446,6 +1566,33 @@ class MarkdownTests(unittest.TestCase):
 
 class SyncProtectionTests(unittest.TestCase):
     TABLE = {'compare': {'columns': ['model', 'score'], 'rows': [['ours', 0.5]]}}
+
+    def test_macro_and_table_collisions_report_both_sources_and_preserve_generated_files(self):
+        original = 'results/q.v1.json'
+        cases = [
+            ('results/q/v1.json', contract({'rmse': 0.9}), 'results.duplicate-key', 'q.v1.rmse'),
+            ('results/q-v1.json', contract({'other': 0.9}, tables=self.TABLE),
+             'results.duplicate-table', 'q-v1-compare.tex'),
+        ]
+        for other, contents, expected_code, name in cases:
+            with self.subTest(code=expected_code), tempfile.TemporaryDirectory() as tmp:
+                ws = make_ws(tmp, {original: contract({'rmse': 0.5}, tables=self.TABLE), 'paper/main.tex': DOC + END})
+                macros, _ = results.sync(ws, results.load(ws)[0])
+                table = ws.root / 'paper/tables/q-v1-compare.tex'
+                before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in (macros, table)}
+                write(ws.root / original, contract({'rmse': 0.7}, tables=self.TABLE))
+                write(ws.root / other, contents)
+                rs, issues = results.load(ws)
+                self.assertFalse(rs.valid)
+                duplicate = [i for i in issues if i.code == expected_code]
+                self.assertEqual({i.file for i in duplicate}, {original, other})
+                self.assertTrue(all(i.severity == 'error' and name in i.message for i in duplicate))
+                for issue in duplicate:
+                    self.assertIn(other if issue.file == original else original, issue.message)
+                with self.assertRaises(results.SyncError):
+                    results.sync(ws, rs)
+                self.assertIn(expected_code, codes(engine.status(ws, sync=True)['issues']))
+                self.assertEqual(before, {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in before})
 
     def test_bom_and_gb18030_results_remain_readable_but_invalid_bytes_are_reported(self):
         payload = json.dumps({'schema': results.SCHEMA, 'values': {'rmse': {'value': 0.5, 'label': '误差'}}}, ensure_ascii=False)

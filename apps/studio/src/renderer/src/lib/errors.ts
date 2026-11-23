@@ -1,0 +1,1 @@
+export { formatIpcError } from '../store'
